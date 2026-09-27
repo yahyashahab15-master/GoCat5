@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>GoCat — Social Video</title>
+
+    <link rel="stylesheet" href="random go.css">
+</head>
+
+<body>
+
+    <!-- ================= GOCAT LOADING SCREEN ================= -->
+    <div id="gocatLoadingScreen" class="gocat-loader-screen">
+        <div class="gocat-loader-card">
+            <div class="gocat-loader-logo">
+                <div class="gocat-cat-bubble">🐱</div>
+                <div class="gocat-loader-name">GoCat</div>
+            </div>
+
+            <div class="gocat-paw-loader" aria-label="Loading">
+                <span>🐾</span>
+                <span>🐾</span>
+                <span>🐾</span>
+            </div>
+
+            <p>Getting your feed ready...</p>
+        </div>
+    </div>
+
+
+    <!-- ================= LOGIN / REGISTER ================= -->
+
+    <div id="authScreen" class="auth-screen">
+
+        <div class="auth-decoration one"></div>
+        <div class="auth-decoration two"></div>
+        <div class="auth-decoration three"></div>
+
+        <div class="auth-card">
+
+            <div class="auth-logo">
+                <div class="logo-cat">🐱</div>
+                <span>GoCat</span>
+            </div>
+
+            <div class="auth-title">
+                <h1 id="authTitle">Welcome back</h1>
+                <p id="authSubtitle">
+                    Sign in to continue to GoCat
+                </p>
+            </div>
+
+            <!-- LOGIN -->
+
+            <form id="loginForm" class="auth-form">
+
+                <div class="input-box">
+                    <span>👤</span>
+                    <input
+                        id="loginUsername"
+                        type="text"
+                        placeholder="Username"
+                        required
+                    >
+                </div>
+
+                <div class="input-box">
+                    <span>🔒</span>
+                    <input
+                        id="loginPassword"
+                        type="password"
+                        placeholder="Password"
+                        required
+                    >
+                    <button type="button" class="password-btn" data-target="loginPassword">
+                        👁
+                    </button>
+                </div>
+
+                <button class="main-auth-btn" type="submit">
+                    Login
+                </button>
+
+                <p class="auth-switch">
+                    Don't have an account?
+                    <button type="button" id="showRegister">
+                        Create one
+                    </button>
+                </p>
+
+            </form>
+
+            <!-- REGISTER -->
+
+            <form id="registerForm" class="auth-form hidden">
+
+                <div class="input-box">
+                    <span>👤</span>
+                    <input
+                        id="registerUsername"
+                        type="text"
+                        placeholder="Choose username"
+                        minlength="3"
+                        maxlength="20"
+                        required
+                    >
+                </div>
+
+                <div class="input-box">
+                    <span>📧</span>
+                    <input
+                        id="registerEmail"
+                        type="email"
+                        placeholder="Email"
+                        required
+                    >
+                </div>
+
+                <div class="input-box">
+                    <span>🔒</span>
+                    <input
+                        id="registerPassword"
+                        type="password"
+                        placeholder="Create password"
+                        minlength="4"
+                        required
+                    >
+                    <button type="button" class="password-btn" data-target="registerPassword">
+                        👁
+                    </button>
+                </div>
+
+                <div class="input-box">
+                    <span>🔒</span>
+                    <input
+                        id="registerConfirm"
+                        type="password"
+                        placeholder="Confirm password"
+                        minlength="4"
+                        required
+                    >
+                </div>
+
+                <button class="main-auth-btn" type="submit">
+                    Create Account
+                </button>
+
+                <p class="auth-switch">
+                    Already have an account?
+                    <button type="button" id="showLogin">
+                        Login
+                    </button>
+                </p>
+
+            </form>
+
+            <div id="authMessage" class="auth-message"></div>
+
+            <div class="local-warning">
+                <span>💾</span>
+                <div>
+                    <strong>Local Mode</strong>
+                    <p>
+                        Your account and videos are stored in this browser.
+                    </p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+
+    <!-- ================= MAIN APP ================= -->
+
+    <div id="app" class="app hidden">
+
+        <!-- SIDEBAR -->
+
+        <aside class="sidebar">
+
+            <div class="brand">
+                <div class="brand-cat">🐱</div>
+                <span>GoCat</span>
+            </div>
+
+            <nav class="side-nav">
+
+                <button class="nav-item active" data-page="home">
+                    <span>⌂</span>
+                    <label>Home</label>
+                </button>
+
+                <button class="nav-item" data-page="explore">
+                    <span>🔎</span>
+                    <label>Explore</label>
+                </button>
+
+                <button class="nav-item" data-page="following">
+                    <span>👥</span>
+                    <label>Following</label>
+                </button>
+
+                <button class="nav-item" data-page="notifications">
+                    <span>🔔</span>
+                    <label>Notifications</label>
+                    <b id="notificationBadge" class="badge hidden">0</b>
+                </button>
+
+                <button class="nav-item" data-page="profile">
+                    <span>👤</span>
+                    <label>Profile</label>
+                </button>
+
+            </nav>
+
+            <div class="sidebar-bottom">
+
+                <button id="themeBtn" class="side-small">
+                    🌙 <span>Theme</span>
+                </button>
+
+                <button id="logoutBtn" class="side-small logout">
+                    🚪 <span>Logout</span>
+                </button>
+
+            </div>
+
+        </aside>
+
+
+        <!-- MAIN -->
+
+        <main class="main">
+
+            <!-- TOP BAR -->
+
+            <header class="topbar">
+
+                <button id="mobileMenu" class="mobile-menu">
+                    ☰
+                </button>
+
+                <div class="mobile-logo">
+                    🐱 GoCat
+                </div>
+
+                <div class="search-container">
+
+                    <span>🔎</span>
+
+                    <input
+                        id="searchInput"
+                        type="text"
+                        placeholder="Search videos or people..."
+                    >
+
+                    <button id="clearSearch" class="clear-search hidden">
+                        ×
+                    </button>
+
+                </div>
+
+                <div class="top-actions">
+
+                    <button id="uploadTopBtn" class="upload-top">
+                        ＋ Upload
+                    </button>
+
+                    <button id="profileTopBtn" class="avatar-button">
+                        <span id="topAvatar">Y</span>
+                    </button>
+
+                </div>
+
+            </header>
+
+
+            <!-- CONTENT -->
+
+            <div id="content" class="content">
+
+                <!-- HOME -->
+
+                <section id="page-home" class="page">
+
+                    <div class="welcome-banner">
+
+                        <div>
+                            <span class="mini-label">YOUR FEED</span>
+
+                            <h1>
+                                Welcome to GoCat,
+                                <span id="welcomeName">User</span> 👋
+                            </h1>
+
+                            <p>
+                                Discover videos, follow creators and share your own moments.
+                            </p>
+                        </div>
+
+                        <div class="banner-cat">
+                            🐱
+                        </div>
+
+                    </div>
+
+
+                    <div class="section-heading">
+
+                        <div>
+                            <h2>For You</h2>
+                            <p>Videos from the GoCat community</p>
+                        </div>
+
+                        <button id="refreshFeed" class="outline-btn">
+                            ↻ Refresh
+                        </button>
+
+                    </div>
+
+
+                    <div class="topic-section">
+                        <div class="topic-title-row">
+                            <div>
+                                <h3>Explore by topic</h3>
+                                <p>Pick what you want to watch.</p>
+                            </div>
+                        </div>
+
+                        <div id="topicChips" class="topic-chips">
+                            <button class="topic-chip active" data-topic="All">✨ All</button>
+                            <button class="topic-chip" data-topic="Gaming">🎮 Gaming</button>
+                            <button class="topic-chip" data-topic="Cooking">🍳 Cooking</button>
+                            <button class="topic-chip" data-topic="School">📚 School</button>
+                            <button class="topic-chip" data-topic="Technology">💻 Technology</button>
+                            <button class="topic-chip" data-topic="Sports">⚽ Sports</button>
+                            <button class="topic-chip" data-topic="Art">🎨 Art</button>
+                            <button class="topic-chip" data-topic="Entertainment">😂 Entertainment</button>
+                            <button class="topic-chip" data-topic="Other">🌍 Other</button>
+                        </div>
+                    </div>
+
+                    <div class="suggested-people-section">
+                        <div class="section-heading compact-heading">
+                            <div>
+                                <h2>Suggested creators</h2>
+                                <p>People you may want to follow</p>
+                            </div>
+                        </div>
+                        <div id="suggestedCreators" class="suggested-creators"></div>
+                    </div>
+
+                    <div id="homeFeed" class="video-grid"></div>
+
+                    <div id="emptyHome" class="empty-state hidden">
+                        <div>🎬</div>
+                        <h2>No videos yet</h2>
+                        <p>
+                            Upload your first real video and start your GoCat profile.
+                        </p>
+                        <button class="main-btn upload-trigger">
+                            Upload Video
+                        </button>
+                    </div>
+
+                </section>
+
+
+                <!-- EXPLORE -->
+
+                <section id="page-explore" class="page hidden">
+
+                    <div class="page-header">
+
+                        <div>
+                            <span class="mini-label">DISCOVER</span>
+                            <h1>Explore</h1>
+                            <p>Find creators and videos from this browser.</p>
+                        </div>
+
+                    </div>
+
+                    <div class="explore-tabs">
+
+                        <button class="explore-tab active" data-explore="videos">
+                            Videos
+                        </button>
+
+                        <button class="explore-tab" data-explore="people">
+                            People
+                        </button>
+
+                    </div>
+
+                    <div id="exploreVideos" class="video-grid"></div>
+
+                    <div id="explorePeople" class="people-grid hidden"></div>
+
+                </section>
+
+
+                <!-- FOLLOWING -->
+
+                <section id="page-following" class="page hidden">
+
+                    <div class="page-header">
+
+                        <div>
+                            <span class="mini-label">YOUR NETWORK</span>
+                            <h1>Following</h1>
+                            <p>Videos from people you follow.</p>
+                        </div>
+
+                    </div>
+
+                    <div id="followingFeed" class="video-grid"></div>
+
+                    <div id="emptyFollowing" class="empty-state hidden">
+                        <div>👥</div>
+                        <h2>You're not following anyone yet</h2>
+                        <p>
+                            Visit Explore and follow some creators.
+                        </p>
+                        <button class="main-btn" data-page-button="explore">
+                            Explore People
+                        </button>
+                    </div>
+
+                </section>
+
+
+                <!-- NOTIFICATIONS -->
+
+                <section id="page-notifications" class="page hidden">
+
+                    <div class="page-header">
+
+                        <div>
+                            <span class="mini-label">ACTIVITY</span>
+                            <h1>Notifications</h1>
+                            <p>Your GoCat activity.</p>
+                        </div>
+
+                        <button id="clearNotifications" class="outline-btn">
+                            Clear
+                        </button>
+
+                    </div>
+
+                    <div id="notificationList" class="notification-list"></div>
+
+                </section>
+
+
+                <!-- PROFILE -->
+
+                <section id="page-profile" class="page hidden">
+
+                    <div class="profile-cover"></div>
+
+                    <div class="profile-header">
+
+                        <div class="profile-avatar-large" id="profileAvatar">
+                            Y
+                        </div>
+
+                        <div class="profile-main-info">
+
+                            <div class="profile-name-row">
+                                <h1 id="profileUsername">
+                                    username
+                                </h1>
+
+                                <span class="verified">
+                                    ✓
+                                </span>
+                            </div>
+
+                            <p id="profileEmail">
+                                email
+                            </p>
+
+                            <p id="profileBio">
+                                Welcome to my GoCat profile.
+                            </p>
+
+                        </div>
+
+                        <button id="editProfileBtn" class="outline-btn">
+                            ✎ Edit Profile
+                        </button>
+
+                    </div>
+
+                    <div class="profile-stats">
+
+                        <div>
+                            <strong id="postCount">0</strong>
+                            <span>Posts</span>
+                        </div>
+
+                        <div>
+                            <strong id="followersCount">0</strong>
+                            <span>Followers</span>
+                        </div>
+
+                        <div>
+                            <strong id="followingCount">0</strong>
+                            <span>Following</span>
+                        </div>
+
+                    </div>
+
+                    <div class="section-heading profile-post-heading">
+                        <div>
+                            <h2 id="profileVideosTitle">Your Videos</h2>
+                        </div>
+
+                        <button id="profileUploadBtn" class="main-btn upload-trigger">
+                            ＋ Upload
+                        </button>
+                    </div>
+
+                    <div id="profileVideos" class="video-grid"></div>
+
+                </section>
+
+            </div>
+
+        </main>
+
+    </div>
+
+
+    <!-- ================= UPLOAD MODAL ================= -->
+
+    <div id="uploadModal" class="modal hidden">
+
+        <div class="modal-overlay"></div>
+
+        <div class="modal-card upload-card">
+
+            <button class="close-modal" data-close="uploadModal">
+                ×
+            </button>
+
+            <div class="modal-title">
+                <span class="modal-icon">🎬</span>
+                <div>
+                    <h2>Upload a Video</h2>
+                    <p>This is a real file from your computer.</p>
+                </div>
+            </div>
+
+            <label id="dropArea" class="drop-area">
+
+                <input
+                    id="videoFile"
+                    type="file"
+                    accept="video/*"
+                    hidden
+                >
+
+                <div class="upload-icon">
+                    ☁
+                </div>
+
+                <h3>Choose your video</h3>
+
+                <p>
+                    MP4, WebM, MOV and other browser-supported formats
+                </p>
+
+                <span class="choose-file">
+                    Choose File
+                </span>
+
+                <div id="selectedFile" class="selected-file hidden"></div>
+
+            </label>
+
+            <div class="upload-form">
+
+                <input
+                    id="videoTitle"
+                    class="normal-input"
+                    type="text"
+                    maxlength="80"
+                    placeholder="Video title"
+                >
+
+                <textarea
+                    id="videoDescription"
+                    class="normal-input textarea"
+                    maxlength="300"
+                    placeholder="Write something about your video..."
+                ></textarea>
+
+
+                <label class="field-label" for="videoTopic">
+                    Video topic
+                </label>
+
+                <select id="videoTopic" class="normal-input topic-select">
+                    <option value="Gaming">🎮 Gaming</option>
+                    <option value="Cooking">🍳 Cooking</option>
+                    <option value="School">📚 School</option>
+                    <option value="Technology">💻 Technology</option>
+                    <option value="Sports">⚽ Sports</option>
+                    <option value="Art">🎨 Art</option>
+                    <option value="Entertainment">😂 Entertainment</option>
+                    <option value="Other" selected>🌍 Other</option>
+                </select>
+
+            </div>
+
+            <div class="upload-progress hidden" id="uploadProgressBox">
+                <div class="progress-info">
+                    <span>Saving video...</span>
+                    <span id="progressPercent">0%</span>
+                </div>
+
+                <div class="progress">
+                    <div id="progressBar"></div>
+                </div>
+            </div>
+
+            <button id="publishVideo" class="main-btn full-btn">
+                Publish Video
+            </button>
+
+        </div>
+    </div>
+
+
+    <!-- ================= COMMENTS MODAL ================= -->
+
+    <div id="commentsModal" class="modal hidden">
+
+        <div class="modal-overlay"></div>
+
+        <div class="modal-card comments-card">
+
+            <button class="close-modal" data-close="commentsModal">
+                ×
+            </button>
+
+            <div class="comments-header">
+                <h2>Comments</h2>
+                <span id="commentsCount">0 comments</span>
+            </div>
+
+            <div id="commentsList" class="comments-list"></div>
+
+            <form id="commentForm" class="comment-form">
+
+                <div class="comment-avatar" id="commentAvatar">
+                    Y
+                </div>
+
+                <input
+                    id="commentInput"
+                    type="text"
+                    maxlength="300"
+                    placeholder="Write a comment..."
+                    required
+                >
+
+                <button type="submit">
+                    ➤
+                </button>
+
+            </form>
+
+        </div>
+
+    </div>
+
+
+    <!-- ================= EDIT PROFILE MODAL ================= -->
+
+    <div id="editModal" class="modal hidden">
+
+        <div class="modal-overlay"></div>
+
+        <div class="modal-card">
+
+            <button class="close-modal" data-close="editModal">
+                ×
+            </button>
+
+            <div class="modal-title">
+                <span class="modal-icon">👤</span>
+                <div>
+                    <h2>Edit Profile</h2>
+                    <p>Customize your GoCat profile.</p>
+                </div>
+            </div>
+    []
+            <label class="field-label">
+                Username
+            </label>
+
+            <input id="editUsername" class="normal-input">
+
+            <label class="field-label">
+                Bio
+            </label>
+
+            <textarea id="editBio" class="normal-input textarea"></textarea>
+
+            <button id="saveProfile" class="main-btn full-btn">
+                Save Profile
+            </button>
+
+        </div>
+    </div>
+
+
+    <!-- ================= TOAST ================= -->
+
+    <div id="toast" class="toast">
+        <span id="toastIcon">✓</span>
+        <span id="toastText">Done</span>
+    </div>
+
+
+   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+   <script type="module" src="randomgo.js"></script>
+
+</body>
+</html>
