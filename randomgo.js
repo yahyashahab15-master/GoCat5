@@ -14,8 +14,7 @@ const SUPABASE_URL =
 const SUPABASE_PUBLISHABLE_KEY =
     "sb_publishable_LWIaOaxbzp19lV765vbbQg_kF5apL0O";
 
-const SUPABASE_BUCKET =
-    "videos";
+const SUPABASE_BUCKET = "videos";
 
 
 /* =========================================================
@@ -25,28 +24,110 @@ const SUPABASE_BUCKET =
 let supabaseClient = null;
 
 let users = [];
-
 let videos = [];
 
 let currentUser = null;
-
 let currentVideoId = null;
-
 let currentProfileUserId = null;
 
 let currentPage = "home";
-
 let exploreMode = "videos";
-
 let activeHomeTopic = "All";
 
 let notifications = [];
-
 let isLoading = false;
 
 
 /* =========================================================
-   SUPABASE SDK LOADER
+   DOM HELPERS
+   ========================================================= */
+
+const getElement = id =>
+    document.getElementById(id);
+
+const authScreen = getElement("authScreen");
+const app = getElement("app");
+
+const loginForm = getElement("loginForm");
+const registerForm = getElement("registerForm");
+
+const authTitle = getElement("authTitle");
+const authSubtitle = getElement("authSubtitle");
+const authMessage = getElement("authMessage");
+
+const showRegister = getElement("showRegister");
+const showLogin = getElement("showLogin");
+
+const homeFeed = getElement("homeFeed");
+const followingFeed = getElement("followingFeed");
+
+const profileVideos = getElement("profileVideos");
+const exploreVideos = getElement("exploreVideos");
+const explorePeople = getElement("explorePeople");
+
+const searchInput = getElement("searchInput");
+const clearSearch = getElement("clearSearch");
+
+const uploadModal = getElement("uploadModal");
+const commentsModal = getElement("commentsModal");
+const editModal = getElement("editModal");
+
+const videoFile = getElement("videoFile");
+const selectedFile = getElement("selectedFile");
+
+const videoTitle = getElement("videoTitle");
+const videoDescription = getElement("videoDescription");
+const videoTopic = getElement("videoTopic");
+
+const publishVideo = getElement("publishVideo");
+
+const toast = getElement("toast");
+const toastText = getElement("toastText");
+
+const dropArea = getElement("dropArea");
+
+const uploadProgressBox =
+    getElement("uploadProgressBox");
+
+const progressBar =
+    getElement("progressBar");
+
+const progressPercent =
+    getElement("progressPercent");
+
+const commentsList =
+    getElement("commentsList");
+
+const commentsCount =
+    getElement("commentsCount");
+
+const commentForm =
+    getElement("commentForm");
+
+const commentInput =
+    getElement("commentInput");
+
+const editUsername =
+    getElement("editUsername");
+
+const editBio =
+    getElement("editBio");
+
+const saveProfileBtn =
+    getElement("saveProfile");
+
+const notificationList =
+    getElement("notificationList");
+
+const suggestedCreators =
+    getElement("suggestedCreators");
+
+const authLoginInput =
+    getElement("loginUsername");
+
+
+/* =========================================================
+   SUPABASE SDK
    ========================================================= */
 
 async function loadSupabaseSDK() {
@@ -58,187 +139,27 @@ async function loadSupabaseSDK() {
         return;
     }
 
-    await new Promise(
-        function(resolve, reject) {
+    await new Promise((resolve, reject) => {
 
-            const script =
-                document.createElement("script");
+        const script =
+            document.createElement("script");
 
-            script.src =
-                "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
+        script.src =
+            "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
 
-            script.onload = resolve;
+        script.onload = resolve;
 
-            script.onerror = function() {
+        script.onerror = () => {
+            reject(
+                new Error("Could not load Supabase.")
+            );
+        };
 
-                reject(
-                    new Error(
-                        "Could not load Supabase."
-                    )
-                );
+        document.head.appendChild(script);
 
-            };
-
-            document.head.appendChild(script);
-
-        }
-    );
+    });
 
 }
-
-
-/* =========================================================
-   DOM
-   ========================================================= */
-
-const authScreen =
-    document.getElementById("authScreen");
-
-const app =
-    document.getElementById("app");
-
-const loginForm =
-    document.getElementById("loginForm");
-
-const registerForm =
-    document.getElementById("registerForm");
-
-const authTitle =
-    document.getElementById("authTitle");
-
-const authSubtitle =
-    document.getElementById("authSubtitle");
-
-const authMessage =
-    document.getElementById("authMessage");
-
-const showRegister =
-    document.getElementById("showRegister");
-
-const showLogin =
-    document.getElementById("showLogin");
-
-const homeFeed =
-    document.getElementById("homeFeed");
-
-const followingFeed =
-    document.getElementById("followingFeed");
-
-const profileVideos =
-    document.getElementById("profileVideos");
-
-const exploreVideos =
-    document.getElementById("exploreVideos");
-
-const explorePeople =
-    document.getElementById("explorePeople");
-
-const searchInput =
-    document.getElementById("searchInput");
-
-const clearSearch =
-    document.getElementById("clearSearch");
-
-const uploadModal =
-    document.getElementById("uploadModal");
-
-const commentsModal =
-    document.getElementById("commentsModal");
-
-const editModal =
-    document.getElementById("editModal");
-
-const videoFile =
-    document.getElementById("videoFile");
-
-const selectedFile =
-    document.getElementById("selectedFile");
-
-const videoTitle =
-    document.getElementById("videoTitle");
-
-const videoDescription =
-    document.getElementById("videoDescription");
-
-const publishVideo =
-    document.getElementById("publishVideo");
-
-const toast =
-    document.getElementById("toast");
-
-const toastText =
-    document.getElementById("toastText");
-
-const dropArea =
-    document.getElementById("dropArea");
-
-const videoTopic =
-    document.getElementById("videoTopic");
-
-const uploadProgressBox =
-    document.getElementById(
-        "uploadProgressBox"
-    );
-
-const progressBar =
-    document.getElementById(
-        "progressBar"
-    );
-
-const progressPercent =
-    document.getElementById(
-        "progressPercent"
-    );
-
-const commentsList =
-    document.getElementById(
-        "commentsList"
-    );
-
-const commentsCount =
-    document.getElementById(
-        "commentsCount"
-    );
-
-const commentForm =
-    document.getElementById(
-        "commentForm"
-    );
-
-const commentInput =
-    document.getElementById(
-        "commentInput"
-    );
-
-const editUsername =
-    document.getElementById(
-        "editUsername"
-    );
-
-const editBio =
-    document.getElementById(
-        "editBio"
-    );
-
-const saveProfileBtn =
-    document.getElementById(
-        "saveProfile"
-    );
-
-const notificationList =
-    document.getElementById(
-        "notificationList"
-    );
-
-const suggestedCreators =
-    document.getElementById(
-        "suggestedCreators"
-    );
-
-const authLoginInput =
-    document.getElementById(
-        "loginUsername"
-    );
 
 
 /* =========================================================
@@ -249,19 +170,14 @@ function createId() {
 
     if (
         window.crypto &&
-        typeof window.crypto.randomUUID ===
-        "function"
+        typeof window.crypto.randomUUID === "function"
     ) {
-
         return window.crypto.randomUUID();
-
     }
 
     return (
         Date.now().toString(36) +
-        Math.random()
-            .toString(36)
-            .substring(2)
+        Math.random().toString(36).substring(2)
     );
 
 }
@@ -303,7 +219,6 @@ function escapeHTML(value) {
 function normalizeTopic(topic) {
 
     const allowed = [
-
         "Gaming",
         "Cooking",
         "School",
@@ -312,18 +227,11 @@ function normalizeTopic(topic) {
         "Art",
         "Entertainment",
         "Other"
-
     ];
 
-    if (
-        allowed.includes(topic)
-    ) {
-
-        return topic;
-
-    }
-
-    return "Other";
+    return allowed.includes(topic)
+        ? topic
+        : "Other";
 
 }
 
@@ -331,30 +239,17 @@ function normalizeTopic(topic) {
 function topicEmoji(topic) {
 
     const icons = {
-
         Gaming: "🎮",
-
         Cooking: "🍳",
-
         School: "📚",
-
         Technology: "💻",
-
         Sports: "⚽",
-
         Art: "🎨",
-
         Entertainment: "😂",
-
         Other: "🌍"
-
     };
 
-    return (
-        icons[
-            normalizeTopic(topic)
-        ] || "🌍"
-    );
+    return icons[normalizeTopic(topic)] || "🌍";
 
 }
 
@@ -366,61 +261,27 @@ function formatDate(timestamp) {
     }
 
     const difference =
-        Date.now() -
-        Number(timestamp);
+        Date.now() - Number(timestamp);
 
     const seconds =
-        Math.floor(
-            difference / 1000
-        );
+        Math.floor(difference / 1000);
 
-    if (seconds < 10) {
-        return "Just now";
-    }
+    if (seconds < 10) return "Just now";
+    if (seconds < 60) return seconds + "s ago";
 
-    if (seconds < 60) {
-        return seconds + "s ago";
-    }
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return minutes + "m ago";
 
-    const minutes =
-        Math.floor(
-            seconds / 60
-        );
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return hours + "h ago";
 
-    if (minutes < 60) {
-        return minutes + "m ago";
-    }
+    const days = Math.floor(hours / 24);
+    if (days < 30) return days + "d ago";
 
-    const hours =
-        Math.floor(
-            minutes / 60
-        );
+    const months = Math.floor(days / 30);
+    if (months < 12) return months + "mo ago";
 
-    if (hours < 24) {
-        return hours + "h ago";
-    }
-
-    const days =
-        Math.floor(
-            hours / 24
-        );
-
-    if (days < 30) {
-        return days + "d ago";
-    }
-
-    const months =
-        Math.floor(
-            days / 30
-        );
-
-    if (months < 12) {
-        return months + "mo ago";
-    }
-
-    return Math.floor(
-        months / 12
-    ) + "y ago";
+    return Math.floor(months / 12) + "y ago";
 
 }
 
@@ -431,49 +292,35 @@ function showToast(message) {
         return;
     }
 
-    toastText.textContent =
-        message;
-
+    toastText.textContent = message;
     toast.classList.add("show");
 
-    clearTimeout(
-        showToast.timer
-    );
+    clearTimeout(showToast.timer);
 
-    showToast.timer =
-        setTimeout(
-            function() {
-
-                toast.classList.remove(
-                    "show"
-                );
-
-            },
-            2800
-        );
+    showToast.timer = setTimeout(() => {
+        toast.classList.remove("show");
+    }, 2800);
 
 }
 
 
-function setAuthMessage(
-    message,
-    success = false
-) {
+function setAuthMessage(message, success = false) {
 
     if (!authMessage) {
         return;
     }
 
-    authMessage.textContent =
-        message;
+    authMessage.textContent = message;
 
     authMessage.style.color =
-        success
-            ? "#19a66b"
-            : "#ff4d67";
+        success ? "#19a66b" : "#ff4d67";
 
 }
 
+
+/* =========================================================
+   NOTIFICATIONS STORAGE
+   ========================================================= */
 
 function getStoredNotifications() {
 
@@ -485,16 +332,12 @@ function getStoredNotifications() {
 
         return JSON.parse(
             localStorage.getItem(
-                "gocat_notifications_" +
-                currentUser.id
-            ) ||
-            "[]"
+                "gocat_notifications_" + currentUser.id
+            ) || "[]"
         );
 
     } catch {
-
         return [];
-
     }
 
 }
@@ -507,56 +350,29 @@ function saveStoredNotifications() {
     }
 
     localStorage.setItem(
-        "gocat_notifications_" +
-        currentUser.id,
-        JSON.stringify(
-            notifications
-        )
+        "gocat_notifications_" + currentUser.id,
+        JSON.stringify(notifications)
     );
 
 }
 
 
-function addNotification(
-    icon,
-    text
-) {
+function addNotification(icon, text) {
 
     if (!currentUser) {
         return;
     }
 
     notifications.unshift({
-
-        id:
-            createId(),
-
-        icon:
-            icon,
-
-        text:
-            text,
-
-        createdAt:
-            Date.now()
-
+        id: createId(),
+        icon,
+        text,
+        createdAt: Date.now()
     });
 
-    if (
-        notifications.length >
-        100
-    ) {
-
-        notifications =
-            notifications.slice(
-                0,
-                100
-            );
-
-    }
+    notifications = notifications.slice(0, 100);
 
     saveStoredNotifications();
-
     renderNotifications();
 
 }
@@ -569,28 +385,17 @@ function addNotification(
 function hideGoCatLoader() {
 
     const loader =
-        document.getElementById(
-            "gocatLoadingScreen"
-        );
+        getElement("gocatLoadingScreen");
 
     if (!loader) {
         return;
     }
 
-    loader.classList.add(
-        "hide"
-    );
+    loader.classList.add("hide");
 
-    setTimeout(
-        function() {
-
-            if (loader.parentNode) {
-                loader.remove();
-            }
-
-        },
-        500
-    );
+    setTimeout(() => {
+        loader.remove();
+    }, 500);
 
 }
 
@@ -601,59 +406,32 @@ function hideGoCatLoader() {
 
 function showLoginScreen() {
 
-    authScreen.classList.remove(
-        "hidden"
-    );
+    authScreen.classList.remove("hidden");
+    app.classList.add("hidden");
 
-    app.classList.add(
-        "hidden"
-    );
+    loginForm.classList.remove("hidden");
+    registerForm.classList.add("hidden");
 
-    loginForm.classList.remove(
-        "hidden"
-    );
-
-    registerForm.classList.add(
-        "hidden"
-    );
-
-    authTitle.textContent =
-        "Welcome back";
-
+    authTitle.textContent = "Welcome back";
     authSubtitle.textContent =
         "Sign in to continue to GoCat";
 
     if (authLoginInput) {
-
-        authLoginInput.placeholder =
-            "Email";
-
+        authLoginInput.placeholder = "Email address";
     }
 
-    setAuthMessage(
-        ""
-    );
+    setAuthMessage("");
 
 }
 
 
 function showRegisterScreen() {
 
-    authScreen.classList.remove(
-        "hidden"
-    );
+    authScreen.classList.remove("hidden");
+    app.classList.add("hidden");
 
-    app.classList.add(
-        "hidden"
-    );
-
-    loginForm.classList.add(
-        "hidden"
-    );
-
-    registerForm.classList.remove(
-        "hidden"
-    );
+    loginForm.classList.add("hidden");
+    registerForm.classList.remove("hidden");
 
     authTitle.textContent =
         "Create your GoCat account";
@@ -661,45 +439,31 @@ function showRegisterScreen() {
     authSubtitle.textContent =
         "Join the GoCat community";
 
-    setAuthMessage(
-        ""
-    );
+    setAuthMessage("");
 
 }
 
 
 function showApp() {
 
-    authScreen.classList.add(
-        "hidden"
-    );
-
-    app.classList.remove(
-        "hidden"
-    );
+    authScreen.classList.add("hidden");
+    app.classList.remove("hidden");
 
 }
 
 
 /* =========================================================
-   GET CURRENT AUTH USER
+   SUPABASE AUTH USER
    ========================================================= */
 
 async function getAuthUser() {
 
     const result =
-        await supabaseClient
-            .auth
-            .getUser();
+        await supabaseClient.auth.getUser();
 
     if (result.error) {
-
-        console.error(
-            result.error
-        );
-
+        console.error(result.error);
         return null;
-
     }
 
     return result.data.user || null;
@@ -708,12 +472,10 @@ async function getAuthUser() {
 
 
 /* =========================================================
-   CREATE / ENSURE PROFILE
+   CREATE PROFILE IF MISSING
    ========================================================= */
 
-async function ensureProfile(
-    authUser
-) {
+async function ensureProfile(authUser) {
 
     if (!authUser) {
         return null;
@@ -723,56 +485,31 @@ async function ensureProfile(
         await supabaseClient
             .from("users")
             .select("*")
-            .eq(
-                "id",
-                authUser.id
-            )
+            .eq("id", authUser.id)
             .maybeSingle();
 
     if (existing.error) {
-
-        console.error(
-            existing.error
-        );
-
+        console.error(existing.error);
         return null;
-
     }
 
     if (existing.data) {
-
         return existing.data;
-
     }
 
     let username =
-        authUser
-            .user_metadata
-            ?.username ||
-        "gocat_user";
+        authUser.user_metadata?.username || "gocat_user";
 
-    username =
-        String(username)
-            .trim()
-            .replace(
-                /\s+/g,
-                "_"
-            )
-            .substring(
-                0,
-                20
-            );
+    username = String(username)
+        .trim()
+        .replace(/\s+/g, "_")
+        .substring(0, 20);
 
     if (!username) {
-
-        username =
-            "gocat_user";
-
+        username = "gocat_user";
     }
 
-    let attempt =
-        username;
-
+    let attempt = username;
     let counter = 1;
 
     while (true) {
@@ -781,36 +518,19 @@ async function ensureProfile(
             await supabaseClient
                 .from("users")
                 .select("id")
-                .eq(
-                    "username",
-                    attempt
-                )
+                .eq("username", attempt)
                 .maybeSingle();
 
-        if (
-            check.error
-        ) {
-
-            break;
-
-        }
-
-        if (!check.data) {
+        if (check.error || !check.data) {
             break;
         }
 
         counter++;
 
         attempt =
-            (
-                username
-                    .substring(
-                        0,
-                        16
-                    ) +
-                "_" +
-                counter
-            );
+            username.substring(0, 16) +
+            "_" +
+            counter;
 
     }
 
@@ -818,38 +538,19 @@ async function ensureProfile(
         await supabaseClient
             .from("users")
             .insert({
-
-                id:
-                    authUser.id,
-
-                username:
-                    attempt,
-
-                email:
-                    authUser.email ||
-                    "",
-
-                password_hash:
-                    null,
-
-                bio:
-                    "Welcome to my GoCat profile.",
-
-                created_at:
-                    Date.now()
-
+                id: authUser.id,
+                username: attempt,
+                email: authUser.email || "",
+                password_hash: null,
+                bio: "Welcome to my GoCat profile.",
+                created_at: Date.now()
             })
             .select("*")
             .single();
 
     if (insert.error) {
-
-        console.error(
-            insert.error
-        );
-
+        console.error(insert.error);
         return null;
-
     }
 
     return insert.data;
@@ -866,25 +567,16 @@ async function loadUsers() {
     const result =
         await supabaseClient
             .from("users")
-            .select(
-                "id,username,email,bio,created_at"
-            )
-            .order(
-                "created_at",
-                {
-                    ascending:
-                        false
-                }
-            );
+            .select("id,username,email,bio,created_at")
+            .order("created_at", {
+                ascending: false
+            });
 
     if (result.error) {
-
         throw result.error;
-
     }
 
-    users =
-        result.data || [];
+    users = result.data || [];
 
     return users;
 
@@ -906,199 +598,79 @@ async function loadVideos() {
         supabaseClient
             .from("videos")
             .select("*")
-            .order(
-                "created_at",
-                {
-                    ascending:
-                        false
-                }
-            ),
+            .order("created_at", {
+                ascending: false
+            }),
 
         supabaseClient
             .from("likes")
-            .select(
-                "video_id,user_id"
-            ),
+            .select("video_id,user_id"),
 
         supabaseClient
             .from("comments")
-            .select(
-                "id,video_id,user_id,text,created_at"
-            )
-            .order(
-                "created_at",
-                {
-                    ascending:
-                        true
-                }
-            )
+            .select("id,video_id,user_id,text,created_at")
+            .order("created_at", {
+                ascending: true
+            })
 
     ]);
 
-    if (
-        videoResult.error
-    ) {
+    if (videoResult.error) throw videoResult.error;
+    if (likeResult.error) throw likeResult.error;
+    if (commentResult.error) throw commentResult.error;
 
-        throw videoResult.error;
+    const likes = likeResult.data || [];
+    const comments = commentResult.data || [];
 
-    }
+    videos = (videoResult.data || []).map(video => {
 
-    if (
-        likeResult.error
-    ) {
+        const videoLikes =
+            likes
+                .filter(item => item.video_id === video.id)
+                .map(item => item.user_id);
 
-        throw likeResult.error;
+        const videoComments =
+            comments
+                .filter(item => item.video_id === video.id)
+                .map(item => {
 
-    }
+                    const commentUser =
+                        users.find(user => user.id === item.user_id);
 
-    if (
-        commentResult.error
-    ) {
+                    return {
+                        id: item.id,
+                        userId: item.user_id,
+                        username: commentUser
+                            ? commentUser.username
+                            : "Unknown",
+                        text: item.text,
+                        createdAt: item.created_at
+                    };
 
-        throw commentResult.error;
+                });
 
-    }
+        const publicUrl =
+            supabaseClient
+                .storage
+                .from(SUPABASE_BUCKET)
+                .getPublicUrl(video.storage_path)
+                .data.publicUrl;
 
-    const likes =
-        likeResult.data || [];
+        return {
+            id: video.id,
+            ownerId: video.owner_id,
+            title: video.title,
+            description: video.description || "",
+            topic: normalizeTopic(video.topic),
+            file: publicUrl,
+            storagePath: video.storage_path,
+            createdAt: video.created_at,
+            likes: videoLikes,
+            views: Number(video.views || 0),
+            comments: videoComments
+        };
 
-    const comments =
-        commentResult.data || [];
-
-    videos =
-        (
-            videoResult.data ||
-            []
-        ).map(
-            function(video) {
-
-                const videoLikes =
-                    likes
-                        .filter(
-                            function(item) {
-
-                                return (
-                                    item.video_id ===
-                                    video.id
-                                );
-
-                            }
-                        )
-                        .map(
-                            function(item) {
-
-                                return item.user_id;
-
-                            }
-                        );
-
-                const videoComments =
-                    comments
-                        .filter(
-                            function(item) {
-
-                                return (
-                                    item.video_id ===
-                                    video.id
-                                );
-
-                            }
-                        )
-                        .map(
-                            function(item) {
-
-                                const commentUser =
-                                    users.find(
-                                        function(user) {
-
-                                            return (
-                                                user.id ===
-                                                item.user_id
-                                            );
-
-                                        }
-                                    );
-
-                                return {
-
-                                    id:
-                                        item.id,
-
-                                    userId:
-                                        item.user_id,
-
-                                    username:
-                                        commentUser
-                                            ? commentUser.username
-                                            : "Unknown",
-
-                                    text:
-                                        item.text,
-
-                                    createdAt:
-                                        item.created_at
-
-                                };
-
-                            }
-                        );
-
-                const publicUrl =
-                    supabaseClient
-                        .storage
-                        .from(
-                            SUPABASE_BUCKET
-                        )
-                        .getPublicUrl(
-                            video.storage_path
-                        )
-                        .data
-                        .publicUrl;
-
-                return {
-
-                    id:
-                        video.id,
-
-                    ownerId:
-                        video.owner_id,
-
-                    title:
-                        video.title,
-
-                    description:
-                        video.description ||
-                        "",
-
-                    topic:
-                        normalizeTopic(
-                            video.topic
-                        ),
-
-                    file:
-                        publicUrl,
-
-                    storagePath:
-                        video.storage_path,
-
-                    createdAt:
-                        video.created_at,
-
-                    likes:
-                        videoLikes,
-
-                    views:
-                        Number(
-                            video.views || 0
-                        ),
-
-                    comments:
-                        videoComments
-
-                };
-
-            }
-        );
+    });
 
     return videos;
 
@@ -1106,60 +678,39 @@ async function loadVideos() {
 
 
 /* =========================================================
-   LOAD EVERYTHING
+   LOAD ALL DATA
    ========================================================= */
 
 async function loadAllData() {
 
     await loadUsers();
-
     await loadVideos();
 
 }
 
 
 /* =========================================================
-   CURRENT USER
+   CURRENT PROFILE
    ========================================================= */
 
 async function loadCurrentProfile() {
 
-    const authUser =
-        await getAuthUser();
+    const authUser = await getAuthUser();
 
     if (!authUser) {
-
         currentUser = null;
-
         return null;
-
     }
 
     let profile =
-        users.find(
-            function(user) {
-
-                return (
-                    user.id ===
-                    authUser.id
-                );
-
-            }
-        );
+        users.find(user => user.id === authUser.id);
 
     if (!profile) {
 
-        profile =
-            await ensureProfile(
-                authUser
-            );
+        profile = await ensureProfile(authUser);
 
         if (profile) {
-
-            users.push(
-                profile
-            );
-
+            users.push(profile);
         }
 
     }
@@ -1167,32 +718,13 @@ async function loadCurrentProfile() {
     if (!profile) {
 
         currentUser = {
-
-            id:
-                authUser.id,
-
-            username:
-                authUser
-                    .user_metadata
-                    ?.username ||
-                "GoCat User",
-
-            email:
-                authUser.email ||
-                "",
-
-            bio:
-                "",
-
-            followers:
-                [],
-
-            following:
-                [],
-
-            createdAt:
-                Date.now()
-
+            id: authUser.id,
+            username: authUser.user_metadata?.username || "GoCat User",
+            email: authUser.email || "",
+            bio: "",
+            followers: [],
+            following: [],
+            createdAt: Date.now()
         };
 
         return currentUser;
@@ -1202,86 +734,35 @@ async function loadCurrentProfile() {
     const followResult =
         await supabaseClient
             .from("follows")
-            .select(
-                "follower_id,following_id"
-            )
+            .select("follower_id,following_id")
             .or(
-                "follower_id.eq." +
-                profile.id +
-                ",following_id.eq." +
-                profile.id
+                "follower_id.eq." + profile.id +
+                ",following_id.eq." + profile.id
             );
 
-    const rows =
-        followResult.data || [];
+    const rows = followResult.data || [];
 
     const following =
         rows
-            .filter(
-                function(row) {
-
-                    return (
-                        row.follower_id ===
-                        profile.id
-                    );
-
-                }
-            )
-            .map(
-                function(row) {
-
-                    return row.following_id;
-
-                }
-            );
+            .filter(row => row.follower_id === profile.id)
+            .map(row => row.following_id);
 
     const followers =
         rows
-            .filter(
-                function(row) {
-
-                    return (
-                        row.following_id ===
-                        profile.id
-                    );
-
-                }
-            )
-            .map(
-                function(row) {
-
-                    return row.follower_id;
-
-                }
-            );
+            .filter(row => row.following_id === profile.id)
+            .map(row => row.follower_id);
 
     currentUser = {
-
-        id:
-            profile.id,
-
-        username:
-            profile.username,
-
-        email:
-            profile.email,
-
-        bio:
-            profile.bio || "",
-
-        followers:
-            followers,
-
-        following:
-            following,
-
-        createdAt:
-            profile.created_at
-
+        id: profile.id,
+        username: profile.username,
+        email: profile.email,
+        bio: profile.bio || "",
+        followers,
+        following,
+        createdAt: profile.created_at
     };
 
-    notifications =
-        getStoredNotifications();
+    notifications = getStoredNotifications();
 
     return currentUser;
 
@@ -1289,7 +770,7 @@ async function loadCurrentProfile() {
 
 
 /* =========================================================
-   UPDATE CURRENT USER UI
+   UPDATE USER UI
    ========================================================= */
 
 function updateUserUI() {
@@ -1298,304 +779,158 @@ function updateUserUI() {
         return;
     }
 
-    const initial =
-        getInitial(
-            currentUser.username
-        );
+    const initial = getInitial(currentUser.username);
 
-    const topAvatar =
-        document.getElementById(
-            "topAvatar"
-        );
-
-    const commentAvatar =
-        document.getElementById(
-            "commentAvatar"
-        );
-
-    const welcomeName =
-        document.getElementById(
-            "welcomeName"
-        );
+    const topAvatar = getElement("topAvatar");
+    const commentAvatar = getElement("commentAvatar");
+    const welcomeName = getElement("welcomeName");
 
     if (topAvatar) {
-
-        topAvatar.textContent =
-            initial;
-
+        topAvatar.textContent = initial;
     }
 
     if (commentAvatar) {
-
-        commentAvatar.textContent =
-            initial;
-
+        commentAvatar.textContent = initial;
     }
 
     if (welcomeName) {
-
-        welcomeName.textContent =
-            currentUser.username;
-
+        welcomeName.textContent = currentUser.username;
     }
 
 }
 
 
 /* =========================================================
-   PROFILE FOLLOW COUNTS
+   GET FOLLOW LISTS
    ========================================================= */
 
-async function getFollowLists(
-    userId
-) {
+async function getFollowLists(userId) {
 
     const result =
         await supabaseClient
             .from("follows")
-            .select(
-                "follower_id,following_id"
-            )
+            .select("follower_id,following_id")
             .or(
-                "follower_id.eq." +
-                userId +
-                ",following_id.eq." +
-                userId
+                "follower_id.eq." + userId +
+                ",following_id.eq." + userId
             );
 
     if (result.error) {
+        console.error(result.error);
 
         return {
-
-            followers:
-                [],
-
-            following:
-                []
-
+            followers: [],
+            following: []
         };
-
     }
 
-    const rows =
-        result.data || [];
+    const rows = result.data || [];
 
     return {
+        followers: rows
+            .filter(row => row.following_id === userId)
+            .map(row => row.follower_id),
 
-        followers:
-            rows
-                .filter(
-                    function(row) {
-
-                        return (
-                            row.following_id ===
-                            userId
-                        );
-
-                    }
-                )
-                .map(
-                    function(row) {
-
-                        return row.follower_id;
-
-                    }
-                ),
-
-        following:
-            rows
-                .filter(
-                    function(row) {
-
-                        return (
-                            row.follower_id ===
-                            userId
-                        );
-
-                    }
-                )
-                .map(
-                    function(row) {
-
-                        return row.following_id;
-
-                    }
-                )
-
+        following: rows
+            .filter(row => row.follower_id === userId)
+            .map(row => row.following_id)
     };
 
 }
 
 
 /* =========================================================
-   SHOW PAGE
+   PAGE NAVIGATION
    ========================================================= */
 
-function showPage(
-    page
-) {
+function showPage(page) {
 
-    currentPage =
-        page;
+    currentPage = page;
 
-    document
-        .querySelectorAll(
-            ".page"
-        )
-        .forEach(
-            function(section) {
+    document.querySelectorAll(".page").forEach(section => {
 
-                section.classList.toggle(
-                    "hidden",
-                    section.id !==
-                    "page-" + page
-                );
-
-            }
+        section.classList.toggle(
+            "hidden",
+            section.id !== "page-" + page
         );
 
-    document
-        .querySelectorAll(
-            ".nav-item"
-        )
-        .forEach(
-            function(button) {
+    });
 
-                button.classList.toggle(
-                    "active",
-                    button.dataset.page ===
-                    page
-                );
+    document.querySelectorAll(".nav-item").forEach(button => {
 
-            }
+        button.classList.toggle(
+            "active",
+            button.dataset.page === page
         );
 
-    if (
-        page ===
-        "home"
-    ) {
+    });
 
-        renderHome();
+    const sidebar =
+        document.querySelector(".sidebar");
 
+    if (sidebar && window.innerWidth <= 800) {
+        sidebar.classList.remove("open");
     }
 
-    if (
-        page ===
-        "explore"
-    ) {
+    if (page === "home") renderHome();
+    if (page === "explore") renderExplore();
+    if (page === "following") renderFollowing();
 
-        renderExplore();
+    if (page === "profile") {
 
-    }
-
-    if (
-        page ===
-        "following"
-    ) {
-
-        renderFollowing();
-
-    }
-
-    if (
-        page ===
-        "profile"
-    ) {
-
-        if (
-            !currentProfileUserId
-        ) {
-
-            currentProfileUserId =
-                currentUser
-                    ? currentUser.id
-                    : null;
-
+        if (!currentProfileUserId && currentUser) {
+            currentProfileUserId = currentUser.id;
         }
 
         renderProfile();
 
     }
 
-    if (
-        page ===
-        "notifications"
-    ) {
-
+    if (page === "notifications") {
         renderNotifications();
-
     }
 
 }
 
 
 /* =========================================================
-   FILTER VIDEO SEARCH
+   SEARCH
    ========================================================= */
 
 function getSearchValue() {
 
-    return (
-        searchInput
-            ? searchInput.value
-                .trim()
-                .toLowerCase()
-            : ""
-    );
+    return searchInput
+        ? searchInput.value.trim().toLowerCase()
+        : "";
 
 }
 
 
-function filterVideos(
-    list
-) {
+function filterVideos(list) {
 
-    const query =
-        getSearchValue();
+    const query = getSearchValue();
 
     if (!query) {
-
         return list;
-
     }
 
-    return list.filter(
-        function(video) {
+    return list.filter(video => {
 
-            const owner =
-                users.find(
-                    function(user) {
+        const owner =
+            users.find(user => user.id === video.ownerId);
 
-                        return (
-                            user.id ===
-                            video.ownerId
-                        );
+        const searchable = [
+            video.title,
+            video.description,
+            video.topic,
+            owner ? owner.username : ""
+        ]
+            .join(" ")
+            .toLowerCase();
 
-                    }
-                );
+        return searchable.includes(query);
 
-            const searchable = [
-
-                video.title,
-
-                video.description,
-
-                video.topic,
-
-                owner
-                    ? owner.username
-                    : ""
-
-            ]
-                .join(" ")
-                .toLowerCase();
-
-            return searchable.includes(
-                query
-            );
-
-        }
-    );
+    });
 
 }
 
@@ -1604,44 +939,26 @@ function filterVideos(
    CREATE VIDEO CARD
    ========================================================= */
 
-function createVideoCard(
-    video
-) {
+function createVideoCard(video) {
 
     const owner =
-        users.find(
-            function(user) {
-
-                return (
-                    user.id ===
-                    video.ownerId
-                );
-
-            }
-        );
+        users.find(user => user.id === video.ownerId);
 
     if (!owner) {
-
         return "";
-
     }
 
     const liked =
         currentUser &&
-        video.likes.includes(
-            currentUser.id
-        );
+        video.likes.includes(currentUser.id);
 
     const following =
         currentUser &&
-        currentUser.following.includes(
-            owner.id
-        );
+        currentUser.following.includes(owner.id);
 
     const mine =
         currentUser &&
-        currentUser.id ===
-        owner.id;
+        currentUser.id === owner.id;
 
     return `
 
@@ -1663,14 +980,11 @@ function createVideoCard(
 
             </div>
 
+
             <div class="video-owner">
 
                 <div class="owner-avatar">
-                    ${escapeHTML(
-                        getInitial(
-                            owner.username
-                        )
-                    )}
+                    ${escapeHTML(getInitial(owner.username))}
                 </div>
 
                 <div class="owner-name">
@@ -1679,14 +993,10 @@ function createVideoCard(
                         class="profile-user-btn"
                         data-user="${escapeHTML(owner.id)}"
                     >
-                        ${escapeHTML(
-                            owner.username
-                        )}
+                        ${escapeHTML(owner.username)}
                     </button>
 
-                    <span class="verified">
-                        ✓
-                    </span>
+                    <span class="verified">✓</span>
 
                 </div>
 
@@ -1694,16 +1004,12 @@ function createVideoCard(
                     !mine
                     ?
                     `
-                    <button
-                        class="follow-btn"
-                        data-follow="${escapeHTML(owner.id)}"
-                    >
-                        ${
-                            following
-                            ? "Following"
-                            : "Follow"
-                        }
-                    </button>
+                        <button
+                            class="follow-btn"
+                            data-follow="${escapeHTML(owner.id)}"
+                        >
+                            ${following ? "Following" : "Follow"}
+                        </button>
                     `
                     :
                     ""
@@ -1714,38 +1020,19 @@ function createVideoCard(
 
             <div class="video-info">
 
-                <h3>
-                    ${escapeHTML(
-                        video.title
-                    )}
-                </h3>
+                <h3>${escapeHTML(video.title)}</h3>
 
                 ${
                     video.description
                     ?
-                    `
-                    <p>
-                        ${escapeHTML(
-                            video.description
-                        )}
-                    </p>
-                    `
+                    `<p>${escapeHTML(video.description)}</p>`
                     :
                     ""
                 }
 
                 <div class="video-topic">
-
-                    ${topicEmoji(
-                        video.topic
-                    )}
-
-                    ${escapeHTML(
-                        normalizeTopic(
-                            video.topic
-                        )
-                    )}
-
+                    ${topicEmoji(video.topic)}
+                    ${escapeHTML(normalizeTopic(video.topic))}
                 </div>
 
             </div>
@@ -1753,18 +1040,9 @@ function createVideoCard(
 
             <div class="video-meta">
 
-                <span>
-                    👁
-                    ${Number(
-                        video.views || 0
-                    )}
-                </span>
+                <span>👁 ${Number(video.views || 0)}</span>
 
-                <span>
-                    ${formatDate(
-                        video.createdAt
-                    )}
-                </span>
+                <span>${formatDate(video.createdAt)}</span>
 
             </div>
 
@@ -1772,50 +1050,40 @@ function createVideoCard(
             <div class="video-actions">
 
                 <button
-                    class="action-btn ${
-                        liked
-                        ? "liked"
-                        : ""
-                    }"
+                    class="action-btn ${liked ? "liked" : ""}"
                     data-like="${escapeHTML(video.id)}"
+                    type="button"
                 >
-                    ❤️
-                    ${
-                        video.likes
-                            .length
-                    }
+                    ❤️ ${video.likes.length}
                 </button>
 
                 <button
                     class="action-btn"
                     data-comment="${escapeHTML(video.id)}"
+                    type="button"
                 >
-                    💬
-                    ${
-                        video.comments
-                            .length
-                    }
+                    💬 ${video.comments.length}
                 </button>
 
                 <button
                     class="action-btn"
                     data-share="${escapeHTML(video.id)}"
+                    type="button"
                 >
-                    ↗
-                    Share
+                    ↗ Share
                 </button>
 
                 ${
                     mine
                     ?
                     `
-                    <button
-                        class="action-btn delete-btn"
-                        data-delete="${escapeHTML(video.id)}"
-                    >
-                        🗑
-                        Delete
-                    </button>
+                        <button
+                            class="action-btn"
+                            data-delete="${escapeHTML(video.id)}"
+                            type="button"
+                        >
+                            🗑 Delete
+                        </button>
                     `
                     :
                     ""
@@ -1834,218 +1102,102 @@ function createVideoCard(
    ATTACH VIDEO EVENTS
    ========================================================= */
 
-function attachVideoEvents(
-    container
-) {
+function attachVideoEvents(container) {
 
     if (!container) {
         return;
     }
 
-    container
-        .querySelectorAll(
-            "[data-like]"
-        )
-        .forEach(
-            function(button) {
+    container.querySelectorAll("[data-like]").forEach(button => {
 
-                button.addEventListener(
-                    "click",
-                    function() {
+        button.addEventListener("click", () => {
+            toggleLike(button.dataset.like);
+        });
 
-                        toggleLike(
-                            button.dataset.like
-                        );
+    });
 
-                    }
-                );
+    container.querySelectorAll("[data-comment]").forEach(button => {
 
-            }
+        button.addEventListener("click", () => {
+            openComments(button.dataset.comment);
+        });
+
+    });
+
+    container.querySelectorAll("[data-share]").forEach(button => {
+
+        button.addEventListener("click", () => {
+            shareVideo(button.dataset.share);
+        });
+
+    });
+
+    container.querySelectorAll("[data-follow]").forEach(button => {
+
+        button.addEventListener("click", () => {
+            toggleFollow(button.dataset.follow);
+        });
+
+    });
+
+    container.querySelectorAll("[data-delete]").forEach(button => {
+
+        button.addEventListener("click", () => {
+            deleteVideo(button.dataset.delete);
+        });
+
+    });
+
+    container.querySelectorAll(".profile-user-btn").forEach(button => {
+
+        button.addEventListener("click", () => {
+            showUserProfile(button.dataset.user);
+        });
+
+    });
+
+    container.querySelectorAll("[data-view]").forEach(videoElement => {
+
+        videoElement.addEventListener(
+            "play",
+            () => {
+                registerVideoView(videoElement.dataset.view);
+            },
+            { once: true }
         );
 
-    container
-        .querySelectorAll(
-            "[data-comment]"
-        )
-        .forEach(
-            function(button) {
-
-                button.addEventListener(
-                    "click",
-                    function() {
-
-                        openComments(
-                            button.dataset.comment
-                        );
-
-                    }
-                );
-
-            }
-        );
-
-    container
-        .querySelectorAll(
-            "[data-share]"
-        )
-        .forEach(
-            function(button) {
-
-                button.addEventListener(
-                    "click",
-                    function() {
-
-                        shareVideo(
-                            button.dataset.share
-                        );
-
-                    }
-                );
-
-            }
-        );
-
-    container
-        .querySelectorAll(
-            "[data-follow]"
-        )
-        .forEach(
-            function(button) {
-
-                button.addEventListener(
-                    "click",
-                    function() {
-
-                        toggleFollow(
-                            button.dataset.follow
-                        );
-
-                    }
-                );
-
-            }
-        );
-
-    container
-        .querySelectorAll(
-            "[data-delete]"
-        )
-        .forEach(
-            function(button) {
-
-                button.addEventListener(
-                    "click",
-                    function() {
-
-                        deleteVideo(
-                            button.dataset.delete
-                        );
-
-                    }
-                );
-
-            }
-        );
-
-    container
-        .querySelectorAll(
-            ".profile-user-btn"
-        )
-        .forEach(
-            function(button) {
-
-                button.addEventListener(
-                    "click",
-                    function() {
-
-                        showUserProfile(
-                            button.dataset.user
-                        );
-
-                    }
-                );
-
-            }
-        );
-
-    container
-        .querySelectorAll(
-            "[data-view]"
-        )
-        .forEach(
-            function(videoElement) {
-
-                videoElement.addEventListener(
-                    "play",
-                    function() {
-
-                        registerVideoView(
-                            videoElement.dataset.view
-                        );
-
-                    },
-                    {
-                        once:
-                            true
-                    }
-                );
-
-            }
-        );
+    });
 
 }
 
 
 /* =========================================================
-   REGISTER VIDEO VIEW
+   VIDEO VIEWS
    ========================================================= */
 
-async function registerVideoView(
-    videoId
-) {
+async function registerVideoView(videoId) {
 
     const video =
-        videos.find(
-            function(item) {
+        videos.find(item => item.id === videoId);
 
-                return (
-                    item.id ===
-                    videoId
-                );
-
-            }
-        );
-
-    if (!video) {
+    if (!video || video._viewed) {
         return;
     }
 
-    if (
-        video._viewed
-    ) {
-        return;
-    }
-
-    video._viewed =
-        true;
+    video._viewed = true;
 
     video.views =
-        Number(
-            video.views || 0
-        ) + 1;
+        Number(video.views || 0) + 1;
 
-    await supabaseClient
-        .from("videos")
-        .update({
+    const result =
+        await supabaseClient
+            .from("videos")
+            .update({ views: video.views })
+            .eq("id", video.id);
 
-            views:
-                video.views
-
-        })
-        .eq(
-            "id",
-            video.id
-        );
+    if (result.error) {
+        console.error(result.error);
+    }
 
 }
 
@@ -2060,70 +1212,47 @@ function renderHome() {
         return;
     }
 
-    let list =
-        videos.slice();
+    let list = videos.slice();
 
-    if (
-        activeHomeTopic !==
-        "All"
-    ) {
+    if (activeHomeTopic !== "All") {
 
-        list =
-            list.filter(
-                function(video) {
-
-                    return (
-                        normalizeTopic(
-                            video.topic
-                        ) ===
-                        activeHomeTopic
-                    );
-
-                }
-            );
+        list = list.filter(video => {
+            return normalizeTopic(video.topic) === activeHomeTopic;
+        });
 
     }
 
-    list =
-        filterVideos(
-            list
-        );
+    list = filterVideos(list);
 
-    homeFeed.innerHTML =
-        list.length
-        ?
-        list
-            .map(
-                createVideoCard
-            )
-            .join("")
-        :
-        `
+    homeFeed.innerHTML = list.length
+        ? list.map(createVideoCard).join("")
+        : `
             <div class="empty-state">
 
                 <div>🎬</div>
 
                 <h2>
-                    ${
-                        activeHomeTopic !==
-                        "All"
-                        ?
-                        "No videos in this topic yet"
-                        :
-                        "No videos yet"
-                    }
+                    ${activeHomeTopic !== "All"
+                        ? "No videos in this topic yet"
+                        : "No videos yet"}
                 </h2>
 
                 <p>
                     Upload a video and start your GoCat profile.
                 </p>
 
+                <button class="main-btn upload-trigger" type="button">
+                    Upload Video
+                </button>
+
             </div>
         `;
 
-    attachVideoEvents(
-        homeFeed
-    );
+    attachVideoEvents(homeFeed);
+
+    homeFeed.querySelectorAll(".upload-trigger").forEach(button => {
+        button.addEventListener("click", openUploadModal);
+    });
 
     renderSuggestedCreators();
 
@@ -2136,198 +1265,103 @@ function renderHome() {
 
 function renderSuggestedCreators() {
 
-    if (!suggestedCreators) {
+    if (!suggestedCreators || !currentUser) {
         return;
-    }
-
-    if (!currentUser) {
-
-        suggestedCreators.innerHTML =
-            "";
-
-        return;
-
     }
 
     const candidates =
         users
-            .filter(
-                function(user) {
-
-                    return (
-                        user.id !==
-                        currentUser.id &&
-                        !currentUser.following
-                            .includes(
-                                user.id
-                            )
-                    );
-
-                }
-            )
-            .filter(
-                function(user) {
-
-                    return videos.some(
-                        function(video) {
-
-                            return (
-                                video.ownerId ===
-                                user.id
-                            );
-
-                        }
-                    );
-
-                }
-            )
-            .slice(
-                0,
-                6
-            );
+            .filter(user => {
+                return (
+                    user.id !== currentUser.id &&
+                    !currentUser.following.includes(user.id)
+                );
+            })
+            .filter(user => {
+                return videos.some(video => video.ownerId === user.id);
+            })
+            .slice(0, 8);
 
     if (!candidates.length) {
 
-        suggestedCreators.innerHTML =
-            `
-                <div class="empty-state">
+        suggestedCreators.innerHTML = `
+            <div class="empty-state suggested-empty">
 
-                    <div>👥</div>
+                <div>👥</div>
 
-                    <h2>
-                        You're all caught up
-                    </h2>
+                <h2>You're all caught up</h2>
 
-                    <p>
-                        Explore GoCat to find more creators.
-                    </p>
+                <p>Explore GoCat to find more creators.</p>
 
-                </div>
-            `;
+            </div>
+        `;
 
         return;
-
     }
 
     suggestedCreators.innerHTML =
-        candidates
-            .map(
-                function(user) {
+        candidates.map(user => {
 
-                    const followed =
-                        currentUser
-                            .following
-                            .includes(
-                                user.id
-                            );
+            const videoCount =
+                videos.filter(video => video.ownerId === user.id).length;
 
-                    return `
+            return `
 
-                        <div
-                            class="suggested-creator"
-                        >
+                <div class="suggested-creator">
 
-                            <button
-                                class="suggested-avatar"
-                                data-suggested-profile="${escapeHTML(user.id)}"
-                            >
-                                ${escapeHTML(
-                                    getInitial(
-                                        user.username
-                                    )
-                                )}
-                            </button>
+                    <button
+                        class="suggested-avatar"
+                        data-suggested-profile="${escapeHTML(user.id)}"
+                        type="button"
+                    >
+                        ${escapeHTML(getInitial(user.username))}
+                    </button>
 
-                            <div
-                                class="suggested-info"
-                            >
+                    <div class="suggested-info">
 
-                                <strong>
-                                    ${escapeHTML(
-                                        user.username
-                                    )}
-                                </strong>
+                        <strong>
+                            ${escapeHTML(user.username)}
+                        </strong>
 
-                                <span>
-                                    ${
-                                        videos.filter(
-                                            function(video) {
+                        <span>
+                            ${videoCount} videos
+                        </span>
 
-                                                return (
-                                                    video.ownerId ===
-                                                    user.id
-                                                );
+                    </div>
 
-                                            }
-                                        ).length
-                                    }
-                                    videos
-                                </span>
+                    <button
+                        class="follow-btn"
+                        data-suggested-follow="${escapeHTML(user.id)}"
+                        type="button"
+                    >
+                        Follow
+                    </button>
 
-                            </div>
+                </div>
 
-                            <button
-                                class="follow-btn"
-                                data-suggested-follow="${escapeHTML(user.id)}"
-                            >
-                                ${
-                                    followed
-                                    ? "Following"
-                                    : "Follow"
-                                }
-                            </button>
+            `;
 
-                        </div>
-
-                    `;
-
-                }
-            )
-            .join("");
+        }).join("");
 
     suggestedCreators
-        .querySelectorAll(
-            "[data-suggested-follow]"
-        )
-        .forEach(
-            function(button) {
+        .querySelectorAll("[data-suggested-follow]")
+        .forEach(button => {
 
-                button.addEventListener(
-                    "click",
-                    function() {
+            button.addEventListener("click", () => {
+                toggleFollow(button.dataset.suggestedFollow);
+            });
 
-                        toggleFollow(
-                            button.dataset
-                                .suggestedFollow
-                        );
-
-                    }
-                );
-
-            }
-        );
+        });
 
     suggestedCreators
-        .querySelectorAll(
-            "[data-suggested-profile]"
-        )
-        .forEach(
-            function(button) {
+        .querySelectorAll("[data-suggested-profile]")
+        .forEach(button => {
 
-                button.addEventListener(
-                    "click",
-                    function() {
+            button.addEventListener("click", () => {
+                showUserProfile(button.dataset.suggestedProfile);
+            });
 
-                        showUserProfile(
-                            button.dataset
-                                .suggestedProfile
-                        );
-
-                    }
-                );
-
-            }
-        );
+        });
 
 }
 
@@ -2338,60 +1372,28 @@ function renderSuggestedCreators() {
 
 function renderFollowing() {
 
-    if (!followingFeed) {
-        return;
-    }
-
-    if (!currentUser) {
+    if (!followingFeed || !currentUser) {
         return;
     }
 
     let list =
-        videos.filter(
-            function(video) {
+        videos.filter(video => {
+            return currentUser.following.includes(video.ownerId);
+        });
 
-                return currentUser
-                    .following
-                    .includes(
-                        video.ownerId
-                    );
+    list = filterVideos(list);
 
-            }
-        );
-
-    list =
-        filterVideos(
-            list
-        );
-
-    followingFeed.innerHTML =
-        list.length
-        ?
-        list
-            .map(
-                createVideoCard
-            )
-            .join("")
-        :
-        `
+    followingFeed.innerHTML = list.length
+        ? list.map(createVideoCard).join("")
+        : `
             <div class="empty-state">
-
                 <div>👥</div>
-
-                <h2>
-                    You're not following anyone yet
-                </h2>
-
-                <p>
-                    Visit Explore and follow some creators.
-                </p>
-
+                <h2>You're not following anyone yet</h2>
+                <p>Visit Explore and follow some creators.</p>
             </div>
         `;
 
-    attachVideoEvents(
-        followingFeed
-    );
+    attachVideoEvents(followingFeed);
 
 }
 
@@ -2402,244 +1404,123 @@ function renderFollowing() {
 
 function renderExplore() {
 
-    if (
-        !exploreVideos ||
-        !explorePeople
-    ) {
+    if (!exploreVideos || !explorePeople) {
         return;
     }
 
-    if (
-        exploreMode ===
-        "people"
-    ) {
+    if (exploreMode === "people") {
 
-        exploreVideos.classList.add(
-            "hidden"
-        );
-
-        explorePeople.classList.remove(
-            "hidden"
-        );
+        exploreVideos.classList.add("hidden");
+        explorePeople.classList.remove("hidden");
 
         renderExplorePeople();
 
         return;
-
     }
 
-    exploreVideos.classList.remove(
-        "hidden"
-    );
+    exploreVideos.classList.remove("hidden");
+    explorePeople.classList.add("hidden");
 
-    explorePeople.classList.add(
-        "hidden"
-    );
+    const list = filterVideos(videos);
 
-    let list =
-        filterVideos(
-            videos
-        );
-
-    exploreVideos.innerHTML =
-        list.length
-        ?
-        list
-            .map(
-                createVideoCard
-            )
-            .join("")
-        :
-        `
+    exploreVideos.innerHTML = list.length
+        ? list.map(createVideoCard).join("")
+        : `
             <div class="empty-state">
-
                 <div>🔎</div>
-
-                <h2>
-                    Nothing found
-                </h2>
-
-                <p>
-                    Try another search.
-                </p>
-
+                <h2>Nothing found</h2>
+                <p>Try another search.</p>
             </div>
         `;
 
-    attachVideoEvents(
-        exploreVideos
-    );
+    attachVideoEvents(exploreVideos);
 
 }
 
 
 function renderExplorePeople() {
 
-    const query =
-        getSearchValue();
+    const query = getSearchValue();
 
-    let people =
-        users.filter(
-            function(user) {
+    const people = users.filter(user => {
 
-                if (!query) {
-                    return true;
-                }
+        if (!query) {
+            return true;
+        }
 
-                return (
-                    user.username
-                        .toLowerCase()
-                        .includes(
-                            query
-                        )
-                );
+        return user.username
+            .toLowerCase()
+            .includes(query);
 
-            }
-        );
+    });
 
     explorePeople.innerHTML =
-        people.length
-        ?
-        people
-            .map(
-                function(user) {
+        people.map(user => {
 
-                    if (
-                        currentUser &&
-                        user.id ===
-                        currentUser.id
-                    ) {
+            if (currentUser && user.id === currentUser.id) {
+                return "";
+            }
 
-                        return "";
+            const followed =
+                currentUser &&
+                currentUser.following.includes(user.id);
 
-                    }
+            const videoCount =
+                videos.filter(video => video.ownerId === user.id).length;
 
-                    const followed =
-                        currentUser &&
-                        currentUser.following
-                            .includes(
-                                user.id
-                            );
+            return `
 
-                    const videoCount =
-                        videos.filter(
-                            function(video) {
+                <div class="person-card">
 
-                                return (
-                                    video.ownerId ===
-                                    user.id
-                                );
+                    <div class="person-avatar">
+                        ${escapeHTML(getInitial(user.username))}
+                    </div>
 
-                            }
-                        ).length;
+                    <h3>${escapeHTML(user.username)}</h3>
 
-                    return `
+                    <p>${videoCount} videos</p>
 
-                        <div
-                            class="person-card"
-                        >
+                    <button
+                        class="outline-btn person-view-btn"
+                        data-person="${escapeHTML(user.id)}"
+                        type="button"
+                    >
+                        View Profile
+                    </button>
 
-                            <div
-                                class="person-avatar"
-                            >
-                                ${escapeHTML(
-                                    getInitial(
-                                        user.username
-                                    )
-                                )}
-                            </div>
+                    <button
+                        class="main-btn person-follow-btn"
+                        data-person-follow="${escapeHTML(user.id)}"
+                        type="button"
+                    >
+                        ${followed ? "Following" : "Follow"}
+                    </button>
 
-                            <h3>
-                                ${escapeHTML(
-                                    user.username
-                                )}
-                            </h3>
+                </div>
 
-                            <p>
-                                ${videoCount}
-                                videos
-                            </p>
+            `;
 
-                            <button
-                                class="outline-btn person-view-btn"
-                                data-person="${escapeHTML(user.id)}"
-                            >
-                                View Profile
-                            </button>
-
-                            <button
-                                class="main-btn person-follow-btn"
-                                data-person-follow="${escapeHTML(user.id)}"
-                            >
-                                ${
-                                    followed
-                                    ? "Following"
-                                    : "Follow"
-                                }
-                            </button>
-
-                        </div>
-
-                    `;
-
-                }
-            )
-            .join("")
-        :
-        `
-            <div class="empty-state">
-
-                <div>👤</div>
-
-                <h2>
-                    No creators found
-                </h2>
-
-            </div>
-        `;
+        }).join("");
 
     explorePeople
-        .querySelectorAll(
-            "[data-person]"
-        )
-        .forEach(
-            function(button) {
+        .querySelectorAll("[data-person]")
+        .forEach(button => {
 
-                button.addEventListener(
-                    "click",
-                    function() {
+            button.addEventListener("click", () => {
+                showUserProfile(button.dataset.person);
+            });
 
-                        showUserProfile(
-                            button.dataset.person
-                        );
-
-                    }
-                );
-
-            }
-        );
+        });
 
     explorePeople
-        .querySelectorAll(
-            "[data-person-follow]"
-        )
-        .forEach(
-            function(button) {
+        .querySelectorAll("[data-person-follow]")
+        .forEach(button => {
 
-                button.addEventListener(
-                    "click",
-                    function() {
+            button.addEventListener("click", () => {
+                toggleFollow(button.dataset.personFollow);
+            });
 
-                        toggleFollow(
-                            button.dataset
-                                .personFollow
-                        );
-
-                    }
-                );
-
-            }
-        );
+        });
 
 }
 
@@ -2655,308 +1536,161 @@ async function renderProfile() {
     }
 
     const userId =
-        currentProfileUserId ||
-        currentUser.id;
+        currentProfileUserId || currentUser.id;
 
     const user =
-        users.find(
-            function(item) {
-
-                return (
-                    item.id ===
-                    userId
-                );
-
-            }
-        );
+        users.find(item => item.id === userId);
 
     if (!user) {
         return;
     }
 
     const ownProfile =
-        user.id ===
-        currentUser.id;
+        user.id === currentUser.id;
 
     const follows =
-        await getFollowLists(
-            user.id
-        );
+        await getFollowLists(user.id);
 
     const userVideos =
-        videos.filter(
-            function(video) {
+        videos.filter(video => video.ownerId === user.id);
 
-                return (
-                    video.ownerId ===
-                    user.id
-                );
-
-            }
-        );
-
-    document.getElementById(
-        "profileUsername"
-    ).textContent =
+    getElement("profileUsername").textContent =
         user.username;
 
-    document.getElementById(
-        "profileEmail"
-    ).textContent =
+    getElement("profileEmail").textContent =
         ownProfile
-        ? user.email
-        : "GoCat creator";
+            ? user.email
+            : "GoCat creator";
 
-    document.getElementById(
-        "profileBio"
-    ).textContent =
-        user.bio ||
-        "No bio yet.";
+    getElement("profileBio").textContent =
+        user.bio || "No bio yet.";
 
-    document.getElementById(
-        "profileAvatar"
-    ).textContent =
-        getInitial(
-            user.username
-        );
+    getElement("profileAvatar").textContent =
+        getInitial(user.username);
 
-    document.getElementById(
-        "postCount"
-    ).textContent =
+    getElement("postCount").textContent =
         userVideos.length;
 
-    document.getElementById(
-        "followersCount"
-    ).textContent =
+    getElement("followersCount").textContent =
         follows.followers.length;
 
-    document.getElementById(
-        "followingCount"
-    ).textContent =
+    getElement("followingCount").textContent =
         follows.following.length;
 
-    document.getElementById(
-        "profileVideosTitle"
-    ).textContent =
+    getElement("profileVideosTitle").textContent =
         ownProfile
-        ? "Your Videos"
-        : user.username +
-          "'s Videos";
+            ? "Your Videos"
+            : user.username + "'s Videos";
 
     const profileButton =
-        document.getElementById(
-            "editProfileBtn"
-        );
+        getElement("editProfileBtn");
 
     if (ownProfile) {
 
-        profileButton.textContent =
-            "✎ Edit Profile";
+        profileButton.textContent = "✎ Edit Profile";
 
-        profileButton.onclick =
-            function() {
+        profileButton.onclick = () => {
 
-                editUsername.value =
-                    currentUser.username;
+            editUsername.value = currentUser.username;
+            editBio.value = currentUser.bio;
 
-                editBio.value =
-                    currentUser.bio;
+            editModal.classList.remove("hidden");
 
-                editModal.classList.remove(
-                    "hidden"
-                );
-
-            };
+        };
 
     } else {
 
         const following =
-            currentUser.following
-                .includes(
-                    user.id
-                );
+            currentUser.following.includes(user.id);
 
         profileButton.textContent =
-            following
-            ? "✓ Following"
-            : "+ Follow";
+            following ? "✓ Following" : "+ Follow";
 
-        profileButton.onclick =
-            function() {
-
-                toggleFollow(
-                    user.id
-                );
-
-            };
+        profileButton.onclick = () => {
+            toggleFollow(user.id);
+        };
 
     }
 
     const profileUpload =
-        document.getElementById(
-            "profileUploadBtn"
-        );
+        getElement("profileUploadBtn");
 
-    if (ownProfile) {
+    profileUpload.classList.toggle(
+        "hidden",
+        !ownProfile
+    );
 
-        profileUpload.classList.remove(
-            "hidden"
-        );
-
-    } else {
-
-        profileUpload.classList.add(
-            "hidden"
-        );
-
-    }
-
-    profileVideos.innerHTML =
-        userVideos.length
-        ?
-        userVideos
-            .sort(
-                function(a, b) {
-
-                    return (
-                        b.createdAt -
-                        a.createdAt
-                    );
-
-                }
-            )
-            .map(
-                createVideoCard
-            )
+    profileVideos.innerHTML = userVideos.length
+        ? userVideos
+            .slice()
+            .sort((a,b) => Number(b.createdAt) - Number(a.createdAt))
+            .map(createVideoCard)
             .join("")
-        :
-        `
+        : `
             <div class="empty-state">
-
                 <div>🎬</div>
-
-                <h2>
-                    No videos yet
-                </h2>
-
+                <h2>No videos yet</h2>
                 <p>
-                    ${
-                        ownProfile
+                    ${ownProfile
                         ? "Upload your first video."
-                        : "This creator hasn't uploaded anything yet."
-                    }
+                        : "This creator hasn't uploaded anything yet."}
                 </p>
-
             </div>
         `;
 
-    attachVideoEvents(
-        profileVideos
-    );
+    attachVideoEvents(profileVideos);
 
 }
 
 
 /* =========================================================
-   SHOW USER PROFILE
+   SHOW CREATOR PROFILE
    ========================================================= */
 
-function showUserProfile(
-    userId
-) {
+function showUserProfile(userId) {
 
-    currentProfileUserId =
-        userId;
+    currentProfileUserId = userId;
 
-    showPage(
-        "profile"
-    );
+    showPage("profile");
 
 }
 
 
 /* =========================================================
-   TOGGLE FOLLOW
+   FOLLOW / UNFOLLOW
    ========================================================= */
 
-async function toggleFollow(
-    userId
-) {
+async function toggleFollow(userId) {
 
     if (!currentUser) {
-
         showLoginScreen();
-
         return;
-
     }
 
-    if (
-        userId ===
-        currentUser.id
-    ) {
-
-        showToast(
-            "You cannot follow yourself."
-        );
-
+    if (userId === currentUser.id) {
+        showToast("You cannot follow yourself.");
         return;
-
     }
 
     const alreadyFollowing =
-        currentUser.following
-            .includes(
-                userId
-            );
+        currentUser.following.includes(userId);
 
     try {
 
-        if (
-            alreadyFollowing
-        ) {
+        if (alreadyFollowing) {
 
             const result =
                 await supabaseClient
                     .from("follows")
                     .delete()
-                    .eq(
-                        "follower_id",
-                        currentUser.id
-                    )
-                    .eq(
-                        "following_id",
-                        userId
-                    );
+                    .eq("follower_id", currentUser.id)
+                    .eq("following_id", userId);
 
-            if (
-                result.error
-            ) {
-
+            if (result.error) {
                 throw result.error;
-
             }
 
-            const target =
-                users.find(
-                    function(user) {
-
-                        return (
-                            user.id ===
-                            userId
-                        );
-
-                    }
-                );
-
-            showToast(
-                "Unfollowed " +
-                (
-                    target
-                    ? target.username
-                    : "creator"
-                )
-            );
+            showToast("Unfollowed creator.");
 
         } else {
 
@@ -2964,79 +1698,39 @@ async function toggleFollow(
                 await supabaseClient
                     .from("follows")
                     .insert({
-
-                        follower_id:
-                            currentUser.id,
-
-                        following_id:
-                            userId
-
+                        follower_id: currentUser.id,
+                        following_id: userId
                     });
 
-            if (
-                result.error
-            ) {
-
+            if (result.error) {
                 throw result.error;
-
             }
 
             const target =
-                users.find(
-                    function(user) {
-
-                        return (
-                            user.id ===
-                            userId
-                        );
-
-                    }
-                );
+                users.find(user => user.id === userId);
 
             addNotification(
                 "👥",
-                (
-                    target
-                    ? target.username
-                    : "A creator"
-                ) +
-                " is now followed by you."
+                "You are now following " +
+                (target ? target.username : "a creator") + "."
             );
 
-            showToast(
-                "Following " +
-                (
-                    target
-                    ? target.username
-                    : "creator"
-                )
-            );
+            showToast("Following creator!");
 
         }
 
+        await loadAllData();
         await loadCurrentProfile();
 
-        await loadAllData();
-
         renderHome();
-
         renderFollowing();
-
         renderExplore();
-
-        renderSuggestedCreators();
-
         renderProfile();
 
     } catch (error) {
 
-        console.error(
-            error
-        );
-
-        showToast(
-            "Could not update follow."
-        );
+        console.error(error);
+        showToast("Could not update follow.");
 
     }
 
@@ -3044,41 +1738,25 @@ async function toggleFollow(
 
 
 /* =========================================================
-   TOGGLE LIKE
+   LIKE / UNLIKE
    ========================================================= */
 
-async function toggleLike(
-    videoId
-) {
+async function toggleLike(videoId) {
 
     if (!currentUser) {
-
         showLoginScreen();
-
         return;
-
     }
 
     const video =
-        videos.find(
-            function(item) {
-
-                return (
-                    item.id ===
-                    videoId
-                );
-
-            }
-        );
+        videos.find(item => item.id === videoId);
 
     if (!video) {
         return;
     }
 
     const liked =
-        video.likes.includes(
-            currentUser.id
-        );
+        video.likes.includes(currentUser.id);
 
     try {
 
@@ -3088,34 +1766,15 @@ async function toggleLike(
                 await supabaseClient
                     .from("likes")
                     .delete()
-                    .eq(
-                        "video_id",
-                        videoId
-                    )
-                    .eq(
-                        "user_id",
-                        currentUser.id
-                    );
+                    .eq("video_id", videoId)
+                    .eq("user_id", currentUser.id);
 
-            if (
-                result.error
-            ) {
-
+            if (result.error) {
                 throw result.error;
-
             }
 
             video.likes =
-                video.likes.filter(
-                    function(id) {
-
-                        return (
-                            id !==
-                            currentUser.id
-                        );
-
-                    }
-                );
+                video.likes.filter(id => id !== currentUser.id);
 
         } else {
 
@@ -3123,46 +1782,27 @@ async function toggleLike(
                 await supabaseClient
                     .from("likes")
                     .insert({
-
-                        video_id:
-                            videoId,
-
-                        user_id:
-                            currentUser.id
-
+                        video_id: videoId,
+                        user_id: currentUser.id
                     });
 
-            if (
-                result.error
-            ) {
-
+            if (result.error) {
                 throw result.error;
-
             }
 
-            video.likes.push(
-                currentUser.id
-            );
+            video.likes.push(currentUser.id);
 
         }
 
         renderHome();
-
         renderFollowing();
-
         renderExplore();
-
         renderProfile();
 
     } catch (error) {
 
-        console.error(
-            error
-        );
-
-        showToast(
-            "Could not update like."
-        );
+        console.error(error);
+        showToast("Could not update like.");
 
     }
 
@@ -3173,76 +1813,45 @@ async function toggleLike(
    SHARE VIDEO
    ========================================================= */
 
-async function shareVideo(
-    videoId
-) {
+async function shareVideo(videoId) {
 
     const video =
-        videos.find(
-            function(item) {
-
-                return (
-                    item.id ===
-                    videoId
-                );
-
-            }
-        );
+        videos.find(item => item.id === videoId);
 
     if (!video) {
         return;
     }
 
-    const shareUrl =
-        video.file;
+    const shareUrl = video.file;
 
     const shareText =
-        "Check out " +
-        video.title +
-        " on GoCat!";
+        "Check out " + video.title + " on GoCat!";
 
-    if (
-        navigator.share
-    ) {
+    if (navigator.share) {
 
         try {
 
             await navigator.share({
-
-                title:
-                    video.title,
-
-                text:
-                    shareText,
-
-                url:
-                    shareUrl
-
+                title: video.title,
+                text: shareText,
+                url: shareUrl
             });
 
         } catch {
-
+            // User cancelled the share window.
         }
 
         return;
-
     }
 
     try {
 
-        await navigator.clipboard.writeText(
-            shareUrl
-        );
-
-        showToast(
-            "Video link copied!"
-        );
+        await navigator.clipboard.writeText(shareUrl);
+        showToast("Video link copied!");
 
     } catch {
 
-        showToast(
-            "Could not copy video link."
-        );
+        showToast("Could not copy video link.");
 
     }
 
@@ -3253,49 +1862,21 @@ async function shareVideo(
    DELETE VIDEO
    ========================================================= */
 
-async function deleteVideo(
-    videoId
-) {
+async function deleteVideo(videoId) {
 
     if (!currentUser) {
         return;
     }
 
     const video =
-        videos.find(
-            function(item) {
+        videos.find(item => item.id === videoId);
 
-                return (
-                    item.id ===
-                    videoId
-                );
-
-            }
-        );
-
-    if (!video) {
+    if (!video || video.ownerId !== currentUser.id) {
+        showToast("You can only delete your own videos.");
         return;
     }
 
-    if (
-        video.ownerId !==
-        currentUser.id
-    ) {
-
-        showToast(
-            "You can only delete your own videos."
-        );
-
-        return;
-
-    }
-
-    const confirmed =
-        window.confirm(
-            "Delete this video from GoCat?"
-        );
-
-    if (!confirmed) {
+    if (!window.confirm("Delete this video from GoCat?")) {
         return;
     }
 
@@ -3304,73 +1885,37 @@ async function deleteVideo(
         const storageResult =
             await supabaseClient
                 .storage
-                .from(
-                    SUPABASE_BUCKET
-                )
-                .remove([
-                    video.storagePath
-                ]);
+                .from(SUPABASE_BUCKET)
+                .remove([video.storagePath]);
 
-        if (
-            storageResult.error
-        ) {
-
-            console.warn(
-                storageResult.error
-            );
-
+        if (storageResult.error) {
+            console.warn(storageResult.error);
         }
 
         const dbResult =
             await supabaseClient
                 .from("videos")
                 .delete()
-                .eq(
-                    "id",
-                    videoId
-                );
+                .eq("id", videoId);
 
-        if (
-            dbResult.error
-        ) {
-
+        if (dbResult.error) {
             throw dbResult.error;
-
         }
 
         videos =
-            videos.filter(
-                function(item) {
+            videos.filter(item => item.id !== videoId);
 
-                    return (
-                        item.id !==
-                        videoId
-                    );
-
-                }
-            );
-
-        showToast(
-            "Video deleted."
-        );
+        showToast("Video deleted.");
 
         renderHome();
-
         renderFollowing();
-
         renderExplore();
-
         renderProfile();
 
     } catch (error) {
 
-        console.error(
-            error
-        );
-
-        showToast(
-            "Could not delete video."
-        );
+        console.error(error);
+        showToast("Could not delete video.");
 
     }
 
@@ -3381,168 +1926,103 @@ async function deleteVideo(
    COMMENTS
    ========================================================= */
 
-function openComments(
-    videoId
-) {
+function openComments(videoId) {
 
-    currentVideoId =
-        videoId;
+    currentVideoId = videoId;
 
     const video =
-        videos.find(
-            function(item) {
-
-                return (
-                    item.id ===
-                    videoId
-                );
-
-            }
-        );
+        videos.find(item => item.id === videoId);
 
     if (!video) {
         return;
     }
 
-    renderComments(
-        video
-    );
+    renderComments(video);
 
-    commentsModal.classList.remove(
-        "hidden"
-    );
+    commentsModal.classList.remove("hidden");
 
 }
 
 
-function renderComments(
-    video
-) {
+function renderComments(video) {
 
     commentsCount.textContent =
         video.comments.length +
-        (
-            video.comments.length ===
-            1
+        (video.comments.length === 1
             ? " comment"
-            : " comments"
-        );
+            : " comments");
 
-    if (
-        video.comments.length ===
-        0
-    ) {
+    if (!video.comments.length) {
 
-        commentsList.innerHTML =
-            `
-                <div class="empty-state">
-
-                    <div>💬</div>
-
-                    <h2>
-                        No comments yet
-                    </h2>
-
-                    <p>
-                        Be the first person to comment.
-                    </p>
-
-                </div>
-            `;
+        commentsList.innerHTML = `
+            <div class="empty-state">
+                <div>💬</div>
+                <h2>No comments yet</h2>
+                <p>Be the first person to comment.</p>
+            </div>
+        `;
 
         return;
-
     }
 
     commentsList.innerHTML =
         video.comments
             .slice()
             .reverse()
-            .map(
-                function(comment) {
+            .map(comment => `
 
-                    return `
+                <div class="comment">
 
-                        <div class="comment">
+                    <div class="comment-avatar">
+                        ${escapeHTML(getInitial(comment.username))}
+                    </div>
 
-                            <div class="comment-avatar">
-                                ${escapeHTML(
-                                    getInitial(
-                                        comment.username
-                                    )
-                                )}
-                            </div>
+                    <div class="comment-body">
 
-                            <div class="comment-body">
-
-                                <div class="comment-user">
-                                    ${escapeHTML(
-                                        comment.username
-                                    )}
-                                </div>
-
-                                <div class="comment-text">
-                                    ${escapeHTML(
-                                        comment.text
-                                    )}
-                                </div>
-
-                                <div class="comment-time">
-                                    ${formatDate(
-                                        comment.createdAt
-                                    )}
-                                </div>
-
-                            </div>
-
+                        <div class="comment-user">
+                            ${escapeHTML(comment.username)}
                         </div>
 
-                    `;
+                        <div class="comment-text">
+                            ${escapeHTML(comment.text)}
+                        </div>
 
-                }
-            )
+                        <div class="comment-time">
+                            ${formatDate(comment.createdAt)}
+                        </div>
+
+                    </div>
+
+                </div>
+
+            `)
             .join("");
 
 }
 
 
 /* =========================================================
-   COMMENT SUBMIT
+   POST COMMENT
    ========================================================= */
 
-async function submitComment(
-    event
-) {
+async function submitComment(event) {
 
     event.preventDefault();
 
     if (!currentUser) {
-
         showLoginScreen();
-
         return;
-
     }
 
     const text =
-        commentInput.value
-            .trim();
+        commentInput.value.trim();
 
     if (!text) {
         return;
     }
 
     const video =
-        videos.find(
-            function(item) {
-
-                return (
-                    item.id ===
-                    currentVideoId
-                );
-
-            }
-        );
+        videos.find(item => item.id === currentVideoId);
 
     if (!video) {
         return;
@@ -3551,90 +2031,42 @@ async function submitComment(
     try {
 
         const newComment = {
-
-            id:
-                createId(),
-
-            video_id:
-                video.id,
-
-            user_id:
-                currentUser.id,
-
-            text:
-                text,
-
-            created_at:
-                Date.now()
-
+            id: createId(),
+            video_id: video.id,
+            user_id: currentUser.id,
+            text,
+            created_at: Date.now()
         };
 
         const result =
             await supabaseClient
                 .from("comments")
-                .insert(
-                    newComment
-                );
+                .insert(newComment);
 
-        if (
-            result.error
-        ) {
-
+        if (result.error) {
             throw result.error;
-
         }
 
         video.comments.push({
-
-            id:
-                newComment.id,
-
-            userId:
-                currentUser.id,
-
-            username:
-                currentUser.username,
-
-            text:
-                text,
-
-            createdAt:
-                newComment.created_at
-
+            id: newComment.id,
+            userId: currentUser.id,
+            username: currentUser.username,
+            text,
+            createdAt: newComment.created_at
         });
 
-        commentInput.value =
-            "";
+        commentInput.value = "";
 
-        renderComments(
-            video
-        );
-
+        renderComments(video);
         renderHome();
-
         renderFollowing();
-
         renderExplore();
-
         renderProfile();
 
         const owner =
-            users.find(
-                function(user) {
+            users.find(user => user.id === video.ownerId);
 
-                    return (
-                        user.id ===
-                        video.ownerId
-                    );
-
-                }
-            );
-
-        if (
-            owner &&
-            owner.id !==
-            currentUser.id
-        ) {
+        if (owner && owner.id !== currentUser.id) {
 
             addNotification(
                 "💬",
@@ -3646,13 +2078,8 @@ async function submitComment(
 
     } catch (error) {
 
-        console.error(
-            error
-        );
-
-        showToast(
-            "Could not post comment."
-        );
+        console.error(error);
+        showToast("Could not post comment.");
 
     }
 
@@ -3666,31 +2093,22 @@ async function submitComment(
 function openUploadModal() {
 
     if (!currentUser) {
-
         showLoginScreen();
-
         return;
-
     }
 
-    uploadModal.classList.remove(
-        "hidden"
-    );
+    uploadModal.classList.remove("hidden");
 
 }
 
 
-function closeModal(
-    modal
-) {
+function closeModal(modal) {
 
     if (!modal) {
         return;
     }
 
-    modal.classList.add(
-        "hidden"
-    );
+    modal.classList.add("hidden");
 
 }
 
@@ -3701,34 +2119,24 @@ function closeModal(
 
 function updateSelectedFile() {
 
-    const file =
-        videoFile.files[0];
+    const file = videoFile.files[0];
 
     if (!file) {
 
-        selectedFile.classList.add(
-            "hidden"
-        );
-
-        selectedFile.textContent =
-            "";
+        selectedFile.classList.add("hidden");
+        selectedFile.textContent = "";
 
         return;
-
     }
 
-    selectedFile.textContent =
-        file.name;
-
-    selectedFile.classList.remove(
-        "hidden"
-    );
+    selectedFile.textContent = file.name;
+    selectedFile.classList.remove("hidden");
 
 }
 
 
 /* =========================================================
-   UPLOAD VIDEO
+   UPLOAD VIDEO TO SUPABASE
    ========================================================= */
 
 async function publishUploadedVideo() {
@@ -3737,282 +2145,146 @@ async function publishUploadedVideo() {
         return;
     }
 
-    const file =
-        videoFile.files[0];
+    const file = videoFile.files[0];
 
     if (!file) {
-
-        showToast(
-            "Choose a video first."
-        );
-
+        showToast("Choose a video first.");
         return;
-
     }
 
     const title =
-        videoTitle.value
-            .trim();
+        videoTitle.value.trim();
 
     const description =
-        videoDescription.value
-            .trim();
+        videoDescription.value.trim();
 
     const topic =
-        normalizeTopic(
-            videoTopic
-                ? videoTopic.value
-                : "Other"
-        );
+        normalizeTopic(videoTopic.value);
 
     if (!title) {
-
-        showToast(
-            "Give your video a title."
-        );
-
+        showToast("Give your video a title.");
         return;
-
     }
 
-    if (
-        !file.type.startsWith(
-            "video/"
-        )
-    ) {
-
-        showToast(
-            "Please choose a video file."
-        );
-
+    if (!file.type.startsWith("video/")) {
+        showToast("Please choose a video file.");
         return;
-
     }
 
-    if (
-        file.size >
-        50 * 1024 * 1024
-    ) {
-
-        showToast(
-            "Video is larger than 50 MB."
-        );
-
+    if (file.size > 50 * 1024 * 1024) {
+        showToast("Video is larger than 50 MB.");
         return;
-
     }
 
-    isLoading =
-        true;
+    isLoading = true;
+    publishVideo.disabled = true;
 
-    publishVideo.disabled =
-        true;
+    uploadProgressBox.classList.remove("hidden");
 
-    uploadProgressBox.classList.remove(
-        "hidden"
-    );
+    progressBar.style.width = "10%";
+    progressPercent.textContent = "10%";
 
-    progressBar.style.width =
-        "10%";
-
-    progressPercent.textContent =
-        "10%";
-
-    const videoId =
-        createId();
+    const videoId = createId();
 
     const extension =
-        (
-            file.name
-                .split(".")
-                .pop() ||
-            "mp4"
-        )
-            .toLowerCase();
+        (file.name.split(".").pop() || "mp4").toLowerCase();
 
     const storagePath =
-        currentUser.id +
-        "/" +
-        videoId +
-        "." +
-        extension;
+        currentUser.id + "/" + videoId + "." + extension;
 
     try {
 
-        progressBar.style.width =
-            "30%";
-
-        progressPercent.textContent =
-            "30%";
+        progressBar.style.width = "30%";
+        progressPercent.textContent = "30%";
 
         const upload =
             await supabaseClient
                 .storage
-                .from(
-                    SUPABASE_BUCKET
-                )
+                .from(SUPABASE_BUCKET)
                 .upload(
                     storagePath,
                     file,
                     {
-
-                        cacheControl:
-                            "3600",
-
-                        contentType:
-                            file.type ||
-                            "video/mp4",
-
-                        upsert:
-                            false
-
+                        cacheControl: "3600",
+                        contentType: file.type || "video/mp4",
+                        upsert: false
                     }
                 );
 
-        if (
-            upload.error
-        ) {
-
+        if (upload.error) {
             throw upload.error;
-
         }
 
-        progressBar.style.width =
-            "70%";
-
-        progressPercent.textContent =
-            "70%";
+        progressBar.style.width = "70%";
+        progressPercent.textContent = "70%";
 
         const insert =
             await supabaseClient
                 .from("videos")
                 .insert({
-
-                    id:
-                        videoId,
-
-                    owner_id:
-                        currentUser.id,
-
-                    title:
-                        title,
-
-                    description:
-                        description,
-
-                    topic:
-                        topic,
-
-                    storage_path:
-                        storagePath,
-
-                    created_at:
-                        Date.now(),
-
-                    views:
-                        0
-
+                    id: videoId,
+                    owner_id: currentUser.id,
+                    title,
+                    description,
+                    topic,
+                    storage_path: storagePath,
+                    created_at: Date.now(),
+                    views: 0
                 });
 
-        if (
-            insert.error
-        ) {
+        if (insert.error) {
 
             await supabaseClient
                 .storage
-                .from(
-                    SUPABASE_BUCKET
-                )
-                .remove([
-                    storagePath
-                ]);
+                .from(SUPABASE_BUCKET)
+                .remove([storagePath]);
 
             throw insert.error;
-
         }
 
-        progressBar.style.width =
-            "100%";
+        progressBar.style.width = "100%";
+        progressPercent.textContent = "100%";
 
-        progressPercent.textContent =
-            "100%";
+        showToast("Your video was uploaded!");
 
-        showToast(
-            "Your video was uploaded!"
-        );
+        videoFile.value = "";
+        videoTitle.value = "";
+        videoDescription.value = "";
+        videoTopic.value = "Other";
 
-        videoFile.value =
-            "";
-
-        videoTitle.value =
-            "";
-
-        videoDescription.value =
-            "";
-
-        if (videoTopic) {
-
-            videoTopic.value =
-                "Other";
-
-        }
-
-        selectedFile.classList.add(
-            "hidden"
-        );
-
-        selectedFile.textContent =
-            "";
+        selectedFile.classList.add("hidden");
+        selectedFile.textContent = "";
 
         await loadAllData();
 
-        closeModal(
-            uploadModal
-        );
+        closeModal(uploadModal);
 
         renderHome();
-
         renderFollowing();
-
         renderExplore();
-
         renderProfile();
 
     } catch (error) {
 
-        console.error(
-            error
-        );
+        console.error(error);
 
         showToast(
-            error.message ||
-            "Could not upload video."
+            error.message || "Could not upload video."
         );
 
     } finally {
 
-        isLoading =
-            false;
+        isLoading = false;
+        publishVideo.disabled = false;
 
-        publishVideo.disabled =
-            false;
+        setTimeout(() => {
 
-        setTimeout(
-            function() {
+            uploadProgressBox.classList.add("hidden");
 
-                uploadProgressBox.classList.add(
-                    "hidden"
-                );
+            progressBar.style.width = "0%";
+            progressPercent.textContent = "0%";
 
-                progressBar.style.width =
-                    "0%";
-
-                progressPercent.textContent =
-                    "0%";
-
-            },
-            700
-        );
+        }, 700);
 
     }
 
@@ -4030,24 +2302,14 @@ async function saveProfile() {
     }
 
     const username =
-        editUsername.value
-            .trim();
+        editUsername.value.trim();
 
     const bio =
-        editBio.value
-            .trim();
+        editBio.value.trim();
 
-    if (
-        username.length <
-        3
-    ) {
-
-        showToast(
-            "Username must be at least 3 characters."
-        );
-
+    if (username.length < 3) {
+        showToast("Username must be at least 3 characters.");
         return;
-
     }
 
     try {
@@ -4056,27 +2318,15 @@ async function saveProfile() {
             await supabaseClient
                 .from("users")
                 .update({
-
-                    username:
-                        username,
-
-                    bio:
-                        bio
-
+                    username,
+                    bio
                 })
-                .eq(
-                    "id",
-                    currentUser.id
-                )
+                .eq("id", currentUser.id)
                 .select("*")
                 .single();
 
-        if (
-            result.error
-        ) {
-
+        if (result.error) {
             throw result.error;
-
         }
 
         currentUser.username =
@@ -4086,54 +2336,27 @@ async function saveProfile() {
             result.data.bio || "";
 
         const index =
-            users.findIndex(
-                function(user) {
+            users.findIndex(user => user.id === currentUser.id);
 
-                    return (
-                        user.id ===
-                        currentUser.id
-                    );
-
-                }
-            );
-
-        if (
-            index !==
-            -1
-        ) {
-
-            users[index] =
-                result.data;
-
+        if (index !== -1) {
+            users[index] = result.data;
         }
 
-        closeModal(
-            editModal
-        );
+        closeModal(editModal);
 
         updateUserUI();
 
         renderHome();
-
         renderFollowing();
-
         renderExplore();
-
         renderProfile();
 
-        showToast(
-            "Profile updated!"
-        );
+        showToast("Profile updated!");
 
     } catch (error) {
 
-        console.error(
-            error
-        );
-
-        showToast(
-            "Could not save profile."
-        );
+        console.error(error);
+        showToast("Could not save profile.");
 
     }
 
@@ -4150,120 +2373,116 @@ function renderNotifications() {
         return;
     }
 
-    if (
-        !notifications.length
-    ) {
+    if (!notifications.length) {
 
-        notificationList.innerHTML =
-            `
-                <div class="empty-state">
-
-                    <div>🔔</div>
-
-                    <h2>
-                        No notifications yet
-                    </h2>
-
-                    <p>
-                        Your GoCat activity will appear here.
-                    </p>
-
-                </div>
-            `;
+        notificationList.innerHTML = `
+            <div class="empty-state">
+                <div>🔔</div>
+                <h2>No notifications yet</h2>
+                <p>Your GoCat activity will appear here.</p>
+            </div>
+        `;
 
         return;
-
     }
 
     notificationList.innerHTML =
-        notifications
-            .map(
-                function(notification) {
+        notifications.map(notification => `
 
-                    return `
+            <div class="notification">
 
-                        <div class="notification">
+                <div class="notification-icon">
+                    ${escapeHTML(notification.icon)}
+                </div>
 
-                            <div class="notification-icon">
-                                ${escapeHTML(
-                                    notification.icon
-                                )}
-                            </div>
+                <div class="notification-text">
 
-                            <div class="notification-text">
+                    <strong>
+                        ${escapeHTML(notification.text)}
+                    </strong>
 
-                                <strong>
-                                    ${escapeHTML(
-                                        notification.text
-                                    )}
-                                </strong>
+                    <div class="notification-time">
+                        ${formatDate(notification.createdAt)}
+                    </div>
 
-                                <div class="notification-time">
-                                    ${formatDate(
-                                        notification.createdAt
-                                    )}
-                                </div>
+                </div>
 
-                            </div>
+            </div>
 
-                        </div>
-
-                    `;
-
-                }
-            )
-            .join("");
+        `).join("");
 
 }
 
 
 /* =========================================================
-   THEME
+   THEME — FIXED
+   IMPORTANT: CSS USES body.dark
+   JAVASCRIPT NOW USES THE SAME CLASS.
    ========================================================= */
+
+function applyGoCatTheme(isDark) {
+
+    document.body.classList.toggle(
+        "dark",
+        isDark
+    );
+
+    localStorage.setItem(
+        "gocat_theme",
+        isDark ? "dark" : "light"
+    );
+
+    const themeBtn =
+        getElement("themeBtn");
+
+    if (!themeBtn) {
+        return;
+    }
+
+    const icon =
+        themeBtn.querySelector(".theme-icon");
+
+    const label =
+        themeBtn.querySelector(".theme-label");
+
+    const status =
+        themeBtn.querySelector(".theme-status");
+
+    if (isDark) {
+
+        if (icon) icon.textContent = "☀️";
+        if (label) label.textContent = "Light Mode";
+        if (status) status.textContent = "DARK";
+
+    } else {
+
+        if (icon) icon.textContent = "🌙";
+        if (label) label.textContent = "Dark Mode";
+        if (status) status.textContent = "LIGHT";
+
+    }
+
+}
+
 
 function loadTheme() {
 
-    const theme =
-        localStorage.getItem(
-            "gocat_theme"
-        );
+    const savedTheme =
+        localStorage.getItem("gocat_theme");
 
-    if (
-        theme ===
-        "dark"
-    ) {
-
-        document.body.classList.add(
-            "gocat-dark"
-        );
-
-        document.body.classList.add(
-            "shopx-dark"
-        );
-
-    }
+    applyGoCatTheme(
+        savedTheme === "dark"
+    );
 
 }
 
 
 function toggleTheme() {
 
-    const enabled =
-        document.body.classList.toggle(
-            "gocat-dark"
-        );
+    const currentlyDark =
+        document.body.classList.contains("dark");
 
-    document.body.classList.toggle(
-        "shopx-dark",
-        enabled
-    );
-
-    localStorage.setItem(
-        "gocat_theme",
-        enabled
-        ? "dark"
-        : "light"
-    );
+    applyGoCatTheme(!currentlyDark);
 
 }
 
@@ -4274,117 +2493,62 @@ function toggleTheme() {
 
 async function logout() {
 
-    await supabaseClient
-        .auth
-        .signOut();
+    const result =
+        await supabaseClient.auth.signOut();
 
-    currentUser =
-        null;
+    if (result.error) {
+        console.error(result.error);
+        showToast("Could not log out.");
+        return;
+    }
 
-    users =
-        [];
-
-    videos =
-        [];
-
-    currentProfileUserId =
-        null;
-
-    notifications =
-        [];
+    currentUser = null;
+    users = [];
+    videos = [];
+    currentProfileUserId = null;
+    notifications = [];
 
     showLoginScreen();
-
-    showToast(
-        "Logged out."
-    );
 
 }
 
 
 /* =========================================================
-   AUTH — REGISTER
+   REGISTER
    ========================================================= */
 
-async function handleRegister(
-    event
-) {
+async function handleRegister(event) {
 
     event.preventDefault();
 
     const username =
-        document
-            .getElementById(
-                "registerUsername"
-            )
-            .value
-            .trim();
+        getElement("registerUsername").value.trim();
 
     const email =
-        document
-            .getElementById(
-                "registerEmail"
-            )
-            .value
-            .trim();
+        getElement("registerEmail").value.trim();
 
     const password =
-        document
-            .getElementById(
-                "registerPassword"
-            )
-            .value;
+        getElement("registerPassword").value;
 
     const confirmPassword =
-        document
-            .getElementById(
-                "registerConfirm"
-            )
-            .value;
+        getElement("registerConfirm").value;
 
-    if (
-        password !==
-        confirmPassword
-    ) {
-
-        setAuthMessage(
-            "Passwords do not match."
-        );
-
+    if (password !== confirmPassword) {
+        setAuthMessage("Passwords do not match.");
         return;
-
     }
 
-    if (
-        username.length <
-        3
-    ) {
-
-        setAuthMessage(
-            "Username must be at least 3 characters."
-        );
-
+    if (username.length < 3) {
+        setAuthMessage("Username must be at least 3 characters.");
         return;
-
     }
 
-    if (
-        password.length <
-        6
-    ) {
-
-        setAuthMessage(
-            "Password must be at least 6 characters."
-        );
-
+    if (password.length < 6) {
+        setAuthMessage("Password must be at least 6 characters.");
         return;
-
     }
 
-    setAuthMessage(
-        "Creating your account...",
-        true
-    );
+    setAuthMessage("Creating your account...", true);
 
     try {
 
@@ -4392,86 +2556,50 @@ async function handleRegister(
             await supabaseClient
                 .auth
                 .signUp({
-
-                    email:
-                        email,
-
-                    password:
-                        password,
-
+                    email,
+                    password,
                     options: {
-
                         data: {
-
-                            username:
-                                username
-
+                            username
                         }
-
                     }
-
                 });
 
-        if (
-            result.error
-        ) {
-
+        if (result.error) {
             throw result.error;
-
         }
 
-        if (
-            !result.data.user
-        ) {
-
-            throw new Error(
-                "Could not create account."
-            );
-
+        if (!result.data.user) {
+            throw new Error("Could not create account.");
         }
 
-        if (
-            result.data.session
-        ) {
+        if (result.data.session) {
 
             const profile =
-                await ensureProfile(
-                    result.data.user
-                );
+                await ensureProfile(result.data.user);
 
             if (!profile) {
-
                 throw new Error(
-                    "Account created, but the GoCat profile could not be created."
+                    "Account created, but GoCat profile could not be created."
                 );
-
             }
-
-            setAuthMessage(
-                "Account created!",
-                true
-            );
 
             await startUserSession();
 
             return;
-
         }
 
         setAuthMessage(
-            "Account created. Check your email to confirm your account.",
+            "Account created. Check your email if confirmation is required.",
             true
         );
 
     } catch (error) {
 
-        console.error(
-            error
-        );
+        console.error(error);
 
         setAuthMessage(
-            error.message ||
-            "Could not create account."
+            error.message || "Could not create account."
         );
 
     }
@@ -4480,44 +2608,25 @@ async function handleRegister(
 
 
 /* =========================================================
-   AUTH — LOGIN
+   LOGIN
    ========================================================= */
 
-async function handleLogin(
-    event
-) {
+async function handleLogin(event) {
 
     event.preventDefault();
 
     const email =
-        document
-            .getElementById(
-                "loginUsername"
-            )
-            .value
-            .trim();
+        getElement("loginUsername").value.trim();
 
     const password =
-        document
-            .getElementById(
-                "loginPassword"
-            )
-            .value;
+        getElement("loginPassword").value;
 
     if (!email) {
-
-        setAuthMessage(
-            "Enter your email."
-        );
-
+        setAuthMessage("Enter your email.");
         return;
-
     }
 
-    setAuthMessage(
-        "Signing in...",
-        true
-    );
+    setAuthMessage("Signing in...", true);
 
     try {
 
@@ -4525,34 +2634,22 @@ async function handleLogin(
             await supabaseClient
                 .auth
                 .signInWithPassword({
-
-                    email:
-                        email,
-
-                    password:
-                        password
-
+                    email,
+                    password
                 });
 
-        if (
-            result.error
-        ) {
-
+        if (result.error) {
             throw result.error;
-
         }
 
         await startUserSession();
 
     } catch (error) {
 
-        console.error(
-            error
-        );
+        console.error(error);
 
         setAuthMessage(
-            error.message ||
-            "Email or password is incorrect."
+            error.message || "Email or password is incorrect."
         );
 
     }
@@ -4566,17 +2663,14 @@ async function handleLogin(
 
 async function startUserSession() {
 
-    const authUser =
-        await getAuthUser();
+    const authUser = await getAuthUser();
 
     if (!authUser) {
 
         showLoginScreen();
-
         hideGoCatLoader();
 
         return;
-
     }
 
     await loadAllData();
@@ -4585,19 +2679,14 @@ async function startUserSession() {
 
     showApp();
 
-    currentProfileUserId =
-        currentUser.id;
+    currentProfileUserId = currentUser.id;
 
     updateUserUI();
 
     renderHome();
-
     renderFollowing();
-
     renderExplore();
-
     renderProfile();
-
     renderNotifications();
 
     hideGoCatLoader();
@@ -4606,7 +2695,7 @@ async function startUserSession() {
 
 
 /* =========================================================
-   REFRESH ALL
+   REFRESH
    ========================================================= */
 
 async function refreshAll() {
@@ -4614,34 +2703,22 @@ async function refreshAll() {
     try {
 
         await loadAllData();
-
         await loadCurrentProfile();
 
         updateUserUI();
 
         renderHome();
-
         renderFollowing();
-
         renderExplore();
-
         renderProfile();
-
         renderNotifications();
 
-        showToast(
-            "Feed refreshed."
-        );
+        showToast("Feed refreshed.");
 
     } catch (error) {
 
-        console.error(
-            error
-        );
-
-        showToast(
-            "Could not refresh GoCat."
-        );
+        console.error(error);
+        showToast("Could not refresh GoCat.");
 
     }
 
@@ -4649,7 +2726,7 @@ async function refreshAll() {
 
 
 /* =========================================================
-   SEARCH
+   SEARCH INPUT
    ========================================================= */
 
 function handleSearchInput() {
@@ -4663,41 +2740,10 @@ function handleSearchInput() {
         !searchInput.value
     );
 
-    if (
-        currentPage ===
-        "home"
-    ) {
-
-        renderHome();
-
-    }
-
-    if (
-        currentPage ===
-        "following"
-    ) {
-
-        renderFollowing();
-
-    }
-
-    if (
-        currentPage ===
-        "explore"
-    ) {
-
-        renderExplore();
-
-    }
-
-    if (
-        currentPage ===
-        "profile"
-    ) {
-
-        renderProfile();
-
-    }
+    if (currentPage === "home") renderHome();
+    if (currentPage === "following") renderFollowing();
+    if (currentPage === "explore") renderExplore();
+    if (currentPage === "profile") renderProfile();
 
 }
 
@@ -4708,45 +2754,26 @@ function handleSearchInput() {
 
 function bindTopicButtons() {
 
-    document
-        .querySelectorAll(
-            ".topic-chip"
-        )
-        .forEach(
-            function(button) {
+    document.querySelectorAll(".topic-chip").forEach(button => {
 
-                button.addEventListener(
-                    "click",
-                    function() {
+        button.addEventListener("click", () => {
 
-                        activeHomeTopic =
-                            button.dataset.topic;
+            activeHomeTopic = button.dataset.topic;
 
-                        document
-                            .querySelectorAll(
-                                ".topic-chip"
-                            )
-                            .forEach(
-                                function(item) {
+            document.querySelectorAll(".topic-chip").forEach(item => {
 
-                                    item.classList.toggle(
-                                        "active",
-                                        item ===
-                                        button
-                                    );
-
-                                }
-                            );
-
-                        showPage(
-                            "home"
-                        );
-
-                    }
+                item.classList.toggle(
+                    "active",
+                    item === button
                 );
 
-            }
-        );
+            });
+
+            showPage("home");
+
+        });
+
+    });
 
 }
 
@@ -4757,300 +2784,161 @@ function bindTopicButtons() {
 
 function bindExploreTabs() {
 
-    document
-        .querySelectorAll(
-            ".explore-tab"
-        )
-        .forEach(
-            function(button) {
+    document.querySelectorAll(".explore-tab").forEach(button => {
 
-                button.addEventListener(
-                    "click",
-                    function() {
+        button.addEventListener("click", () => {
 
-                        exploreMode =
-                            button.dataset.explore;
+            exploreMode = button.dataset.explore;
 
-                        document
-                            .querySelectorAll(
-                                ".explore-tab"
-                            )
-                            .forEach(
-                                function(item) {
+            document.querySelectorAll(".explore-tab").forEach(item => {
 
-                                    item.classList.toggle(
-                                        "active",
-                                        item ===
-                                        button
-                                    );
-
-                                }
-                            );
-
-                        renderExplore();
-
-                    }
+                item.classList.toggle(
+                    "active",
+                    item === button
                 );
 
-            }
-        );
+            });
+
+            renderExplore();
+
+        });
+
+    });
 
 }
 
 
 /* =========================================================
-   GENERAL CLICK EVENTS
+   GENERAL EVENTS
    ========================================================= */
 
 function bindGeneralEvents() {
 
+    /* AUTH */
 
-    /* ---------------- AUTH ---------------- */
+    showRegister.addEventListener("click", showRegisterScreen);
+    showLogin.addEventListener("click", showLoginScreen);
 
-    showRegister.addEventListener(
-        "click",
-        function() {
-
-            showRegisterScreen();
-
-        }
-    );
+    loginForm.addEventListener("submit", handleLogin);
+    registerForm.addEventListener("submit", handleRegister);
 
 
-    showLogin.addEventListener(
-        "click",
-        function() {
+    /* PASSWORD VISIBILITY */
 
-            showLoginScreen();
+    document.querySelectorAll(".password-btn").forEach(button => {
 
-        }
-    );
+        button.addEventListener("click", () => {
 
+            const target =
+                getElement(button.dataset.target);
 
-    loginForm.addEventListener(
-        "submit",
-        handleLogin
-    );
+            if (!target) {
+                return;
+            }
 
+            if (target.type === "password") {
 
-    registerForm.addEventListener(
-        "submit",
-        handleRegister
-    );
+                target.type = "text";
+                button.textContent = "🙈";
 
+            } else {
 
-    /* ---------------- PASSWORD ---------------- */
-
-    document
-        .querySelectorAll(
-            ".password-btn"
-        )
-        .forEach(
-            function(button) {
-
-                button.addEventListener(
-                    "click",
-                    function() {
-
-                        const target =
-                            document.getElementById(
-                                button.dataset.target
-                            );
-
-                        if (!target) {
-                            return;
-                        }
-
-                        if (
-                            target.type ===
-                            "password"
-                        ) {
-
-                            target.type =
-                                "text";
-
-                            button.textContent =
-                                "🙈";
-
-                        } else {
-
-                            target.type =
-                                "password";
-
-                            button.textContent =
-                                "👁";
-
-                        }
-
-                    }
-                );
+                target.type = "password";
+                button.textContent = "👁";
 
             }
-        );
+
+        });
+
+    });
 
 
-    /* ---------------- NAVIGATION ---------------- */
+    /* NAVIGATION */
 
-    document
-        .querySelectorAll(
-            ".nav-item"
-        )
-        .forEach(
-            function(button) {
+    document.querySelectorAll(".nav-item").forEach(button => {
 
-                button.addEventListener(
-                    "click",
-                    function() {
+        button.addEventListener("click", () => {
 
-                        if (
-                            button.dataset.page
-                        ) {
-
-                            showPage(
-                                button.dataset.page
-                            );
-
-                        }
-
-                    }
-                );
-
+            if (button.dataset.page) {
+                showPage(button.dataset.page);
             }
-        );
+
+        });
+
+    });
 
 
-    /* ---------------- PROFILE TOP ---------------- */
+    /* PROFILE TOP BUTTON */
 
     const profileTopBtn =
-        document.getElementById(
-            "profileTopBtn"
-        );
+        getElement("profileTopBtn");
 
     if (profileTopBtn) {
 
-        profileTopBtn.addEventListener(
-            "click",
-            function() {
+        profileTopBtn.addEventListener("click", () => {
 
-                if (!currentUser) {
-                    return;
-                }
-
-                currentProfileUserId =
-                    currentUser.id;
-
-                showPage(
-                    "profile"
-                );
-
+            if (!currentUser) {
+                return;
             }
-        );
+
+            currentProfileUserId = currentUser.id;
+            showPage("profile");
+
+        });
 
     }
 
 
-    /* ---------------- UPLOAD BUTTONS ---------------- */
+    /* UPLOAD BUTTONS */
 
-    document
-        .querySelectorAll(
-            ".upload-trigger"
-        )
-        .forEach(
-            function(button) {
+    document.querySelectorAll(".upload-trigger").forEach(button => {
 
-                button.addEventListener(
-                    "click",
-                    function() {
+        button.addEventListener("click", openUploadModal);
 
-                        openUploadModal();
-
-                    }
-                );
-
-            }
-        );
-
+    });
 
     const uploadTopBtn =
-        document.getElementById(
-            "uploadTopBtn"
-        );
+        getElement("uploadTopBtn");
 
     if (uploadTopBtn) {
-
-        uploadTopBtn.addEventListener(
-            "click",
-            function() {
-
-                openUploadModal();
-
-            }
-        );
-
+        uploadTopBtn.addEventListener("click", openUploadModal);
     }
 
 
-    /* ---------------- FILE ---------------- */
+    /* VIDEO FILE */
 
-    videoFile.addEventListener(
-        "change",
-        updateSelectedFile
-    );
+    videoFile.addEventListener("change", updateSelectedFile);
 
 
-    dropArea.addEventListener(
-        "dragover",
-        function(event) {
+    dropArea.addEventListener("dragover", event => {
 
-            event.preventDefault();
+        event.preventDefault();
+        dropArea.classList.add("dragging");
 
-            dropArea.classList.add(
-                "dragging"
-            );
+    });
 
-        }
-    );
+    dropArea.addEventListener("dragleave", () => {
 
+        dropArea.classList.remove("dragging");
 
-    dropArea.addEventListener(
-        "dragleave",
-        function() {
+    });
 
-            dropArea.classList.remove(
-                "dragging"
-            );
+    dropArea.addEventListener("drop", event => {
 
-        }
-    );
+        event.preventDefault();
 
+        dropArea.classList.remove("dragging");
 
-    dropArea.addEventListener(
-        "drop",
-        function(event) {
+        const files = event.dataTransfer.files;
 
-            event.preventDefault();
+        if (files && files.length) {
 
-            dropArea.classList.remove(
-                "dragging"
-            );
-
-            const files =
-                event.dataTransfer.files;
-
-            if (
-                files &&
-                files.length
-            ) {
-
-                videoFile.files =
-                    files;
-
-                updateSelectedFile();
-
-            }
+            videoFile.files = files;
+            updateSelectedFile();
 
         }
-    );
+
+    });
 
 
     publishVideo.addEventListener(
@@ -5059,93 +2947,61 @@ function bindGeneralEvents() {
     );
 
 
-    /* ---------------- SEARCH ---------------- */
+    /* SEARCH */
 
     searchInput.addEventListener(
         "input",
         handleSearchInput
     );
 
+    clearSearch.addEventListener("click", () => {
 
-    clearSearch.addEventListener(
-        "click",
-        function() {
+        searchInput.value = "";
 
-            searchInput.value =
-                "";
+        clearSearch.classList.add("hidden");
 
-            clearSearch.classList.add(
-                "hidden"
-            );
+        handleSearchInput();
 
-            handleSearchInput();
-
-        }
-    );
+    });
 
 
-    /* ---------------- TOPICS ---------------- */
+    /* TOPICS AND EXPLORE */
 
     bindTopicButtons();
-
-
-    /* ---------------- EXPLORE ---------------- */
-
     bindExploreTabs();
 
 
-    /* ---------------- REFRESH ---------------- */
+    /* REFRESH */
 
     const refreshFeed =
-        document.getElementById(
-            "refreshFeed"
-        );
+        getElement("refreshFeed");
 
     if (refreshFeed) {
-
-        refreshFeed.addEventListener(
-            "click",
-            refreshAll
-        );
-
+        refreshFeed.addEventListener("click", refreshAll);
     }
 
 
-    /* ---------------- THEME ---------------- */
+    /* THEME */
 
     const themeBtn =
-        document.getElementById(
-            "themeBtn"
-        );
+        getElement("themeBtn");
 
     if (themeBtn) {
-
-        themeBtn.addEventListener(
-            "click",
-            toggleTheme
-        );
-
+        themeBtn.addEventListener("click", toggleTheme);
     }
 
 
-    /* ---------------- LOGOUT ---------------- */
+    /* LOGOUT */
 
     const logoutBtn =
-        document.getElementById(
-            "logoutBtn"
-        );
+        getElement("logoutBtn");
 
     if (logoutBtn) {
-
-        logoutBtn.addEventListener(
-            "click",
-            logout
-        );
-
+        logoutBtn.addEventListener("click", logout);
     }
 
 
-    /* ---------------- COMMENT ---------------- */
+    /* COMMENTS */
 
     commentForm.addEventListener(
         "submit",
@@ -5153,7 +3009,7 @@ function bindGeneralEvents() {
     );
 
 
-    /* ---------------- SAVE PROFILE ---------------- */
+    /* PROFILE */
 
     saveProfileBtn.addEventListener(
         "click",
@@ -5161,134 +3017,106 @@ function bindGeneralEvents() {
     );
 
 
-    /* ---------------- CLEAR NOTIFICATIONS ---------------- */
+    /* CLEAR NOTIFICATIONS */
 
     const clearNotifications =
-        document.getElementById(
-            "clearNotifications"
-        );
+        getElement("clearNotifications");
 
-    if (
-        clearNotifications
-    ) {
+    if (clearNotifications) {
 
-        clearNotifications.addEventListener(
-            "click",
-            function() {
+        clearNotifications.addEventListener("click", () => {
 
-                notifications =
-                    [];
+            notifications = [];
 
-                saveStoredNotifications();
+            saveStoredNotifications();
+            renderNotifications();
 
-                renderNotifications();
+            showToast("Notifications cleared.");
 
-                showToast(
-                    "Notifications cleared."
-                );
-
-            }
-        );
+        });
 
     }
 
 
-    /* ---------------- CLOSE MODALS ---------------- */
+    /* CLOSE MODALS */
 
-    document
-        .querySelectorAll(
-            "[data-close]"
-        )
-        .forEach(
-            function(button) {
+    document.querySelectorAll("[data-close]").forEach(button => {
 
-                button.addEventListener(
-                    "click",
-                    function() {
+        button.addEventListener("click", () => {
 
-                        const target =
-                            document.getElementById(
-                                button.dataset.close
-                            );
+            closeModal(
+                getElement(button.dataset.close)
+            );
 
-                        closeModal(
-                            target
-                        );
+        });
 
-                    }
-                );
+    });
 
-            }
-        );
+    document.querySelectorAll(".modal-overlay").forEach(overlay => {
+
+        overlay.addEventListener("click", () => {
+
+            closeModal(
+                overlay.closest(".modal")
+            );
+
+        });
+
+    });
 
 
-    document
-        .querySelectorAll(
-            ".modal-overlay"
-        )
-        .forEach(
-            function(overlay) {
-
-                overlay.addEventListener(
-                    "click",
-                    function() {
-
-                        const modal =
-                            overlay.closest(
-                                ".modal"
-                            );
-
-                        closeModal(
-                            modal
-                        );
-
-                    }
-                );
-
-            }
-        );
-
-
-    /* ---------------- MOBILE MENU ---------------- */
+    /* MOBILE MENU */
 
     const mobileMenu =
-        document.getElementById(
-            "mobileMenu"
-        );
+        getElement("mobileMenu");
 
     const sidebar =
-        document.querySelector(
-            ".sidebar"
-        );
+        document.querySelector(".sidebar");
 
-    if (
-        mobileMenu &&
-        sidebar
-    ) {
+    if (mobileMenu && sidebar) {
 
-        mobileMenu.addEventListener(
-            "click",
-            function() {
+        mobileMenu.addEventListener("click", () => {
 
-                sidebar.classList.toggle(
-                    "open"
-                );
+            sidebar.classList.toggle("open");
 
-            }
-        );
+        });
 
     }
 
+
+    /* EXPLORE PEOPLE SHORTCUT */
+
+    document.querySelectorAll("[data-page-button]").forEach(button => {
+
+        button.addEventListener("click", () => {
+
+            showPage(button.dataset.pageButton);
+
+            exploreMode = "people";
+
+            document.querySelectorAll(".explore-tab").forEach(tab => {
+                tab.classList.toggle(
+                    "active",
+                    tab.dataset.explore === "people"
+                );
+            });
+
+            renderExplore();
+
+        });
+
+    });
 
 }
 
 
 /* =========================================================
-   INITIALIZE
+   INITIALIZE GOCAT
    ========================================================= */
 
 async function initGoCat() {
 
+    /* Restore theme before the app displays */
     loadTheme();
 
     try {
@@ -5297,24 +3125,17 @@ async function initGoCat() {
 
         supabaseClient =
             window.supabase.createClient(
-
                 SUPABASE_URL,
-
                 SUPABASE_PUBLISHABLE_KEY
-
             );
 
     } catch (error) {
 
-        console.error(
-            error
-        );
+        console.error(error);
 
         hideGoCatLoader();
 
-        alert(
-            "GoCat could not load Supabase."
-        );
+        alert("GoCat could not load Supabase.");
 
         return;
 
@@ -5325,103 +3146,65 @@ async function initGoCat() {
     try {
 
         const sessionResult =
-            await supabaseClient
-                .auth
-                .getSession();
+            await supabaseClient.auth.getSession();
 
-        if (
-            sessionResult.error
-        ) {
-
+        if (sessionResult.error) {
             throw sessionResult.error;
-
         }
 
-        if (
-            sessionResult.data.session
-        ) {
+        if (sessionResult.data.session) {
 
             await startUserSession();
 
         } else {
 
             showLoginScreen();
-
             hideGoCatLoader();
 
         }
 
     } catch (error) {
 
-        console.error(
-            error
-        );
+        console.error(error);
 
         showLoginScreen();
-
         hideGoCatLoader();
 
     }
 
 
-    /* =====================================================
-       AUTH STATE CHANGES
-       ===================================================== */
+    /* AUTH STATE CHANGES */
 
-    supabaseClient
-        .auth
-        .onAuthStateChange(
-            async function(
-                event,
-                session
-            ) {
+    supabaseClient.auth.onAuthStateChange(
+        async (event, session) => {
 
-                if (
-                    event ===
-                    "SIGNED_OUT"
-                ) {
+            if (event === "SIGNED_OUT") {
 
-                    currentUser =
-                        null;
+                currentUser = null;
+                users = [];
+                videos = [];
 
-                    users =
-                        [];
+                showLoginScreen();
 
-                    videos =
-                        [];
+                return;
+            }
 
-                    showLoginScreen();
+            if (event === "SIGNED_IN" && session) {
 
-                    return;
+                try {
 
-                }
+                    await startUserSession();
 
-                if (
-                    (
-                        event ===
-                        "SIGNED_IN"
-                    ) &&
-                    session
-                ) {
+                } catch (error) {
 
-                    try {
-
-                        await startUserSession();
-
-                    } catch (
-                        error
-                    ) {
-
-                        console.error(
-                            error
-                        );
-
-                    }
+                    console.error(error);
 
                 }
 
             }
-        );
+
+        }
+    );
 
 }
 
