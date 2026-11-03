@@ -1,177 +1,63 @@
-/* =========================================================
-   GOCAT — FINAL CLOUD VERSION
-   Supabase Auth + Database + Storage
-   ========================================================= */
+/* ==========================================================
+   GOCAT — SUPABASE CLOUD APP
+   Existing tables preserved: users, videos, likes, comments,
+   follows. Added tables: posts, post_likes, messages.
+   ========================================================== */
 
-/* SUPABASE CONFIG */
-
-const SUPABASE_URL =
-    "https://rfwgvsijxweyzwvuqslt.supabase.co";
-
-const SUPABASE_PUBLISHABLE_KEY =
-    "sb_publishable_LWIaOaxbzp19lV765vbbQg_kF5apL0O";
-
-const SUPABASE_BUCKET = "videos";
-
-/* GLOBALS */
+const SUPABASE_URL = "https://rfwgvsijxweyzwvuqslt.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_LWIaOaxbzp19lV765vbbQg_kF5apL0O";
+const VIDEO_BUCKET = "videos";
+const POST_BUCKET = "post-media";
 
 let supabaseClient = null;
+let currentUser = null;
 let users = [];
 let videos = [];
-let currentUser = null;
+let follows = [];
+let posts = [];
+let postLikes = [];
+let notifications = [];
+let currentPage = "home";
 let currentVideoId = null;
 let currentProfileUserId = null;
-let currentPage = "home";
-let exploreMode = "videos";
 let activeHomeTopic = "All";
-let notifications = [];
-let isLoading = false;
-
+let exploreMode = "videos";
+let homeLimit = 5;
+let exploreLimit = 6;
+let peopleLimit = 6;
+let postLimit = 6;
+let reelLimit = 5;
+let currentChatUserId = null;
+let chatChannel = null;
 let uploadMode = "video";
-let homeFeedOffset = 0;
-let shortsFeedOffset = 0;
+let selectedVideoFile = null;
+let editedReelFile = null;
+let reelObjectUrl = null;
+let postImageFile = null;
+let isUploading = false;
+let viewRecorded = new Set();
 
-const HOME_FEED_PAGE_SIZE = 5;
-const SHORTS_FEED_PAGE_SIZE = 4;
+const TOPICS = [
+    "Gaming",
+    "Cooking",
+    "School",
+    "Technology",
+    "Sports",
+    "Art",
+    "Entertainment",
+    "Other"
+];
 
-/* SUPABASE SDK LOADER */
+const $ = (selector, root = document) =>
+    root.querySelector(selector);
 
-async function loadSupabaseSDK() {
-    if (
-        window.supabase &&
-        typeof window.supabase.createClient === "function"
-    ) {
-        return;
-    }
-
-    await new Promise(function(resolve, reject) {
-        const script = document.createElement("script");
-
-        script.src =
-            "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
-
-        script.onload = resolve;
-
-        script.onerror = function() {
-            reject(new Error("Could not load Supabase."));
-        };
-
-        document.head.appendChild(script);
-    });
-}
-
-/* DOM */
-
-const authScreen = document.getElementById("authScreen");
-const app = document.getElementById("app");
-
-const loginForm = document.getElementById("loginForm");
-const registerForm = document.getElementById("registerForm");
-
-const authTitle = document.getElementById("authTitle");
-const authSubtitle = document.getElementById("authSubtitle");
-const authMessage = document.getElementById("authMessage");
-
-const showRegister = document.getElementById("showRegister");
-const showLogin = document.getElementById("showLogin");
-
-const homeFeed = document.getElementById("homeFeed");
-const followingFeed = document.getElementById("followingFeed");
-const profileVideos = document.getElementById("profileVideos");
-
-const exploreVideos = document.getElementById("exploreVideos");
-const explorePeople = document.getElementById("explorePeople");
-
-const searchInput = document.getElementById("searchInput");
-const clearSearch = document.getElementById("clearSearch");
-
-const uploadModal = document.getElementById("uploadModal");
-const commentsModal = document.getElementById("commentsModal");
-const editModal = document.getElementById("editModal");
-
-const videoFile = document.getElementById("videoFile");
-const selectedFile = document.getElementById("selectedFile");
-
-const videoTitle = document.getElementById("videoTitle");
-const videoDescription = document.getElementById("videoDescription");
-
-const publishVideo = document.getElementById("publishVideo");
-
-const toast = document.getElementById("toast");
-const toastText = document.getElementById("toastText");
-
-const dropArea = document.getElementById("dropArea");
-const videoTopic = document.getElementById("videoTopic");
-
-const uploadProgressBox =
-    document.getElementById("uploadProgressBox");
-
-const progressBar =
-    document.getElementById("progressBar");
-
-const progressPercent =
-    document.getElementById("progressPercent");
-
-const commentsList =
-    document.getElementById("commentsList");
-
-const commentsCount =
-    document.getElementById("commentsCount");
-
-const commentForm =
-    document.getElementById("commentForm");
-
-const commentInput =
-    document.getElementById("commentInput");
-
-const editUsername =
-    document.getElementById("editUsername");
-
-const editBio =
-    document.getElementById("editBio");
-
-const saveProfileBtn =
-    document.getElementById("saveProfile");
-
-const notificationList =
-    document.getElementById("notificationList");
-
-const suggestedCreators =
-    document.getElementById("suggestedCreators");
-
-const authLoginInput =
-    document.getElementById("loginUsername");
+const $$ = (selector, root = document) =>
+    Array.from(root.querySelectorAll(selector));
 
 /* BASIC HELPERS */
 
-function createId() {
-    if (
-        window.crypto &&
-        typeof window.crypto.randomUUID === "function"
-    ) {
-        return window.crypto.randomUUID();
-    }
-
-    return (
-        Date.now().toString(36) +
-        Math.random().toString(36).substring(2)
-    );
-}
-
-function getInitial(name) {
-    if (!name) {
-        return "?";
-    }
-
-    return name.trim().charAt(0).toUpperCase();
-}
-
 function escapeHTML(value) {
-    if (value === null || value === undefined) {
-        return "";
-    }
-
-    return String(value)
+    return String(value ?? "")
         .replaceAll("&", "&amp;")
         .replaceAll("<", "&lt;")
         .replaceAll(">", "&gt;")
@@ -179,27 +65,25 @@ function escapeHTML(value) {
         .replaceAll("'", "&#039;");
 }
 
-function normalizeTopic(topic) {
-    const allowed = [
-        "Gaming",
-        "Cooking",
-        "School",
-        "Technology",
-        "Sports",
-        "Art",
-        "Entertainment",
-        "Other"
-    ];
-
-    if (allowed.includes(topic)) {
-        return topic;
-    }
-
-    return "Other";
+function makeId() {
+    return window.crypto?.randomUUID?.() ||
+        Date.now().toString(36) +
+        Math.random().toString(36).slice(2);
 }
 
-function topicEmoji(topic) {
-    const icons = {
+function initial(name) {
+    return String(name || "G")
+        .trim()
+        .charAt(0)
+        .toUpperCase() || "G";
+}
+
+function normalizeTopic(topic) {
+    return TOPICS.includes(topic) ? topic : "Other";
+}
+
+function topicIcon(topic) {
+    return ({
         Gaming: "🎮",
         Cooking: "🍳",
         School: "📚",
@@ -208,89 +92,210 @@ function topicEmoji(topic) {
         Art: "🎨",
         Entertainment: "😂",
         Other: "🌍"
-    };
-
-    return icons[normalizeTopic(topic)] || "🌍";
+    })[normalizeTopic(topic)];
 }
 
-function formatDate(timestamp) {
-    if (!timestamp) {
-        return "Just now";
+function timestampNumber(value) {
+    if (typeof value === "number") {
+        return value;
     }
 
-    const difference =
-        Date.now() - Number(timestamp);
-
-    const seconds =
-        Math.floor(difference / 1000);
-
-    if (seconds < 10) {
-        return "Just now";
+    if (
+        value === null ||
+        value === undefined ||
+        value === ""
+    ) {
+        return Date.now();
     }
+
+    const numeric = Number(value);
+
+    if (Number.isFinite(numeric) && numeric > 0) {
+        return numeric;
+    }
+
+    const parsed = Date.parse(value);
+
+    return Number.isFinite(parsed)
+        ? parsed
+        : Date.now();
+}
+
+function timeAgo(value) {
+    const seconds = Math.max(
+        0,
+        Math.floor(
+            (Date.now() - timestampNumber(value)) / 1000
+        )
+    );
 
     if (seconds < 60) {
-        return seconds + "s ago";
+        return "Just now";
     }
 
-    const minutes =
-        Math.floor(seconds / 60);
-
-    if (minutes < 60) {
-        return minutes + "m ago";
+    if (seconds < 3600) {
+        return Math.floor(seconds / 60) + "m ago";
     }
 
-    const hours =
-        Math.floor(minutes / 60);
-
-    if (hours < 24) {
-        return hours + "h ago";
+    if (seconds < 86400) {
+        return Math.floor(seconds / 3600) + "h ago";
     }
 
-    const days =
-        Math.floor(hours / 24);
-
-    if (days < 30) {
-        return days + "d ago";
+    if (seconds < 2592000) {
+        return Math.floor(seconds / 86400) + "d ago";
     }
 
-    const months =
-        Math.floor(days / 30);
-
-    if (months < 12) {
-        return months + "mo ago";
-    }
-
-    return Math.floor(months / 12) + "y ago";
+    return new Date(
+        timestampNumber(value)
+    ).toLocaleDateString();
 }
 
-function showToast(message) {
-    if (!toast || !toastText) {
+function toast(message) {
+    const box = $("#toast");
+
+    if (!box) {
         return;
     }
 
-    toastText.textContent = message;
-    toast.classList.add("show");
+    box.textContent = message;
+    box.classList.add("show");
 
-    clearTimeout(showToast.timer);
+    clearTimeout(toast.timer);
 
-    showToast.timer = setTimeout(function() {
-        toast.classList.remove("show");
+    toast.timer = setTimeout(function() {
+        box.classList.remove("show");
     }, 2800);
 }
 
-function setAuthMessage(message, success = false) {
-    if (!authMessage) {
+function showLoader(show) {
+    const loader = $("#loader");
+
+    if (!loader) {
         return;
     }
 
-    authMessage.textContent = message;
+    loader.classList.toggle("hide", !show);
 
-    authMessage.style.color = success
-        ? "#19a66b"
-        : "#ff4d67";
+    if (!show) {
+        setTimeout(function() {
+            loader.remove();
+        }, 450);
+    }
 }
 
-function getStoredNotifications() {
+function setAuthMessage(message, success = false) {
+    const box = $("#authMessage");
+
+    if (!box) {
+        return;
+    }
+
+    box.textContent = message;
+
+    box.style.color = success
+        ? "#07895b"
+        : "#d13d59";
+}
+
+function getUser(userId) {
+    return users.find(function(user) {
+        return user.id === userId;
+    }) || null;
+}
+
+/* WATCH HISTORY */
+
+function getWatchHistory() {
+    if (!currentUser) {
+        return {};
+    }
+
+    try {
+        return JSON.parse(
+            localStorage.getItem(
+                "gocat_watch_" + currentUser.id
+            ) || "{}"
+        );
+    } catch (error) {
+        return {};
+    }
+}
+
+function saveWatchHistory(history) {
+    if (!currentUser) {
+        return;
+    }
+
+    localStorage.setItem(
+        "gocat_watch_" + currentUser.id,
+        JSON.stringify(history)
+    );
+}
+
+function rememberVideo(video) {
+    if (!currentUser || !video) {
+        return;
+    }
+
+    const history = getWatchHistory();
+    const topic = normalizeTopic(video.topic);
+
+    history[video.id] = {
+        topic: topic,
+        watchedAt: Date.now()
+    };
+
+    const recent = Object.entries(history)
+        .sort(function(a, b) {
+            return timestampNumber(b[1].watchedAt) -
+                timestampNumber(a[1].watchedAt);
+        })
+        .slice(0, 150);
+
+    saveWatchHistory(
+        Object.fromEntries(recent)
+    );
+}
+
+/* LOCAL NOTIFICATIONS */
+
+function addLocalNotification(icon, message) {
+    if (!currentUser) {
+        return;
+    }
+
+    try {
+        const key =
+            "gocat_notifications_" + currentUser.id;
+
+        const items = JSON.parse(
+            localStorage.getItem(key) || "[]"
+        );
+
+        items.unshift({
+            id: makeId(),
+            icon: icon,
+            message: message,
+            created_at: Date.now()
+        });
+
+        localStorage.setItem(
+            key,
+            JSON.stringify(items.slice(0, 100))
+        );
+
+        notifications = items.slice(0, 100);
+
+        renderNotifications();
+    } catch (error) {
+        console.warn(
+            "Notification could not be saved",
+            error
+        );
+    }
+}
+
+function loadLocalNotifications() {
     if (!currentUser) {
         return [];
     }
@@ -301,193 +306,57 @@ function getStoredNotifications() {
                 "gocat_notifications_" + currentUser.id
             ) || "[]"
         );
-    } catch {
+    } catch (error) {
         return [];
     }
 }
 
-function saveStoredNotifications() {
-    if (!currentUser) {
-        return;
-    }
-
-    localStorage.setItem(
-        "gocat_notifications_" + currentUser.id,
-        JSON.stringify(notifications)
-    );
-}
-
-function addNotification(icon, text) {
-    if (!currentUser) {
-        return;
-    }
-
-    notifications.unshift({
-        id: createId(),
-        icon: icon,
-        text: text,
-        createdAt: Date.now()
-    });
-
-    if (notifications.length > 100) {
-        notifications = notifications.slice(0, 100);
-    }
-
-    saveStoredNotifications();
-    renderNotifications();
-}
-
-/* LOADER */
-
-function hideGoCatLoader() {
-    const loader =
-        document.getElementById("gocatLoadingScreen");
-
-    if (!loader) {
-        return;
-    }
-
-    loader.classList.add("hide");
-
-    setTimeout(function() {
-        if (loader.parentNode) {
-            loader.remove();
-        }
-    }, 500);
-}
-
-/* AUTH SCREEN */
-
-function showLoginScreen() {
-    authScreen.classList.remove("hidden");
-    app.classList.add("hidden");
-
-    loginForm.classList.remove("hidden");
-    registerForm.classList.add("hidden");
-
-    authTitle.textContent = "Welcome back";
-    authSubtitle.textContent =
-        "Sign in to continue to GoCat";
-
-    if (authLoginInput) {
-        authLoginInput.placeholder = "Email";
-    }
-
-    setAuthMessage("");
-}
-
-function showRegisterScreen() {
-    authScreen.classList.remove("hidden");
-    app.classList.add("hidden");
-
-    loginForm.classList.add("hidden");
-    registerForm.classList.remove("hidden");
-
-    authTitle.textContent = "Create your GoCat account";
-    authSubtitle.textContent = "Join the GoCat community";
-
-    setAuthMessage("");
-}
-
-function showApp() {
-    authScreen.classList.add("hidden");
-    app.classList.remove("hidden");
-}
-
-/* GET CURRENT AUTH USER */
-
-async function getAuthUser() {
-    const result =
-        await supabaseClient.auth.getUser();
-
-    if (result.error) {
-        console.error(result.error);
-        return null;
-    }
-
-    return result.data.user || null;
-}
-
-/* CREATE / ENSURE PROFILE */
+/* SUPABASE AUTH AND PROFILE */
 
 async function ensureProfile(authUser) {
-    if (!authUser) {
-        return null;
+    const lookup = await supabaseClient
+        .from("users")
+        .select("id,username,email,bio,created_at")
+        .eq("id", authUser.id)
+        .maybeSingle();
+
+    if (lookup.error) {
+        throw lookup.error;
     }
 
-    const existing =
-        await supabaseClient
-            .from("users")
-            .select("*")
-            .eq("id", authUser.id)
-            .maybeSingle();
-
-    if (existing.error) {
-        console.error(existing.error);
-        return null;
+    if (lookup.data) {
+        return lookup.data;
     }
 
-    if (existing.data) {
-        return existing.data;
-    }
-
-    let username =
+    let username = String(
         authUser.user_metadata?.username ||
-        "gocat_user";
-
-    username = String(username)
+        "gocat_user"
+    )
         .trim()
         .replace(/\s+/g, "_")
-        .substring(0, 20);
+        .slice(0, 20);
 
-    if (!username) {
-        username = "gocat_user";
+    if (username.length < 3) {
+        username =
+            "gocat_user_" +
+            Math.floor(Math.random() * 9999);
     }
 
-    let attempt = username;
-    let counter = 1;
-
-    while (true) {
-        const check =
-            await supabaseClient
-                .from("users")
-                .select("id")
-                .eq("username", attempt)
-                .maybeSingle();
-
-        if (check.error) {
-            break;
-        }
-
-        if (!check.data) {
-            break;
-        }
-
-        counter++;
-
-        attempt =
-            username.substring(0, 16) +
-            "_" +
-            counter;
-    }
-
-    const insert =
-        await supabaseClient
-            .from("users")
-            .insert({
-                id: authUser.id,
-                username: attempt,
-                email: authUser.email || "",
-                password_hash: null,
-                bio: "Welcome to my GoCat profile.",
-                created_at: Date.now()
-            })
-            .select("*")
-            .single();
+    const insert = await supabaseClient
+        .from("users")
+        .insert({
+            id: authUser.id,
+            username: username,
+            email: authUser.email || "",
+            bio: "Welcome to my GoCat profile.",
+            created_at: Date.now(),
+            password_hash: null
+        })
+        .select("id,username,email,bio,created_at")
+        .single();
 
     if (insert.error) {
-        console.error(insert.error);
-        return null;
+        throw insert.error;
     }
 
     return insert.data;
@@ -496,24 +365,51 @@ async function ensureProfile(authUser) {
 /* LOAD USERS */
 
 async function loadUsers() {
-    const result =
-        await supabaseClient
-            .from("users")
-            .select("id,username,email,bio,created_at")
-            .order("created_at", {
-                ascending: false
-            });
+    const result = await supabaseClient
+        .from("users")
+        .select("id,username,email,bio,created_at")
+        .order("created_at", {
+            ascending: false
+        });
 
     if (result.error) {
         throw result.error;
     }
 
     users = result.data || [];
-
-    return users;
 }
 
-/* LOAD VIDEOS — continues in Part 2 */
+/* LOAD FOLLOWS */
+
+async function loadFollows() {
+    const result = await supabaseClient
+        .from("follows")
+        .select("follower_id,following_id");
+
+    if (result.error) {
+        throw result.error;
+    }
+
+    follows = result.data || [];
+
+    if (currentUser) {
+        currentUser.following = follows
+            .filter(function(row) {
+                return row.follower_id === currentUser.id;
+            })
+            .map(function(row) {
+                return row.following_id;
+            });
+
+        currentUser.followers = follows
+            .filter(function(row) {
+                return row.following_id === currentUser.id;
+            })
+            .map(function(row) {
+                return row.follower_id;
+            });
+    }
+}
 
 /* LOAD VIDEOS */
 
@@ -536,7 +432,9 @@ async function loadVideos() {
 
         supabaseClient
             .from("comments")
-            .select("id,video_id,user_id,text,created_at")
+            .select(
+                "id,video_id,user_id,text,created_at"
+            )
             .order("created_at", {
                 ascending: true
             })
@@ -557,420 +455,593 @@ async function loadVideos() {
     const likes = likeResult.data || [];
     const comments = commentResult.data || [];
 
-    videos = (videoResult.data || []).map(function(video) {
-        const videoLikes = likes
-            .filter(function(item) {
-                return item.video_id === video.id;
-            })
-            .map(function(item) {
-                return item.user_id;
-            });
-
-        const videoComments = comments
-            .filter(function(item) {
-                return item.video_id === video.id;
-            })
-            .map(function(item) {
-                const commentUser = users.find(function(user) {
-                    return user.id === item.user_id;
-                });
-
-                return {
-                    id: item.id,
-                    userId: item.user_id,
-                    username: commentUser
-                        ? commentUser.username
-                        : "Unknown",
-                    text: item.text,
-                    createdAt: item.created_at
-                };
-            });
-
-        const publicUrl =
-            supabaseClient
-                .storage
-                .from(SUPABASE_BUCKET)
-                .getPublicUrl(video.storage_path)
-                .data
-                .publicUrl;
+    videos = (videoResult.data || []).map(function(row) {
+        const publicUrl = supabaseClient
+            .storage
+            .from(VIDEO_BUCKET)
+            .getPublicUrl(row.storage_path)
+            .data.publicUrl;
 
         return {
-            id: video.id,
-            ownerId: video.owner_id,
-            title: video.title,
-            description: video.description || "",
-            topic: normalizeTopic(video.topic),
+            id: row.id,
+            ownerId: row.owner_id,
+            title: row.title || "Untitled video",
+            description: row.description || "",
+            topic: normalizeTopic(row.topic),
+            storagePath: row.storage_path,
             file: publicUrl,
-            storagePath: video.storage_path,
-            createdAt: video.created_at,
-            likes: videoLikes,
-            views: Number(video.views || 0),
-            isShort: video.is_short === true,
-            comments: videoComments
+            createdAt: row.created_at,
+            views: Number(row.views || 0),
+            isReel: row.is_short === true,
+
+            likes: likes
+                .filter(function(item) {
+                    return item.video_id === row.id;
+                })
+                .map(function(item) {
+                    return item.user_id;
+                }),
+
+            comments: comments
+                .filter(function(item) {
+                    return item.video_id === row.id;
+                })
+                .map(function(item) {
+                    return {
+                        id: item.id,
+                        userId: item.user_id,
+                        username:
+                            getUser(item.user_id)?.username ||
+                            "GoCat user",
+                        text: item.text,
+                        createdAt: item.created_at
+                    };
+                })
         };
     });
-
-    return videos;
 }
 
-/* LOAD EVERYTHING */
+/* LOAD POSTS */
+
+async function loadPosts() {
+    const [
+        postResult,
+        likeResult
+    ] = await Promise.all([
+        supabaseClient
+            .from("posts")
+            .select("*")
+            .order("created_at", {
+                ascending: false
+            }),
+
+        supabaseClient
+            .from("post_likes")
+            .select("post_id,user_id")
+    ]);
+
+    if (postResult.error) {
+        throw postResult.error;
+    }
+
+    if (likeResult.error) {
+        throw likeResult.error;
+    }
+
+    postLikes = likeResult.data || [];
+
+    posts = (postResult.data || []).map(function(row) {
+        return {
+            id: row.id,
+            userId: row.user_id,
+            content: row.content || "",
+            mediaPath: row.media_path,
+
+            imageUrl: row.media_path
+                ? supabaseClient
+                    .storage
+                    .from(POST_BUCKET)
+                    .getPublicUrl(row.media_path)
+                    .data.publicUrl
+                : "",
+
+            createdAt: row.created_at,
+
+            likes: postLikes
+                .filter(function(like) {
+                    return like.post_id === row.id;
+                })
+                .map(function(like) {
+                    return like.user_id;
+                })
+        };
+    });
+}
+
+/* LOAD ALL DATA */
 
 async function loadAllData() {
     await loadUsers();
-    await loadVideos();
+    await loadFollows();
+
+    await Promise.all([
+        loadVideos(),
+        loadPosts()
+    ]);
 }
 
-/* CURRENT USER */
+/* START SESSION */
 
-async function loadCurrentProfile() {
-    const authUser = await getAuthUser();
+async function startSession() {
+    showLoader(true);
+
+    const authResult =
+        await supabaseClient.auth.getUser();
+
+    if (authResult.error) {
+        throw authResult.error;
+    }
+
+    const authUser = authResult.data.user;
 
     if (!authUser) {
-        currentUser = null;
-        return null;
-    }
-
-    let profile = users.find(function(user) {
-        return user.id === authUser.id;
-    });
-
-    if (!profile) {
-        profile = await ensureProfile(authUser);
-
-        if (profile) {
-            users.push(profile);
-        }
-    }
-
-    if (!profile) {
-        currentUser = {
-            id: authUser.id,
-            username:
-                authUser.user_metadata?.username ||
-                "GoCat User",
-            email: authUser.email || "",
-            bio: "",
-            followers: [],
-            following: [],
-            createdAt: Date.now()
-        };
-
-        return currentUser;
-    }
-
-    const followResult =
-        await supabaseClient
-            .from("follows")
-            .select("follower_id,following_id")
-            .or(
-                "follower_id.eq." +
-                profile.id +
-                ",following_id.eq." +
-                profile.id
-            );
-
-    const rows = followResult.data || [];
-
-    const following = rows
-        .filter(function(row) {
-            return row.follower_id === profile.id;
-        })
-        .map(function(row) {
-            return row.following_id;
-        });
-
-    const followers = rows
-        .filter(function(row) {
-            return row.following_id === profile.id;
-        })
-        .map(function(row) {
-            return row.follower_id;
-        });
-
-    currentUser = {
-        id: profile.id,
-        username: profile.username,
-        email: profile.email,
-        bio: profile.bio || "",
-        followers: followers,
-        following: following,
-        createdAt: profile.created_at
-    };
-
-    notifications = getStoredNotifications();
-
-    return currentUser;
-}
-
-/* UPDATE CURRENT USER UI */
-
-function updateUserUI() {
-    if (!currentUser) {
+        showLogin();
+        showLoader(false);
         return;
     }
 
-    const initial = getInitial(currentUser.username);
+    await ensureProfile(authUser);
 
-    const topAvatar =
-        document.getElementById("topAvatar");
+    await loadUsers();
 
-    const commentAvatar =
-        document.getElementById("commentAvatar");
+    currentUser = getUser(authUser.id);
 
-    const welcomeName =
-        document.getElementById("welcomeName");
-
-    if (topAvatar) {
-        topAvatar.textContent = initial;
+    if (!currentUser) {
+        throw new Error(
+            "Your GoCat profile could not be loaded."
+        );
     }
 
-    if (commentAvatar) {
-        commentAvatar.textContent = initial;
-    }
+    await loadFollows();
 
-    if (welcomeName) {
-        welcomeName.textContent = currentUser.username;
-    }
+    await Promise.all([
+        loadVideos(),
+        loadPosts()
+    ]);
+
+    notifications = loadLocalNotifications();
+
+    currentProfileUserId = currentUser.id;
+
+    $("#authScreen").classList.add("hidden");
+    $("#app").classList.remove("hidden");
+
+    updateUserUI();
+    renderAll();
+
+    subscribeToMessages();
+
+    showLoader(false);
 }
 
-/* PROFILE FOLLOW COUNTS */
+/* AUTH SCREEN */
 
-async function getFollowLists(userId) {
-    const result =
-        await supabaseClient
-            .from("follows")
-            .select("follower_id,following_id")
-            .or(
-                "follower_id.eq." +
-                userId +
-                ",following_id.eq." +
-                userId
-            );
+function showLogin() {
+    $("#authScreen").classList.remove("hidden");
+    $("#app").classList.add("hidden");
 
-    if (result.error) {
-        return {
-            followers: [],
-            following: []
-        };
-    }
+    $("#loginForm").classList.remove("hidden");
+    $("#registerForm").classList.add("hidden");
 
-    const rows = result.data || [];
+    $("#authTitle").textContent = "Welcome back";
+    $("#authSubtitle").textContent =
+        "Sign in to continue to GoCat.";
 
-    return {
-        followers: rows
-            .filter(function(row) {
-                return row.following_id === userId;
-            })
-            .map(function(row) {
-                return row.follower_id;
-            }),
-
-        following: rows
-            .filter(function(row) {
-                return row.follower_id === userId;
-            })
-            .map(function(row) {
-                return row.following_id;
-            })
-    };
+    setAuthMessage("");
 }
 
-/* SHOW PAGE */
+function showRegister() {
+    $("#authScreen").classList.remove("hidden");
+    $("#app").classList.add("hidden");
 
-function showPage(page) {
-    currentPage = page;
+    $("#loginForm").classList.add("hidden");
+    $("#registerForm").classList.remove("hidden");
 
-    document.querySelectorAll(".page").forEach(function(section) {
-        section.classList.toggle(
-            "hidden",
-            section.id !== "page-" + page
-        );
-    });
+    $("#authTitle").textContent = "Join GoCat";
+    $("#authSubtitle").textContent =
+        "Create your creator account.";
 
-    document.querySelectorAll(".nav-item").forEach(function(button) {
-        button.classList.toggle(
-            "active",
-            button.dataset.page === page
-        );
-    });
+    setAuthMessage("");
+}
 
-    const sidebar = document.querySelector(".sidebar");
+/* LOGIN */
 
-    if (sidebar) {
-        sidebar.classList.remove("open");
-    }
+async function handleLogin(event) {
+    event.preventDefault();
 
-    if (page === "home") renderHome();
-    if (page === "shorts") renderShorts();
-    if (page === "explore") renderExplore();
-    if (page === "following") renderFollowing();
+    const email = $("#loginEmail").value.trim();
+    const password = $("#loginPassword").value;
 
-    if (page === "profile") {
-        if (!currentProfileUserId) {
-            currentProfileUserId =
-                currentUser ? currentUser.id : null;
+    setAuthMessage("Signing you in...", true);
+
+    try {
+        const result = await supabaseClient
+            .auth
+            .signInWithPassword({
+                email: email,
+                password: password
+            });
+
+        if (result.error) {
+            throw result.error;
         }
 
-        renderProfile();
-    }
+        await startSession();
+    } catch (error) {
+        console.error(error);
 
-    if (page === "notifications") {
-        renderNotifications();
+        setAuthMessage(
+            error.message || "Could not sign in."
+        );
     }
 }
 
-/* SEARCH */
+/* REGISTER */
 
-function getSearchValue() {
-    return searchInput
-        ? searchInput.value.trim().toLowerCase()
-        : "";
+async function handleRegister(event) {
+    event.preventDefault();
+
+    const username =
+        $("#registerUsername").value.trim();
+
+    const email =
+        $("#registerEmail").value.trim();
+
+    const password =
+        $("#registerPassword").value;
+
+    const confirm =
+        $("#registerConfirm").value;
+
+    if (username.length < 3) {
+        return setAuthMessage(
+            "Username must have at least 3 characters."
+        );
+    }
+
+    if (password.length < 6) {
+        return setAuthMessage(
+            "Password must have at least 6 characters."
+        );
+    }
+
+    if (password !== confirm) {
+        return setAuthMessage(
+            "The passwords do not match."
+        );
+    }
+
+    if (
+        users.some(function(user) {
+            return user.username?.toLowerCase() ===
+                username.toLowerCase();
+        })
+    ) {
+        return setAuthMessage(
+            "That username is already in use."
+        );
+    }
+
+    setAuthMessage("Creating your account...", true);
+
+    try {
+        const result = await supabaseClient
+            .auth
+            .signUp({
+                email: email,
+                password: password,
+                options: {
+                    data: {
+                        username: username
+                    }
+                }
+            });
+
+        if (result.error) {
+            throw result.error;
+        }
+
+        if (result.data.session) {
+            await ensureProfile(result.data.user);
+            await startSession();
+        } else {
+            setAuthMessage(
+                "Account created. Check your email to confirm it before logging in.",
+                true
+            );
+        }
+    } catch (error) {
+        console.error(error);
+
+        setAuthMessage(
+            error.message || "Could not create your account."
+        );
+    }
 }
 
-function filterVideos(list) {
-    const query = getSearchValue();
+/* LOGOUT */
+
+async function logout() {
+    try {
+        if (chatChannel) {
+            await supabaseClient.removeChannel(chatChannel);
+        }
+
+        await supabaseClient.auth.signOut();
+    } catch (error) {
+        console.error(error);
+    }
+
+    currentUser = null;
+    users = [];
+    videos = [];
+    posts = [];
+    follows = [];
+    currentChatUserId = null;
+
+    showLogin();
+    toast("You have logged out.");
+}
+
+/* RECOMMENDATIONS */
+
+function topicInterestScores() {
+    const scores = {};
+    const history = getWatchHistory();
+
+    Object.values(history).forEach(function(item) {
+        const topic = normalizeTopic(item.topic);
+
+        scores[topic] =
+            (scores[topic] || 0) + 2;
+    });
+
+    videos.forEach(function(video) {
+        if (
+            video.likes.includes(currentUser?.id)
+        ) {
+            const topic = normalizeTopic(video.topic);
+
+            scores[topic] =
+                (scores[topic] || 0) + 5;
+        }
+    });
+
+    return scores;
+}
+
+function recommendVideos(source, includeReels = false) {
+    const interests = topicInterestScores();
+    const history = getWatchHistory();
+    const following = new Set(
+        currentUser?.following || []
+    );
+
+    const now = Date.now();
+
+    return source
+        .filter(function(video) {
+            return includeReels
+                ? video.isReel
+                : !video.isReel;
+        })
+
+        .filter(function(video) {
+            return activeHomeTopic === "All" ||
+                normalizeTopic(video.topic) === activeHomeTopic;
+        })
+
+        .map(function(video) {
+            const topic = normalizeTopic(video.topic);
+
+            const ageDays = Math.max(
+                0,
+                (
+                    now -
+                    timestampNumber(video.createdAt)
+                ) / 86400000
+            );
+
+            const historyItem = history[video.id];
+
+            const recentlyWatched =
+                historyItem &&
+                now - timestampNumber(historyItem.watchedAt) <
+                    5 * 86400000;
+
+            const topicScore =
+                (interests[topic] || 0) * 3;
+
+            const followScore =
+                following.has(video.ownerId) ? 7 : 0;
+
+            const engagementScore =
+                Math.log1p(video.likes.length) * 2 +
+                Math.log1p(video.views) * 0.8;
+
+            const freshnessScore =
+                Math.max(0, 8 - ageDays * 0.45);
+
+            const repeatPenalty =
+                recentlyWatched ? 8 : 0;
+
+            const ownVideoPenalty =
+                video.ownerId === currentUser?.id ? 1 : 0;
+
+            return {
+                video: video,
+
+                score:
+                    topicScore +
+                    followScore +
+                    engagementScore +
+                    freshnessScore -
+                    repeatPenalty -
+                    ownVideoPenalty
+            };
+        })
+
+        .sort(function(a, b) {
+            return b.score - a.score ||
+                timestampNumber(b.video.createdAt) -
+                timestampNumber(a.video.createdAt);
+        })
+
+        .map(function(item) {
+            return item.video;
+        });
+}
+
+function currentSearch() {
+    return $("#searchInput").value
+        .trim()
+        .toLowerCase();
+}
+
+function filterBySearch(list) {
+    const query = currentSearch();
 
     if (!query) {
         return list;
     }
 
-    return list.filter(function(video) {
-        const owner = users.find(function(user) {
-            return user.id === video.ownerId;
-        });
+    return list.filter(function(item) {
+        const owner = getUser(
+            item.ownerId || item.userId
+        );
 
-        const searchable = [
-            video.title,
-            video.description,
-            video.topic,
-            owner ? owner.username : ""
+        const text = [
+            item.title,
+            item.description,
+            item.topic,
+            item.content,
+            owner?.username
         ]
             .join(" ")
             .toLowerCase();
 
-        return searchable.includes(query);
+        return text.includes(query);
     });
 }
 
-/* CREATE VIDEO CARD */
+/* VIDEO CARDS */
 
-function createVideoCard(video) {
-    const owner = users.find(function(user) {
-        return user.id === video.ownerId;
-    });
+function videoCard(video) {
+    const owner = getUser(video.ownerId);
 
     if (!owner) {
         return "";
     }
 
+    const own =
+        video.ownerId === currentUser.id;
+
     const liked =
-        currentUser &&
         video.likes.includes(currentUser.id);
 
     const following =
-        currentUser &&
         currentUser.following.includes(owner.id);
-
-    const mine =
-        currentUser &&
-        currentUser.id === owner.id;
 
     return `
         <article
-            class="video-card ${video.isShort ? "short-card" : ""}"
-            data-video-id="${escapeHTML(video.id)}"
+            class="video-card"
+            data-video-card="${escapeHTML(video.id)}"
         >
             <div class="video-player-wrap">
                 <video
                     class="video-player"
                     src="${escapeHTML(video.file)}"
                     controls
-                    preload="metadata"
                     playsinline
-                    data-view="${escapeHTML(video.id)}"
+                    preload="metadata"
+                    data-watch="${escapeHTML(video.id)}"
                 ></video>
             </div>
 
             <div class="video-owner">
                 <div class="owner-avatar">
-                    ${escapeHTML(getInitial(owner.username))}
+                    ${escapeHTML(initial(owner.username))}
                 </div>
 
                 <div class="owner-name">
                     <button
                         class="profile-user-btn"
-                        data-user="${escapeHTML(owner.id)}"
+                        data-profile-user="${escapeHTML(owner.id)}"
                     >
                         ${escapeHTML(owner.username)}
                     </button>
-
-                    <span class="verified">✓</span>
                 </div>
 
                 ${
-                    !mine
-                    ? `
+                    own
+                    ? ""
+                    : `
                         <button
                             class="follow-btn"
-                            data-follow="${escapeHTML(owner.id)}"
+                            data-follow-user="${escapeHTML(owner.id)}"
                         >
                             ${following ? "Following" : "Follow"}
                         </button>
                     `
-                    : ""
                 }
             </div>
 
             <div class="video-info">
                 <h3>${escapeHTML(video.title)}</h3>
+                <p>${escapeHTML(video.description)}</p>
 
-                ${
-                    video.description
-                    ? `<p>${escapeHTML(video.description)}</p>`
-                    : ""
-                }
-
-                <div class="video-topic">
-                    ${topicEmoji(video.topic)}
-                    ${escapeHTML(normalizeTopic(video.topic))}
-                </div>
+                <span class="video-topic">
+                    ${topicIcon(video.topic)}
+                    ${escapeHTML(video.topic)}
+                </span>
             </div>
 
             <div class="video-meta">
-                <span>👁 ${Number(video.views || 0)}</span>
-                <span>${formatDate(video.createdAt)}</span>
+                <span>👁 ${video.views}</span>
+                <span>${timeAgo(video.createdAt)}</span>
             </div>
 
             <div class="video-actions">
                 <button
                     class="action-btn ${liked ? "liked" : ""}"
-                    data-like="${escapeHTML(video.id)}"
+                    data-like-video="${escapeHTML(video.id)}"
                 >
-                    ❤️ ${video.likes.length}
+                    ${liked ? "♥" : "♡"}
+                    ${video.likes.length}
                 </button>
 
                 <button
                     class="action-btn"
-                    data-comment="${escapeHTML(video.id)}"
+                    data-comment-video="${escapeHTML(video.id)}"
                 >
                     💬 ${video.comments.length}
                 </button>
 
                 <button
                     class="action-btn"
-                    data-share="${escapeHTML(video.id)}"
+                    data-share-video="${escapeHTML(video.id)}"
                 >
                     ↗ Share
                 </button>
 
                 ${
-                    mine
+                    own
                     ? `
                         <button
                             class="action-btn delete-btn"
-                            data-delete="${escapeHTML(video.id)}"
+                            data-delete-video="${escapeHTML(video.id)}"
                         >
-                            🗑 Delete
+                            Delete
                         </button>
                     `
                     : ""
@@ -980,622 +1051,532 @@ function createVideoCard(video) {
     `;
 }
 
-/* ATTACH VIDEO EVENTS */
+/* VIDEO PLAYBACK / VIEWS */
 
-function attachVideoEvents(container) {
-    if (!container) {
-        return;
-    }
+function attachWatchEvents(root) {
+    $$("video[data-watch]", root).forEach(function(videoElement) {
+        videoElement.addEventListener(
+            "play",
+            function() {
+                const id = videoElement.dataset.watch;
 
-    container
-        .querySelectorAll("[data-like]")
-        .forEach(function(button) {
-            button.addEventListener("click", function() {
-                toggleLike(button.dataset.like);
-            });
-        });
+                const video = videos.find(function(item) {
+                    return item.id === id;
+                });
 
-    container
-        .querySelectorAll("[data-comment]")
-        .forEach(function(button) {
-            button.addEventListener("click", function() {
-                openComments(button.dataset.comment);
-            });
-        });
+                if (!video) {
+                    return;
+                }
 
-    container
-        .querySelectorAll("[data-share]")
-        .forEach(function(button) {
-            button.addEventListener("click", function() {
-                shareVideo(button.dataset.share);
-            });
-        });
+                rememberVideo(video);
 
-    container
-        .querySelectorAll("[data-follow]")
-        .forEach(function(button) {
-            button.addEventListener("click", function() {
-                toggleFollow(button.dataset.follow);
-            });
-        });
+                if (viewRecorded.has(id)) {
+                    return;
+                }
 
-    container
-        .querySelectorAll("[data-delete]")
-        .forEach(function(button) {
-            button.addEventListener("click", function() {
-                deleteVideo(button.dataset.delete);
-            });
-        });
+                viewRecorded.add(id);
+                video.views += 1;
 
-    container
-        .querySelectorAll(".profile-user-btn")
-        .forEach(function(button) {
-            button.addEventListener("click", function() {
-                showUserProfile(button.dataset.user);
-            });
-        });
-
-    container
-        .querySelectorAll("[data-view]")
-        .forEach(function(videoElement) {
-            videoElement.addEventListener(
-                "play",
-                function() {
-                    registerVideoView(videoElement.dataset.view);
-                },
-                { once: true }
-            );
-        });
-}
-
-/* REGISTER VIDEO VIEW */
-
-async function registerVideoView(videoId) {
-    const video = videos.find(function(item) {
-        return item.id === videoId;
-    });
-
-    if (!video) {
-        return;
-    }
-
-    rememberWatchedVideo(video);
-
-    if (video._viewed) {
-        return;
-    }
-
-    video._viewed = true;
-
-    video.views =
-        Number(video.views || 0) + 1;
-
-    await supabaseClient
-        .from("videos")
-        .update({
-            views: video.views
-        })
-        .eq("id", video.id);
-}
-
-/* WATCH HISTORY */
-
-function getWatchHistory() {
-    if (!currentUser) {
-        return {};
-    }
-
-    try {
-        return JSON.parse(
-            localStorage.getItem(
-                "gocat_watch_history_" + currentUser.id
-            ) || "{}"
+                supabaseClient
+                    .from("videos")
+                    .update({
+                        views: video.views
+                    })
+                    .eq("id", id)
+                    .then(function(result) {
+                        if (result.error) {
+                            console.warn(result.error);
+                        }
+                    });
+            },
+            { once: true }
         );
-    } catch (error) {
-        return {};
-    }
-}
-
-function rememberWatchedVideo(video) {
-    if (!currentUser || !video) {
-        return;
-    }
-
-    const history = getWatchHistory();
-
-    history[video.id] = {
-        topic: normalizeTopic(video.topic),
-        ownerId: video.ownerId,
-        watchedAt: Date.now()
-    };
-
-    const recent = Object.entries(history)
-        .sort(function(a, b) {
-            return Number(b[1].watchedAt || 0) -
-                Number(a[1].watchedAt || 0);
-        })
-        .slice(0, 150);
-
-    localStorage.setItem(
-        "gocat_watch_history_" + currentUser.id,
-        JSON.stringify(Object.fromEntries(recent))
-    );
-}
-
-/* RECOMMENDATION ENGINE */
-
-function getRecommendedVideos(list) {
-    if (!currentUser) {
-        return list.slice();
-    }
-
-    const history = getWatchHistory();
-    const topicInterest = {};
-    const now = Date.now();
-
-    videos.forEach(function(video) {
-        const topic = normalizeTopic(video.topic);
-
-        if (
-            video.likes &&
-            video.likes.includes(currentUser.id)
-        ) {
-            topicInterest[topic] =
-                (topicInterest[topic] || 0) + 5;
-        }
-
-        const watched = history[video.id];
-
-        if (
-            watched &&
-            watched.watchedAt &&
-            now - watched.watchedAt < 30 * 86400000
-        ) {
-            topicInterest[topic] =
-                (topicInterest[topic] || 0) + 2;
-        }
     });
-
-    const followed = new Set(currentUser.following || []);
-
-    return list
-        .map(function(video) {
-            const topic = normalizeTopic(video.topic);
-
-            const created =
-                new Date(video.createdAt).getTime();
-
-            const ageDays = Number.isFinite(created)
-                ? Math.max(0, (now - created) / 86400000)
-                : 30;
-
-            const watch = history[video.id];
-
-            const watchedRecently =
-                watch &&
-                now - Number(watch.watchedAt || 0) <
-                    7 * 86400000;
-
-            const interestScore =
-                (topicInterest[topic] || 0) * 3;
-
-            const creatorScore =
-                followed.has(video.ownerId) ? 5 : 0;
-
-            const popularityScore =
-                Math.log1p((video.likes || []).length) * 2 +
-                Math.log1p(Number(video.views || 0)) * 0.7;
-
-            const freshnessScore =
-                Math.max(0, 5 - ageDays * 0.35);
-
-            const repeatPenalty =
-                watchedRecently ? 4 : 0;
-
-            const ownPostPenalty =
-                video.ownerId === currentUser.id ? 1 : 0;
-
-            return {
-                video: video,
-                score:
-                    interestScore +
-                    creatorScore +
-                    popularityScore +
-                    freshnessScore -
-                    repeatPenalty -
-                    ownPostPenalty
-            };
-        })
-        .sort(function(a, b) {
-            return b.score - a.score ||
-                new Date(b.video.createdAt) -
-                new Date(a.video.createdAt);
-        })
-        .map(function(item) {
-            return item.video;
-        });
 }
 
-/* HOME FEED */
+/* HOME RECOMMENDATIONS */
 
 function renderHome() {
-    if (!homeFeed) {
-        return;
-    }
+    const list = filterBySearch(
+        recommendVideos(videos, false)
+    );
 
-    let list = videos.filter(function(video) {
-        return !video.isShort;
-    });
+    const visible = list.slice(0, homeLimit);
 
-    if (activeHomeTopic !== "All") {
-        list = list.filter(function(video) {
-            return normalizeTopic(video.topic) === activeHomeTopic;
-        });
-    }
+    $("#homeFeed").innerHTML =
+        visible.map(videoCard).join("");
 
-    list = getRecommendedVideos(filterVideos(list));
+    $("#homeEmpty").classList.toggle(
+        "hidden",
+        list.length > 0
+    );
 
-    const visibleCount =
-        HOME_FEED_PAGE_SIZE + homeFeedOffset;
+    $("#homeLoadMoreWrap").classList.toggle(
+        "hidden",
+        list.length <= visible.length
+    );
 
-    const visible = list.slice(0, visibleCount);
+    $("#homeCount").textContent =
+        `${visible.length} of ${list.length} videos`;
 
-    homeFeed.innerHTML = visible.length
-        ? visible.map(createVideoCard).join("")
-        : `
-            <div class="empty-state feed-empty-state">
-                <div>🎬</div>
-                <h2>
-                    ${
-                        activeHomeTopic !== "All"
-                        ? "No videos in this topic yet"
-                        : "No videos yet"
-                    }
-                </h2>
-                <p>
-                    Like videos and follow creators so GoCat can learn what you enjoy.
-                </p>
-                <button class="main-btn upload-trigger" type="button">
-                    Upload Video
-                </button>
-            </div>
-        `;
-
-    if (list.length > visible.length) {
-        homeFeed.insertAdjacentHTML("beforeend", `
-            <div class="feed-pagination">
-                <button
-                    class="outline-btn feed-more-btn"
-                    id="loadMoreFeed"
-                    type="button"
-                >
-                    Show more videos ↓
-                </button>
-                <span>${visible.length} of ${list.length} videos</span>
-            </div>
-        `);
-
-        const moreButton =
-            document.getElementById("loadMoreFeed");
-
-        if (moreButton) {
-            moreButton.addEventListener("click", function() {
-                homeFeedOffset += HOME_FEED_PAGE_SIZE;
-                renderHome();
-            });
-        }
-    }
-
-    attachVideoEvents(homeFeed);
-
-    homeFeed
-        .querySelectorAll(".upload-trigger")
-        .forEach(function(button) {
-            button.addEventListener("click", openUploadModal);
-        });
+    attachWatchEvents($("#homeFeed"));
 
     renderSuggestedCreators();
-}
-
-/* SHORTS FEED */
-
-function renderShorts() {
-    const box = document.getElementById("shortsFeed");
-
-    if (!box) {
-        return;
-    }
-
-    const list = filterVideos(
-        videos.filter(function(video) {
-            return video.isShort === true;
-        })
-    ).sort(function(a, b) {
-        return new Date(b.createdAt) -
-            new Date(a.createdAt);
-    });
-
-    const visibleCount =
-        SHORTS_FEED_PAGE_SIZE + shortsFeedOffset;
-
-    const visible = list.slice(0, visibleCount);
-
-    box.innerHTML = visible.length
-        ? visible.map(createVideoCard).join("")
-        : `
-            <div class="empty-state shorts-empty-state">
-                <div>▶️</div>
-                <h2>No Shorts yet</h2>
-                <p>
-                    Upload a vertical video up to 60 seconds to start the Shorts feed.
-                </p>
-                <button
-                    class="main-btn short-upload-trigger"
-                    type="button"
-                >
-                    Create your first Short
-                </button>
-            </div>
-        `;
-
-    if (list.length > visible.length) {
-        box.insertAdjacentHTML("beforeend", `
-            <div class="feed-pagination">
-                <button
-                    class="outline-btn feed-more-btn"
-                    id="loadMoreShorts"
-                    type="button"
-                >
-                    Show more Shorts ↓
-                </button>
-                <span>${visible.length} of ${list.length} Shorts</span>
-            </div>
-        `);
-
-        const moreButton =
-            document.getElementById("loadMoreShorts");
-
-        if (moreButton) {
-            moreButton.addEventListener("click", function() {
-                shortsFeedOffset += SHORTS_FEED_PAGE_SIZE;
-                renderShorts();
-            });
-        }
-    }
-
-    attachVideoEvents(box);
-
-    box.querySelectorAll(".short-upload-trigger").forEach(function(button) {
-        button.addEventListener("click", function() {
-            openUploadModal("short");
-        });
-    });
 }
 
 /* SUGGESTED CREATORS */
 
 function renderSuggestedCreators() {
-    if (!suggestedCreators) {
+    const box = $("#suggestedCreators");
+
+    if (!box || !currentUser) {
         return;
     }
 
-    if (!currentUser) {
-        suggestedCreators.innerHTML = "";
-        return;
-    }
+    const candidates = users.filter(function(user) {
+        return (
+            user.id !== currentUser.id &&
+            !currentUser.following.includes(user.id)
+        );
+    });
 
-    const candidates = users
-        .filter(function(user) {
-            return (
-                user.id !== currentUser.id &&
-                !currentUser.following.includes(user.id)
-            );
-        })
-        .filter(function(user) {
-            return videos.some(function(video) {
+    const scored = candidates
+        .map(function(user) {
+            const creatorVideos = videos.filter(function(video) {
                 return video.ownerId === user.id;
             });
+
+            const interest = topicInterestScores();
+
+            const creatorTopicMatch =
+                creatorVideos.reduce(function(sum, video) {
+                    return sum +
+                        (interest[normalizeTopic(video.topic)] || 0);
+                }, 0);
+
+            return {
+                user: user,
+                count: creatorVideos.length,
+                score:
+                    creatorTopicMatch +
+                    creatorVideos.length
+            };
+        })
+        .filter(function(item) {
+            return item.count > 0;
+        })
+        .sort(function(a, b) {
+            return b.score - a.score;
         })
         .slice(0, 6);
 
-    if (!candidates.length) {
-        suggestedCreators.innerHTML = `
-            <div class="empty-state">
-                <div>👥</div>
-                <h2>You're all caught up</h2>
-                <p>Explore GoCat to find more creators.</p>
+    if (!scored.length) {
+        box.innerHTML = `
+            <div class="muted-text">
+                No new creator suggestions yet.
+                Explore videos to discover accounts.
             </div>
         `;
         return;
     }
 
-    suggestedCreators.innerHTML = candidates.map(function(user) {
-        const followed =
-            currentUser.following.includes(user.id);
-
+    box.innerHTML = scored.map(function(item) {
         return `
-            <div class="suggested-creator">
-                <button
-                    class="suggested-avatar"
-                    data-suggested-profile="${escapeHTML(user.id)}"
-                >
-                    ${escapeHTML(getInitial(user.username))}
-                </button>
+            <div class="creator-card">
+                <div class="creator-avatar">
+                    ${escapeHTML(initial(item.user.username))}
+                </div>
 
-                <div class="suggested-info">
-                    <strong>${escapeHTML(user.username)}</strong>
-                    <span>
-                        ${
-                            videos.filter(function(video) {
-                                return video.ownerId === user.id;
-                            }).length
-                        }
-                        videos
-                    </span>
+                <div class="creator-info">
+                    <strong>${escapeHTML(item.user.username)}</strong>
+                    <small>${item.count} videos</small>
                 </div>
 
                 <button
-                    class="follow-btn"
-                    data-suggested-follow="${escapeHTML(user.id)}"
+                    class="mini-follow"
+                    data-follow-user="${escapeHTML(item.user.id)}"
                 >
-                    ${followed ? "Following" : "Follow"}
+                    Follow
                 </button>
             </div>
         `;
     }).join("");
-
-    suggestedCreators
-        .querySelectorAll("[data-suggested-follow]")
-        .forEach(function(button) {
-            button.addEventListener("click", function() {
-                toggleFollow(button.dataset.suggestedFollow);
-            });
-        });
-
-    suggestedCreators
-        .querySelectorAll("[data-suggested-profile]")
-        .forEach(function(button) {
-            button.addEventListener("click", function() {
-                showUserProfile(button.dataset.suggestedProfile);
-            });
-        });
 }
 
-/* RENDER FOLLOWING */
+/* FOLLOWING FEED */
 
 function renderFollowing() {
-    if (!followingFeed || !currentUser) {
-        return;
-    }
+    const list = filterBySearch(
+        videos.filter(function(video) {
+            return (
+                currentUser.following.includes(video.ownerId) &&
+                !video.isReel
+            );
+        })
+    );
 
-    let list = videos.filter(function(video) {
-        return currentUser.following.includes(video.ownerId);
-    });
+    $("#followingFeed").innerHTML =
+        list.map(videoCard).join("");
 
-    list = filterVideos(list);
+    $("#followingEmpty").classList.toggle(
+        "hidden",
+        list.length > 0
+    );
 
-    followingFeed.innerHTML = list.length
-        ? list.map(createVideoCard).join("")
-        : `
-            <div class="empty-state">
-                <div>👥</div>
-                <h2>You're not following anyone yet</h2>
-                <p>Visit Explore and follow some creators.</p>
-            </div>
-        `;
-
-    attachVideoEvents(followingFeed);
+    attachWatchEvents($("#followingFeed"));
 }
 
-/* RENDER EXPLORE */
+/* EXPLORE */
 
 function renderExplore() {
-    if (!exploreVideos || !explorePeople) {
-        return;
-    }
+    const videoBox = $("#exploreVideos");
+    const peopleBox = $("#explorePeople");
+    const loadMore = $("#exploreLoadMoreWrap");
 
-    if (exploreMode === "people") {
-        exploreVideos.classList.add("hidden");
-        explorePeople.classList.remove("hidden");
-        renderExplorePeople();
-        return;
-    }
+    if (exploreMode === "videos") {
+        videoBox.classList.remove("hidden");
+        peopleBox.classList.add("hidden");
 
-    exploreVideos.classList.remove("hidden");
-    explorePeople.classList.add("hidden");
+        const list = filterBySearch(
+            videos.filter(function(video) {
+                return !video.isReel;
+            })
+        );
 
-    const list = filterVideos(videos);
+        const visible = list.slice(0, exploreLimit);
 
-    exploreVideos.innerHTML = list.length
-        ? list.map(createVideoCard).join("")
-        : `
-            <div class="empty-state">
-                <div>🔎</div>
-                <h2>Nothing found</h2>
-                <p>Try another search.</p>
-            </div>
-        `;
+        videoBox.innerHTML =
+            visible.map(videoCard).join("") ||
+            `
+                <div class="empty-card">
+                    <div>🔎</div>
+                    <h3>No videos found</h3>
+                    <p>Try another search.</p>
+                </div>
+            `;
 
-    attachVideoEvents(exploreVideos);
-}
+        loadMore.classList.toggle(
+            "hidden",
+            list.length <= visible.length
+        );
 
-function renderExplorePeople() {
-    const query = getSearchValue();
+        $("#exploreCount").textContent =
+            `${visible.length} of ${list.length} videos`;
 
-    const people = users.filter(function(user) {
-        if (!query) {
-            return true;
-        }
+        attachWatchEvents(videoBox);
+    } else {
+        videoBox.classList.add("hidden");
+        peopleBox.classList.remove("hidden");
 
-        return user.username
-            .toLowerCase()
-            .includes(query);
-    });
+        const query = currentSearch();
 
-    explorePeople.innerHTML = people.length
-        ? people.map(function(user) {
-            if (currentUser && user.id === currentUser.id) {
-                return "";
-            }
+        const candidates = users.filter(function(user) {
+            return (
+                user.id !== currentUser.id &&
+                (
+                    !query ||
+                    user.username.toLowerCase().includes(query)
+                )
+            );
+        });
 
+        const visible = candidates.slice(0, peopleLimit);
+
+        peopleBox.innerHTML = visible.map(function(user) {
             const followed =
-                currentUser &&
                 currentUser.following.includes(user.id);
 
-            const videoCount = videos.filter(function(video) {
+            const count = videos.filter(function(video) {
                 return video.ownerId === user.id;
             }).length;
 
             return `
-                <div class="person-card">
+                <article class="person-card">
                     <div class="person-avatar">
-                        ${escapeHTML(getInitial(user.username))}
+                        ${escapeHTML(initial(user.username))}
                     </div>
 
                     <h3>${escapeHTML(user.username)}</h3>
-                    <p>${videoCount} videos</p>
+                    <p>${count} videos</p>
 
                     <button
-                        class="outline-btn person-view-btn"
-                        data-person="${escapeHTML(user.id)}"
+                        class="soft-btn"
+                        data-profile-user="${escapeHTML(user.id)}"
                     >
-                        View Profile
+                        View profile
                     </button>
 
                     <button
-                        class="main-btn person-follow-btn"
-                        data-person-follow="${escapeHTML(user.id)}"
+                        class="primary-btn"
+                        data-follow-user="${escapeHTML(user.id)}"
                     >
                         ${followed ? "Following" : "Follow"}
                     </button>
-                </div>
+                </article>
             `;
-        }).join("")
-        : `
-            <div class="empty-state">
-                <div>👤</div>
-                <h2>No creators found</h2>
+        }).join("") || `
+            <div class="empty-card">
+                <div>👥</div>
+                <h3>No creators found</h3>
+                <p>Try another username.</p>
             </div>
         `;
 
-    explorePeople
-        .querySelectorAll("[data-person]")
-        .forEach(function(button) {
-            button.addEventListener("click", function() {
-                showUserProfile(button.dataset.person);
-            });
-        });
+        loadMore.classList.toggle(
+            "hidden",
+            candidates.length <= visible.length
+        );
 
-    explorePeople
-        .querySelectorAll("[data-person-follow]")
-        .forEach(function(button) {
-            button.addEventListener("click", function() {
-                toggleFollow(button.dataset.personFollow);
-            });
-        });
+        $("#exploreCount").textContent =
+            `${visible.length} of ${candidates.length} creators`;
+    }
 }
 
-/* RENDER PROFILE */
+/* REELS */
+
+function reelCard(video) {
+    const owner = getUser(video.ownerId);
+
+    if (!owner) {
+        return "";
+    }
+
+    const liked =
+        video.likes.includes(currentUser.id);
+
+    const following =
+        currentUser.following.includes(owner.id);
+
+    const own =
+        video.ownerId === currentUser.id;
+
+    return `
+        <article
+            class="reel-item"
+            data-reel-card="${escapeHTML(video.id)}"
+        >
+            <video
+                class="reel-video"
+                src="${escapeHTML(video.file)}"
+                playsinline
+                loop
+                muted
+                preload="metadata"
+                data-reel-video="${escapeHTML(video.id)}"
+            ></video>
+
+            <div class="reel-shade"></div>
+
+            <button
+                class="reel-sound"
+                type="button"
+                data-reel-sound="${escapeHTML(video.id)}"
+                aria-label="Toggle sound"
+            >
+                🔇
+            </button>
+
+            <div class="reel-info">
+                <div class="reel-user-row">
+                    <div class="reel-user-avatar">
+                        ${escapeHTML(initial(owner.username))}
+                    </div>
+
+                    <button
+                        class="reel-username"
+                        data-profile-user="${escapeHTML(owner.id)}"
+                    >
+                        @${escapeHTML(owner.username)}
+                    </button>
+
+                    ${
+                        own
+                        ? ""
+                        : `
+                            <button
+                                class="reel-follow"
+                                data-follow-user="${escapeHTML(owner.id)}"
+                            >
+                                ${following ? "Following" : "Follow"}
+                            </button>
+                        `
+                    }
+                </div>
+
+                <p class="reel-caption">
+                    ${escapeHTML(video.title)}
+                    ${
+                        video.description
+                        ? " · " + escapeHTML(video.description)
+                        : ""
+                    }
+                </p>
+
+                <small>
+                    ${topicIcon(video.topic)}
+                    ${escapeHTML(video.topic)}
+                </small>
+            </div>
+
+            <div class="reel-actions">
+                <button
+                    class="reel-action ${liked ? "liked" : ""}"
+                    data-like-video="${escapeHTML(video.id)}"
+                    aria-label="Like"
+                >
+                    ${liked ? "♥" : "♡"}
+                </button>
+
+                <button
+                    class="reel-action"
+                    data-comment-video="${escapeHTML(video.id)}"
+                    aria-label="Comments"
+                >
+                    💬
+                </button>
+
+                <button
+                    class="reel-action"
+                    data-share-video="${escapeHTML(video.id)}"
+                    aria-label="Share"
+                >
+                    ↗
+                </button>
+
+                ${
+                    own
+                    ? `
+                        <button
+                            class="reel-action"
+                            data-delete-video="${escapeHTML(video.id)}"
+                            aria-label="Delete"
+                        >
+                            ⌫
+                        </button>
+                    `
+                    : ""
+                }
+            </div>
+        </article>
+    `;
+}
+
+/* REEL AUTOPLAY */
+
+let reelObserver = null;
+
+function setupReelPlayback() {
+    const box = $("#reelsFeed");
+
+    if (!box) {
+        return;
+    }
+
+    if (reelObserver) {
+        reelObserver.disconnect();
+    }
+
+    reelObserver = new IntersectionObserver(
+        function(entries) {
+            entries.forEach(function(entry) {
+                const video = entry.target;
+
+                if (
+                    entry.isIntersecting &&
+                    entry.intersectionRatio >= 0.65
+                ) {
+                    $$(".reel-video", box).forEach(function(other) {
+                        if (other !== video) {
+                            other.pause();
+                        }
+                    });
+
+                    const data = videos.find(function(item) {
+                        return item.id === video.dataset.reelVideo;
+                    });
+
+                    if (data) {
+                        rememberVideo(data);
+                    }
+
+                    video.play().catch(function() {});
+
+                    if (
+                        data &&
+                        !viewRecorded.has(data.id)
+                    ) {
+                        viewRecorded.add(data.id);
+                        data.views += 1;
+
+                        supabaseClient
+                            .from("videos")
+                            .update({
+                                views: data.views
+                            })
+                            .eq("id", data.id)
+                            .then(function(result) {
+                                if (result.error) {
+                                    console.warn(result.error);
+                                }
+                            });
+                    }
+                } else {
+                    video.pause();
+                }
+            });
+        },
+        {
+            root: box,
+            threshold: [0, .65, 1]
+        }
+    );
+
+    $$(".reel-video", box).forEach(function(video) {
+        reelObserver.observe(video);
+    });
+}
+
+/* RENDER REELS */
+
+function renderReels() {
+    const box = $("#reelsFeed");
+
+    const list = filterBySearch(
+        recommendVideos(videos, true)
+    );
+
+    const visible = list.slice(0, reelLimit);
+
+    if (!visible.length) {
+        box.innerHTML = `
+            <div class="reel-empty">
+                <div>
+                    <div style="font-size:54px">▶️</div>
+                    <h2>No Reels yet</h2>
+                    <p>
+                        Create a vertical video and share it with GoCat.
+                    </p>
+                    <button class="primary-btn" data-create-reel>
+                        Create Reel
+                    </button>
+                </div>
+            </div>
+        `;
+    } else {
+        box.innerHTML = visible
+            .map(reelCard)
+            .join("");
+    }
+
+    $("#reelsLoadMoreWrap").classList.toggle(
+        "hidden",
+        list.length <= visible.length
+    );
+
+    setupReelPlayback();
+}
+
+/* PROFILE */
 
 async function renderProfile() {
     if (!currentUser) {
@@ -1605,194 +1586,99 @@ async function renderProfile() {
     const userId =
         currentProfileUserId || currentUser.id;
 
-    const user = users.find(function(item) {
-        return item.id === userId;
-    });
+    const user = getUser(userId);
 
     if (!user) {
         return;
     }
 
-    const ownProfile = user.id === currentUser.id;
-    const follows = await getFollowLists(user.id);
+    const own =
+        user.id === currentUser.id;
 
-    const userVideos = videos.filter(function(video) {
+    const ownVideos = videos.filter(function(video) {
         return video.ownerId === user.id;
     });
 
-    document.getElementById("profileUsername").textContent =
+    const followers = follows.filter(function(row) {
+        return row.following_id === user.id;
+    }).length;
+
+    const following = follows.filter(function(row) {
+        return row.follower_id === user.id;
+    }).length;
+
+    $("#profileAvatar").textContent =
+        initial(user.username);
+
+    $("#profileUsername").textContent =
         user.username;
 
-    document.getElementById("profileEmail").textContent =
-        ownProfile ? user.email : "GoCat creator";
+    $("#profileEmail").textContent =
+        own
+            ? (user.email || "")
+            : "GoCat creator";
 
-    document.getElementById("profileBio").textContent =
+    $("#profileBio").textContent =
         user.bio || "No bio yet.";
 
-    document.getElementById("profileAvatar").textContent =
-        getInitial(user.username);
+    $("#profilePostCount").textContent =
+        ownVideos.length;
 
-    document.getElementById("postCount").textContent =
-        userVideos.length;
+    $("#profileFollowers").textContent =
+        followers;
 
-    document.getElementById("followersCount").textContent =
-        follows.followers.length;
+    $("#profileFollowing").textContent =
+        following;
 
-    document.getElementById("followingCount").textContent =
-        follows.following.length;
+    $("#profileVideosHeading").textContent =
+        own
+            ? "Your videos"
+            : user.username + "'s videos";
 
-    document.getElementById("profileVideosTitle").textContent =
-        ownProfile ? "Your Videos" : user.username + "'s Videos";
+    $("#profileUploadBtn").classList.toggle(
+        "hidden",
+        !own
+    );
 
-    const profileButton =
-        document.getElementById("editProfileBtn");
+    const action = $("#profileActionBtn");
 
-    if (ownProfile) {
-        profileButton.textContent = "✎ Edit Profile";
-
-        profileButton.onclick = function() {
-            editUsername.value = currentUser.username;
-            editBio.value = currentUser.bio;
-            editModal.classList.remove("hidden");
-        };
+    if (own) {
+        action.textContent = "Edit profile";
     } else {
-        const following =
-            currentUser.following.includes(user.id);
-
-        profileButton.textContent =
-            following ? "✓ Following" : "+ Follow";
-
-        profileButton.onclick = function() {
-            toggleFollow(user.id);
-        };
+        action.textContent =
+            currentUser.following.includes(user.id)
+                ? "Following"
+                : "Follow";
     }
 
-    const profileUpload =
-        document.getElementById("profileUploadBtn");
-
-    if (ownProfile) {
-        profileUpload.classList.remove("hidden");
-    } else {
-        profileUpload.classList.add("hidden");
-    }
-
-    userVideos.sort(function(a, b) {
-        return new Date(b.createdAt) - new Date(a.createdAt);
-    });
-
-    profileVideos.innerHTML = userVideos.length
-        ? userVideos.map(createVideoCard).join("")
-        : `
-            <div class="empty-state">
+    $("#profileVideos").innerHTML =
+        ownVideos.map(videoCard).join("") ||
+        `
+            <div class="empty-card">
                 <div>🎬</div>
-                <h2>No videos yet</h2>
+                <h3>No videos yet</h3>
                 <p>
                     ${
-                        ownProfile
+                        own
                         ? "Upload your first video."
-                        : "This creator hasn't uploaded anything yet."
+                        : "This creator has not uploaded videos."
                     }
                 </p>
             </div>
         `;
 
-    attachVideoEvents(profileVideos);
+    attachWatchEvents($("#profileVideos"));
 }
 
-/* SHOW USER PROFILE */
-
-function showUserProfile(userId) {
+async function openProfile(userId) {
     currentProfileUserId = userId;
     showPage("profile");
+    await renderProfile();
 }
 
-/* TOGGLE FOLLOW */
+/* VIDEO LIKES */
 
-async function toggleFollow(userId) {
-    if (!currentUser) {
-        showLoginScreen();
-        return;
-    }
-
-    if (userId === currentUser.id) {
-        showToast("You cannot follow yourself.");
-        return;
-    }
-
-    const alreadyFollowing =
-        currentUser.following.includes(userId);
-
-    try {
-        if (alreadyFollowing) {
-            const result = await supabaseClient
-                .from("follows")
-                .delete()
-                .eq("follower_id", currentUser.id)
-                .eq("following_id", userId);
-
-            if (result.error) {
-                throw result.error;
-            }
-
-            const target = users.find(function(user) {
-                return user.id === userId;
-            });
-
-            showToast(
-                "Unfollowed " +
-                (target ? target.username : "creator")
-            );
-        } else {
-            const result = await supabaseClient
-                .from("follows")
-                .insert({
-                    follower_id: currentUser.id,
-                    following_id: userId
-                });
-
-            if (result.error) {
-                throw result.error;
-            }
-
-            const target = users.find(function(user) {
-                return user.id === userId;
-            });
-
-            addNotification(
-                "👥",
-                (target ? target.username : "A creator") +
-                " is now followed by you."
-            );
-
-            showToast(
-                "Following " +
-                (target ? target.username : "creator")
-            );
-        }
-
-        await loadCurrentProfile();
-        await loadAllData();
-
-        renderHome();
-        renderShorts();
-        renderFollowing();
-        renderExplore();
-        renderSuggestedCreators();
-        renderProfile();
-    } catch (error) {
-        console.error(error);
-        showToast("Could not update follow.");
-    }
-}
-
-/* TOGGLE LIKE */
-
-async function toggleLike(videoId) {
-    if (!currentUser) {
-        showLoginScreen();
-        return;
-    }
-
+async function toggleVideoLike(videoId) {
     const video = videos.find(function(item) {
         return item.id === videoId;
     });
@@ -1801,7 +1687,8 @@ async function toggleLike(videoId) {
         return;
     }
 
-    const liked = video.likes.includes(currentUser.id);
+    const liked =
+        video.likes.includes(currentUser.id);
 
     try {
         if (liked) {
@@ -1831,22 +1718,93 @@ async function toggleLike(videoId) {
             }
 
             video.likes.push(currentUser.id);
+
+            const interests = JSON.parse(
+                localStorage.getItem(
+                    "gocat_topic_likes_" + currentUser.id
+                ) || "{}"
+            );
+
+            const topic = normalizeTopic(video.topic);
+
+            interests[topic] =
+                (interests[topic] || 0) + 1;
+
+            localStorage.setItem(
+                "gocat_topic_likes_" + currentUser.id,
+                JSON.stringify(interests)
+            );
+
+            if (video.ownerId !== currentUser.id) {
+                addLocalNotification(
+                    "❤️",
+                    "You liked a video by " +
+                    (getUser(video.ownerId)?.username || "a creator")
+                );
+            }
         }
 
-        renderHome();
-        renderShorts();
-        renderFollowing();
-        renderExplore();
-        renderProfile();
+        renderAllFeeds();
     } catch (error) {
         console.error(error);
-        showToast("Could not update like.");
+
+        toast(
+            error.message || "Could not update like."
+        );
+    }
+}
+
+/* FOLLOWS */
+
+async function toggleFollow(userId) {
+    if (userId === currentUser.id) {
+        return;
+    }
+
+    const exists =
+        currentUser.following.includes(userId);
+
+    try {
+        const result = exists
+            ? await supabaseClient
+                .from("follows")
+                .delete()
+                .eq("follower_id", currentUser.id)
+                .eq("following_id", userId)
+            : await supabaseClient
+                .from("follows")
+                .insert({
+                    follower_id: currentUser.id,
+                    following_id: userId
+                });
+
+        if (result.error) {
+            throw result.error;
+        }
+
+        await loadFollows();
+
+        renderAllFeeds();
+
+        await renderProfile();
+
+        toast(
+            exists
+                ? "Unfollowed creator."
+                : "You are now following this creator."
+        );
+    } catch (error) {
+        console.error(error);
+
+        toast(
+            error.message || "Could not update follow."
+        );
     }
 }
 
 /* SHARE VIDEO */
 
-async function shareVideo(videoId) {
+function shareVideo(videoId) {
     const video = videos.find(function(item) {
         return item.id === videoId;
     });
@@ -1855,94 +1813,77 @@ async function shareVideo(videoId) {
         return;
     }
 
-    const shareUrl = video.file;
-    const shareText = "Check out " + video.title + " on GoCat!";
+    const shareData = {
+        title: video.title,
+        text: "Watch this on GoCat",
+        url: video.file
+    };
 
     if (navigator.share) {
-        try {
-            await navigator.share({
-                title: video.title,
-                text: shareText,
-                url: shareUrl
+        navigator.share(shareData).catch(function() {});
+    } else if (navigator.clipboard?.writeText) {
+        navigator.clipboard
+            .writeText(video.file)
+            .then(function() {
+                toast("Video link copied!");
             });
-        } catch (error) {
-            // User cancelled the share dialog.
-        }
-
-        return;
-    }
-
-    try {
-        await navigator.clipboard.writeText(shareUrl);
-        showToast("Video link copied!");
-    } catch (error) {
-        showToast("Could not copy video link.");
+    } else {
+        toast("Sharing is not available in this browser.");
     }
 }
 
 /* DELETE VIDEO */
 
 async function deleteVideo(videoId) {
-    if (!currentUser) {
-        return;
-    }
-
     const video = videos.find(function(item) {
         return item.id === videoId;
     });
 
-    if (!video) {
+    if (
+        !video ||
+        video.ownerId !== currentUser.id
+    ) {
         return;
     }
 
-    if (video.ownerId !== currentUser.id) {
-        showToast("You can only delete your own videos.");
-        return;
-    }
-
-    const confirmed =
-        window.confirm("Delete this video from GoCat?");
-
-    if (!confirmed) {
+    if (!confirm("Delete this video from GoCat?")) {
         return;
     }
 
     try {
-        const storageResult = await supabaseClient
+        const removed = await supabaseClient
             .storage
-            .from(SUPABASE_BUCKET)
+            .from(VIDEO_BUCKET)
             .remove([video.storagePath]);
 
-        if (storageResult.error) {
-            console.warn(storageResult.error);
+        if (removed.error) {
+            console.warn(removed.error);
         }
 
-        const dbResult = await supabaseClient
+        const result = await supabaseClient
             .from("videos")
             .delete()
             .eq("id", videoId);
 
-        if (dbResult.error) {
-            throw dbResult.error;
+        if (result.error) {
+            throw result.error;
         }
 
         videos = videos.filter(function(item) {
             return item.id !== videoId;
         });
 
-        showToast("Video deleted.");
+        viewRecorded.delete(videoId);
 
-        homeFeedOffset = 0;
-        shortsFeedOffset = 0;
+        renderAllFeeds();
 
-        renderHome();
-        renderShorts();
-        renderFollowing();
-        renderExplore();
-        renderProfile();
+        toast("Video deleted.");
     } catch (error) {
         console.error(error);
-        showToast("Could not delete video.");
+
+        toast(
+            error.message || "Could not delete the video."
+        );
     }
 }
 
@@ -1960,307 +1901,578 @@ function openComments(videoId) {
     }
 
     renderComments(video);
-    commentsModal.classList.remove("hidden");
+
+    $("#commentsModal").classList.remove("hidden");
 }
 
 function renderComments(video) {
-    commentsCount.textContent =
-        video.comments.length +
-        (video.comments.length === 1 ? " comment" : " comments");
+    $("#commentsList").innerHTML =
+        video.comments.length
+            ? video.comments.map(function(comment) {
+                return `
+                    <div class="comment-item">
+                        <strong>
+                            ${escapeHTML(
+                                comment.username ||
+                                getUser(comment.userId)?.username ||
+                                "GoCat user"
+                            )}
+                        </strong>
 
-    if (video.comments.length === 0) {
-        commentsList.innerHTML = `
-            <div class="empty-state">
-                <div>💬</div>
-                <h2>No comments yet</h2>
-                <p>Be the first person to comment.</p>
-            </div>
-        `;
-        return;
-    }
+                        <p>${escapeHTML(comment.text)}</p>
 
-    commentsList.innerHTML = video.comments
-        .slice()
-        .reverse()
-        .map(function(comment) {
-            return `
-                <div class="comment">
-                    <div class="comment-avatar">
-                        ${escapeHTML(getInitial(comment.username))}
+                        <small>
+                            ${timeAgo(comment.createdAt)}
+                        </small>
                     </div>
-
-                    <div class="comment-body">
-                        <div class="comment-user">
-                            ${escapeHTML(comment.username)}
-                        </div>
-
-                        <div class="comment-text">
-                            ${escapeHTML(comment.text)}
-                        </div>
-
-                        <div class="comment-time">
-                            ${formatDate(comment.createdAt)}
-                        </div>
-                    </div>
-                </div>
+                `;
+            }).join("")
+            : `
+                <p class="muted-text">
+                    No comments yet. Start the conversation!
+                </p>
             `;
-        })
-        .join("");
 }
 
 async function submitComment(event) {
     event.preventDefault();
 
-    if (!currentUser) {
-        showLoginScreen();
-        return;
-    }
-
-    const text = commentInput.value.trim();
-
-    if (!text) {
-        return;
-    }
+    const text = $("#commentInput").value.trim();
 
     const video = videos.find(function(item) {
         return item.id === currentVideoId;
     });
 
-    if (!video) {
+    if (!text || !video) {
         return;
     }
 
     try {
-        const newComment = {
-            id: createId(),
-            video_id: video.id,
-            user_id: currentUser.id,
-            text: text,
-            created_at: Date.now()
-        };
-
         const result = await supabaseClient
             .from("comments")
-            .insert(newComment);
+            .insert({
+                video_id: video.id,
+                user_id: currentUser.id,
+                text: text,
+                created_at: Date.now()
+            })
+            .select("id,created_at")
+            .single();
 
         if (result.error) {
             throw result.error;
         }
 
         video.comments.push({
-            id: newComment.id,
+            id: result.data.id,
             userId: currentUser.id,
             username: currentUser.username,
             text: text,
-            createdAt: newComment.created_at
+            createdAt: result.data.created_at
         });
 
-        commentInput.value = "";
+        $("#commentInput").value = "";
 
         renderComments(video);
-        renderHome();
-        renderShorts();
-        renderFollowing();
-        renderExplore();
-        renderProfile();
+        renderAllFeeds();
 
-        const owner = users.find(function(user) {
-            return user.id === video.ownerId;
-        });
-
-        if (owner && owner.id !== currentUser.id) {
-            addNotification(
-                "💬",
-                currentUser.username + " commented on your video."
-            );
-        }
+        toast("Comment posted.");
     } catch (error) {
         console.error(error);
-        showToast("Could not post comment.");
+
+        toast(
+            error.message || "Could not post comment."
+        );
     }
 }
 
-/* UPLOAD MODAL */
+/* VIDEO UPLOAD + REEL EDITOR */
 
-function openUploadModal(mode = "video") {
-    if (!currentUser) {
-        showLoginScreen();
-        return;
-    }
+function openUpload(mode = "video") {
+    uploadMode = mode;
 
-    uploadMode = mode === "short" ? "short" : "video";
+    selectedVideoFile = null;
+    editedReelFile = null;
 
-    const title =
-        document.getElementById("uploadModalTitle");
+    $("#videoFile").value = "";
+    $("#videoTitle").value = "";
+    $("#videoDescription").value = "";
+    $("#selectedVideoName").textContent = "";
 
-    const hint =
-        document.getElementById("uploadModalHint");
+    $("#uploadTitle").textContent =
+        mode === "reel"
+            ? "Create a Reel"
+            : "Upload a video";
 
-    const modeHint =
-        document.getElementById("uploadModeHint");
+    $("#uploadDescription").textContent =
+        mode === "reel"
+            ? "Edit your vertical clip before sharing."
+            : "Share a video with the GoCat community.";
 
-    if (title) {
-        title.textContent =
-            uploadMode === "short"
-                ? "Create a Short"
-                : "Upload a Video";
-    }
+    $("#publishVideoBtn").textContent =
+        mode === "reel"
+            ? "Publish Reel"
+            : "Publish video";
 
-    if (hint) {
-        hint.textContent =
-            uploadMode === "short"
-                ? "Share a quick vertical video with GoCat."
-                : "Share a video with the GoCat community.";
-    }
-
-    if (modeHint) {
-        modeHint.textContent =
-            uploadMode === "short"
-                ? "Shorts must be 60 seconds or less. Portrait 9:16 works best."
-                : "Choose a video file up to 50 MB.";
-    }
-
-    videoFile.value = "";
-    selectedFile.classList.add("hidden");
-    selectedFile.textContent = "";
-
-    publishVideo.textContent =
-        uploadMode === "short"
-            ? "Publish Short"
-            : "Publish Video";
-
-    uploadModal.classList.remove("hidden");
-}
-
-function getVideoDuration(file) {
-    return new Promise(function(resolve, reject) {
-        const objectUrl = URL.createObjectURL(file);
-        const probe = document.createElement("video");
-
-        probe.preload = "metadata";
-
-        probe.onloadedmetadata = function() {
-            const duration = probe.duration;
-            URL.revokeObjectURL(objectUrl);
-            resolve(duration);
-        };
-
-        probe.onerror = function() {
-            URL.revokeObjectURL(objectUrl);
-            reject(new Error(
-                "This video could not be read. Try an MP4 file."
-            ));
-        };
-
-        probe.src = objectUrl;
-    });
-}
-
-function closeModal(modal) {
-    if (!modal) {
-        return;
-    }
-
-    modal.classList.add("hidden");
-
-    if (modal === uploadModal) {
-        uploadMode = "video";
-    }
-}
-
-/* FILE SELECT */
-
-function updateSelectedFile() {
-    const file = videoFile.files[0];
-
-    if (!file) {
-        selectedFile.classList.add("hidden");
-        selectedFile.textContent = "";
-        return;
-    }
-
-    selectedFile.textContent = file.name;
-    selectedFile.classList.remove("hidden");
-}
-
-/* PUBLISH VIDEO OR SHORT */
-
-async function publishUploadedVideo() {
-    if (isLoading) {
-        return;
-    }
-
-    const file = videoFile.files[0];
-    const isShortUpload = uploadMode === "short";
-
-    if (!file) {
-        showToast("Choose a video first.");
-        return;
-    }
-
-    const title = videoTitle.value.trim();
-    const description = videoDescription.value.trim();
-
-    const topic = normalizeTopic(
-        videoTopic ? videoTopic.value : "Other"
+    $("#reelEditor").classList.toggle(
+        "hidden",
+        mode !== "reel"
     );
 
-    if (!title) {
-        showToast("Give your video a title.");
+    $("#uploadModal").classList.remove("hidden");
+}
+
+function setSelectedVideo(file) {
+    selectedVideoFile = file;
+    editedReelFile = null;
+
+    $("#selectedVideoName").textContent =
+        file ? file.name : "";
+
+    if (file && uploadMode === "reel") {
+        if (reelObjectUrl) {
+            URL.revokeObjectURL(reelObjectUrl);
+        }
+
+        reelObjectUrl = URL.createObjectURL(file);
+
+        const preview = $("#reelPreview");
+
+        preview.src = reelObjectUrl;
+        preview.load();
+
+        $("#trimStart").value = "0";
+        $("#trimEnd").value = "";
+
+        $("#editorStatus").textContent =
+            "Choose a trim range, filter and text overlay, then apply edits.";
+    }
+}
+
+function filterForCanvas(name) {
+    return ({
+        none: "none",
+        warm: "saturate(1.15) sepia(.22)",
+        cool: "saturate(1.08) hue-rotate(12deg)",
+        mono: "grayscale(1)",
+        vivid: "saturate(1.55) contrast(1.12)"
+    })[name] || "none";
+}
+
+function updateReelEditorPreview() {
+    const preview = $("#reelPreview");
+    const overlay = $("#reelOverlayPreview");
+
+    if (!preview) {
         return;
+    }
+
+    overlay.textContent =
+        $("#reelOverlayText").value;
+
+    const filter = $("#reelFilter").value;
+
+    preview.style.filter =
+        filterForCanvas(filter);
+
+    preview.style.objectFit =
+        $("#reelFraming").value;
+}
+
+/* EXPORT EDITED REEL */
+
+async function exportEditedReel() {
+    const preview = $("#reelPreview");
+    const status = $("#editorStatus");
+
+    if (!selectedVideoFile || !preview.src) {
+        return toast("Choose a Reel video first.");
+    }
+
+    if (
+        !window.MediaRecorder ||
+        !HTMLCanvasElement.prototype.captureStream
+    ) {
+        return toast(
+            "Reel export is not supported in this browser. Try current Chrome or Edge."
+        );
+    }
+
+    await new Promise(function(resolve) {
+        if (preview.readyState >= 1) {
+            return resolve();
+        }
+
+        preview.onloadedmetadata = resolve;
+        preview.onerror = function() {
+            resolve();
+        };
+    });
+
+    const start = Math.max(
+        0,
+        Number($("#trimStart").value || 0)
+    );
+
+    const enteredEnd = Number(
+        $("#trimEnd").value || preview.duration
+    );
+
+    const end = Math.min(
+        preview.duration,
+        enteredEnd || preview.duration
+    );
+
+    if (
+        !Number.isFinite(preview.duration) ||
+        end <= start
+    ) {
+        return toast("Choose a valid trim range.");
+    }
+
+    const canvas = document.createElement("canvas");
+
+    canvas.width = 720;
+    canvas.height = 1280;
+
+    const ctx = canvas.getContext("2d");
+
+    const canvasStream = canvas.captureStream(30);
+
+    let sourceStream = null;
+
+    try {
+        sourceStream = preview.captureStream
+            ? preview.captureStream()
+            : null;
+    } catch (error) {
+        sourceStream = null;
+    }
+
+    const tracks = [
+        ...canvasStream.getVideoTracks()
+    ];
+
+    if (sourceStream) {
+        tracks.push(
+            ...sourceStream.getAudioTracks()
+        );
+    }
+
+    const mixedStream = new MediaStream(tracks);
+
+    const mimeTypes = [
+        "video/webm;codecs=vp9,opus",
+        "video/webm;codecs=vp8,opus",
+        "video/webm"
+    ];
+
+    const mimeType = mimeTypes.find(function(type) {
+        return MediaRecorder.isTypeSupported(type);
+    });
+
+    let recorder;
+
+    try {
+        recorder = mimeType
+            ? new MediaRecorder(mixedStream, {
+                mimeType: mimeType
+            })
+            : new MediaRecorder(mixedStream);
+    } catch (error) {
+        return toast(
+            "This browser cannot export the edited Reel."
+        );
+    }
+
+    const chunks = [];
+
+    recorder.ondataavailable = function(event) {
+        if (event.data && event.data.size) {
+            chunks.push(event.data);
+        }
+    };
+
+    status.textContent =
+        "Rendering your edited Reel... keep this window open.";
+
+    $("#exportReelBtn").disabled = true;
+
+    preview.pause();
+    preview.currentTime = start;
+
+    await new Promise(function(resolve) {
+        const done = function() {
+            resolve();
+        };
+
+        preview.addEventListener(
+            "seeked",
+            done,
+            { once: true }
+        );
+
+        setTimeout(done, 800);
+    });
+
+    const text = $("#reelOverlayText").value.trim();
+    const filter = filterForCanvas(
+        $("#reelFilter").value
+    );
+
+    const framing = $("#reelFraming").value;
+
+    function drawFrame() {
+        ctx.fillStyle = "#050806";
+        ctx.fillRect(
+            0,
+            0,
+            canvas.width,
+            canvas.height
+        );
+
+        const vw = preview.videoWidth || 720;
+        const vh = preview.videoHeight || 1280;
+
+        const scale = framing === "contain"
+            ? Math.min(
+                canvas.width / vw,
+                canvas.height / vh
+            )
+            : Math.max(
+                canvas.width / vw,
+                canvas.height / vh
+            );
+
+        const dw = vw * scale;
+        const dh = vh * scale;
+
+        ctx.save();
+        ctx.filter = filter;
+
+        ctx.drawImage(
+            preview,
+            (canvas.width - dw) / 2,
+            (canvas.height - dh) / 2,
+            dw,
+            dh
+        );
+
+        ctx.restore();
+
+        if (text) {
+            ctx.save();
+
+            ctx.textAlign = "center";
+            ctx.font = "bold 46px Arial";
+            ctx.lineWidth = 5;
+            ctx.strokeStyle = "rgba(0,0,0,.75)";
+            ctx.fillStyle = "white";
+
+            const maxWidth = canvas.width - 70;
+            const words = text.split(/\s+/);
+            const lines = [];
+
+            let line = "";
+
+            words.forEach(function(word) {
+                const test = line
+                    ? line + " " + word
+                    : word;
+
+                if (
+                    ctx.measureText(test).width > maxWidth &&
+                    line
+                ) {
+                    lines.push(line);
+                    line = word;
+                } else {
+                    line = test;
+                }
+            });
+
+            if (line) {
+                lines.push(line);
+            }
+
+            const lineHeight = 56;
+
+            const baseY =
+                canvas.height -
+                150 -
+                (lines.length - 1) * lineHeight;
+
+            lines.slice(0, 3).forEach(function(item, index) {
+                ctx.strokeText(
+                    item,
+                    canvas.width / 2,
+                    baseY + index * lineHeight,
+                    maxWidth
+                );
+
+                ctx.fillText(
+                    item,
+                    canvas.width / 2,
+                    baseY + index * lineHeight,
+                    maxWidth
+                );
+            });
+
+            ctx.restore();
+        }
+    }
+
+    let animationId = 0;
+    let finished = false;
+
+    const stop = function() {
+        if (finished) {
+            return;
+        }
+
+        finished = true;
+
+        cancelAnimationFrame(animationId);
+
+        preview.pause();
+
+        if (recorder.state !== "inactive") {
+            recorder.stop();
+        }
+    };
+
+    const drawLoop = function() {
+        drawFrame();
+
+        if (
+            preview.currentTime >= end ||
+            preview.ended
+        ) {
+            return stop();
+        }
+
+        animationId = requestAnimationFrame(drawLoop);
+    };
+
+    recorder.onstop = function() {
+        canvasStream
+            .getTracks()
+            .forEach(function(track) {
+                track.stop();
+            });
+
+        if (sourceStream) {
+            sourceStream
+                .getTracks()
+                .forEach(function(track) {
+                    track.stop();
+                });
+        }
+
+        if (!chunks.length) {
+            status.textContent =
+                "Export failed. Try another browser or a smaller clip.";
+
+            $("#exportReelBtn").disabled = false;
+            return;
+        }
+
+        const blob = new Blob(chunks, {
+            type: recorder.mimeType || "video/webm"
+        });
+
+        editedReelFile = new File(
+            [blob],
+            "gocat-reel.webm",
+            { type: blob.type }
+        );
+
+        $("#selectedVideoName").textContent =
+            "Edited Reel ready · " +
+            (blob.size / (1024 * 1024)).toFixed(1) +
+            " MB";
+
+        status.textContent =
+            "Edits applied. Publish Reel to upload this edited clip.";
+
+        $("#exportReelBtn").disabled = false;
+    };
+
+    recorder.start(250);
+
+    try {
+        await preview.play();
+        drawLoop();
+    } catch (error) {
+        stop();
+
+        status.textContent =
+            "Could not play the selected clip for export.";
+
+        $("#exportReelBtn").disabled = false;
+    }
+}
+
+/* PUBLISH VIDEO OR REEL */
+
+async function publishVideo(event) {
+    event.preventDefault();
+
+    if (isUploading) {
+        return;
+    }
+
+    const file =
+        uploadMode === "reel" && editedReelFile
+            ? editedReelFile
+            : selectedVideoFile;
+
+    const title =
+        $("#videoTitle").value.trim();
+
+    const description =
+        $("#videoDescription").value.trim();
+
+    if (!file) {
+        return toast("Choose a video first.");
     }
 
     if (!file.type.startsWith("video/")) {
-        showToast("Please choose a video file.");
-        return;
+        return toast("Choose a valid video file.");
     }
 
-    if (file.size > 50 * 1024 * 1024) {
-        showToast("Video is larger than 50 MB.");
-        return;
+    if (!title) {
+        return toast("Add a title or caption.");
     }
 
-    if (isShortUpload) {
-        try {
-            const duration = await getVideoDuration(file);
+    isUploading = true;
 
-            if (
-                !Number.isFinite(duration) ||
-                duration <= 0 ||
-                duration > 60
-            ) {
-                showToast("A Short must be 60 seconds or less.");
-                return;
-            }
-        } catch (error) {
-            showToast(error.message || "Could not check this video.");
-            return;
-        }
-    }
+    const button = $("#publishVideoBtn");
 
-    isLoading = true;
-    publishVideo.disabled = true;
+    button.disabled = true;
+    button.textContent = "Uploading...";
 
-    uploadProgressBox.classList.remove("hidden");
-    progressBar.style.width = "10%";
-    progressPercent.textContent = "10%";
+    const progress = $("#uploadProgress");
+    const bar = $("#uploadProgressBar");
 
-    const videoId = createId();
+    progress.classList.remove("hidden");
+    bar.style.width = "10%";
+
+    const id = makeId();
 
     const extension = (
         file.name.split(".").pop() || "mp4"
-    ).toLowerCase();
+    )
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
 
     const storagePath =
-        currentUser.id + "/" + videoId + "." + extension;
+        `${currentUser.id}/${id}.${extension}`;
 
     try {
-        progressBar.style.width = "30%";
-        progressPercent.textContent = "30%";
-
         const upload = await supabaseClient
             .storage
-            .from(SUPABASE_BUCKET)
+            .from(VIDEO_BUCKET)
             .upload(storagePath, file, {
                 cacheControl: "3600",
                 contentType: file.type || "video/mp4",
@@ -2271,93 +2483,612 @@ async function publishUploadedVideo() {
             throw upload.error;
         }
 
-        progressBar.style.width = "70%";
-        progressPercent.textContent = "70%";
+        bar.style.width = "75%";
 
         const insert = await supabaseClient
             .from("videos")
             .insert({
-                id: videoId,
+                id: id,
                 owner_id: currentUser.id,
                 title: title,
                 description: description,
-                topic: topic,
+                topic: normalizeTopic($("#videoTopic").value),
                 storage_path: storagePath,
                 created_at: Date.now(),
                 views: 0,
-                is_short: isShortUpload
+                is_short: uploadMode === "reel"
             });
 
         if (insert.error) {
             await supabaseClient
                 .storage
-                .from(SUPABASE_BUCKET)
+                .from(VIDEO_BUCKET)
                 .remove([storagePath]);
 
             throw insert.error;
         }
 
-        progressBar.style.width = "100%";
-        progressPercent.textContent = "100%";
+        bar.style.width = "100%";
 
-        showToast(
-            isShortUpload
-                ? "Your Short is live!"
-                : "Your video was uploaded!"
+        await loadVideos();
+
+        renderAllFeeds();
+
+        closeModal("uploadModal");
+
+        toast(
+            uploadMode === "reel"
+                ? "Your Reel is live!"
+                : "Video uploaded!"
         );
 
-        videoFile.value = "";
-        videoTitle.value = "";
-        videoDescription.value = "";
-
-        if (videoTopic) {
-            videoTopic.value = "Other";
+        if (uploadMode === "reel") {
+            showPage("reels");
+        } else {
+            showPage("home");
         }
-
-        selectedFile.classList.add("hidden");
-        selectedFile.textContent = "";
-
-        await loadAllData();
-
-        closeModal(uploadModal);
-
-        uploadMode = "video";
-        homeFeedOffset = 0;
-        shortsFeedOffset = 0;
-
-        renderHome();
-        renderShorts();
-        renderFollowing();
-        renderExplore();
-        renderProfile();
     } catch (error) {
         console.error(error);
-        showToast(error.message || "Could not upload video.");
+
+        toast(
+            error.message ||
+            "Upload failed. Check your videos bucket size limit and access policies."
+        );
     } finally {
-        isLoading = false;
-        publishVideo.disabled = false;
+        isUploading = false;
+
+        button.disabled = false;
+
+        button.textContent =
+            uploadMode === "reel"
+                ? "Publish Reel"
+                : "Publish video";
 
         setTimeout(function() {
-            uploadProgressBox.classList.add("hidden");
-            progressBar.style.width = "0%";
-            progressPercent.textContent = "0%";
-        }, 700);
+            progress.classList.add("hidden");
+            bar.style.width = "0";
+        }, 600);
     }
 }
 
-/* SAVE PROFILE */
+/* POSTS */
 
-async function saveProfile() {
-    if (!currentUser) {
+function renderPosts() {
+    const box = $("#postsFeed");
+
+    const visible = posts.slice(0, postLimit);
+
+    box.innerHTML = visible.map(function(post) {
+        const owner = getUser(post.userId);
+
+        if (!owner) {
+            return "";
+        }
+
+        const liked =
+            post.likes.includes(currentUser.id);
+
+        return `
+            <article
+                class="post-card"
+                data-post-id="${escapeHTML(post.id)}"
+            >
+                <div class="post-author">
+                    <div class="post-avatar">
+                        ${escapeHTML(initial(owner.username))}
+                    </div>
+
+                    <div>
+                        <div class="post-author-name">
+                            ${escapeHTML(owner.username)}
+                        </div>
+
+                        <div class="post-time">
+                            ${timeAgo(post.createdAt)}
+                        </div>
+                    </div>
+                </div>
+
+                ${
+                    post.content
+                    ? `
+                        <p class="post-content">
+                            ${escapeHTML(post.content)}
+                        </p>
+                    `
+                    : ""
+                }
+
+                ${
+                    post.imageUrl
+                    ? `
+                        <img
+                            class="post-image"
+                            src="${escapeHTML(post.imageUrl)}"
+                            alt="Post image"
+                            loading="lazy"
+                        >
+                    `
+                    : ""
+                }
+
+                <div class="post-actions">
+                    <button
+                        class="post-like-btn ${liked ? "liked" : ""}"
+                        data-like-post="${escapeHTML(post.id)}"
+                    >
+                        ${liked ? "♥" : "♡"}
+                        ${post.likes.length} likes
+                    </button>
+
+                    ${
+                        owner.id === currentUser.id
+                        ? `
+                            <button
+                                class="post-like-btn"
+                                data-delete-post="${escapeHTML(post.id)}"
+                            >
+                                Delete post
+                            </button>
+                        `
+                        : ""
+                    }
+                </div>
+            </article>
+        `;
+    }).join("") || `
+        <div class="empty-card">
+            <div>📝</div>
+            <h3>No posts yet</h3>
+            <p>Share the first update with your community.</p>
+        </div>
+    `;
+
+    $("#postsLoadMoreWrap").classList.toggle(
+        "hidden",
+        posts.length <= visible.length
+    );
+}
+
+/* CREATE POST */
+
+async function createPost(event) {
+    event.preventDefault();
+
+    const content =
+        $("#postContent").value.trim();
+
+    const image = postImageFile;
+
+    if (!content && !image) {
+        return toast(
+            "Write something or choose a picture."
+        );
+    }
+
+    if (image && image.size > 5 * 1024 * 1024) {
+        return toast(
+            "Post images must be 5 MB or smaller."
+        );
+    }
+
+    let mediaPath = null;
+
+    try {
+        if (image) {
+            const extension = (
+                image.name.split(".").pop() || "jpg"
+            ).toLowerCase();
+
+            mediaPath =
+                `${currentUser.id}/${makeId()}.${extension}`;
+
+            const upload = await supabaseClient
+                .storage
+                .from(POST_BUCKET)
+                .upload(mediaPath, image, {
+                    contentType: image.type,
+                    upsert: false
+                });
+
+            if (upload.error) {
+                throw upload.error;
+            }
+        }
+
+        const result = await supabaseClient
+            .from("posts")
+            .insert({
+                user_id: currentUser.id,
+                content: content,
+                media_path: mediaPath
+            })
+            .select("*")
+            .single();
+
+        if (result.error) {
+            if (mediaPath) {
+                await supabaseClient
+                    .storage
+                    .from(POST_BUCKET)
+                    .remove([mediaPath]);
+            }
+
+            throw result.error;
+        }
+
+        $("#postContent").value = "";
+        $("#postImage").value = "";
+        $("#postImageName").textContent = "";
+
+        postImageFile = null;
+
+        await loadPosts();
+
+        renderPosts();
+
+        toast("Post published!");
+    } catch (error) {
+        console.error(error);
+
+        toast(
+            error.message || "Could not publish the post."
+        );
+    }
+}
+
+/* POST LIKES */
+
+async function togglePostLike(postId) {
+    const post = posts.find(function(item) {
+        return item.id === postId;
+    });
+
+    if (!post) {
         return;
     }
 
-    const username = editUsername.value.trim();
-    const bio = editBio.value.trim();
+    const liked =
+        post.likes.includes(currentUser.id);
+
+    try {
+        const result = liked
+            ? await supabaseClient
+                .from("post_likes")
+                .delete()
+                .eq("post_id", postId)
+                .eq("user_id", currentUser.id)
+            : await supabaseClient
+                .from("post_likes")
+                .insert({
+                    post_id: postId,
+                    user_id: currentUser.id
+                });
+
+        if (result.error) {
+            throw result.error;
+        }
+
+        post.likes = liked
+            ? post.likes.filter(function(id) {
+                return id !== currentUser.id;
+            })
+            : [...post.likes, currentUser.id];
+
+        renderPosts();
+    } catch (error) {
+        console.error(error);
+
+        toast(
+            error.message || "Could not update post like."
+        );
+    }
+}
+
+/* DELETE POST */
+
+async function deletePost(postId) {
+    const post = posts.find(function(item) {
+        return item.id === postId;
+    });
+
+    if (
+        !post ||
+        post.userId !== currentUser.id
+    ) {
+        return;
+    }
+
+    if (!confirm("Delete this post?")) {
+        return;
+    }
+
+    try {
+        const result = await supabaseClient
+            .from("posts")
+            .delete()
+            .eq("id", postId);
+
+        if (result.error) {
+            throw result.error;
+        }
+
+        if (post.mediaPath) {
+            await supabaseClient
+                .storage
+                .from(POST_BUCKET)
+                .remove([post.mediaPath]);
+        }
+
+        posts = posts.filter(function(item) {
+            return item.id !== postId;
+        });
+
+        renderPosts();
+
+        toast("Post deleted.");
+    } catch (error) {
+        console.error(error);
+
+        toast(
+            error.message || "Could not delete post."
+        );
+    }
+}
+
+
+/* PRIVATE CHATS — MUTUAL FOLLOWERS ONLY */
+
+function getMutualFriends() {
+    return users.filter(function(user) {
+        return (
+            user.id !== currentUser.id &&
+            follows.some(function(row) {
+                return (
+                    row.follower_id === currentUser.id &&
+                    row.following_id === user.id
+                );
+            }) &&
+            follows.some(function(row) {
+                return (
+                    row.follower_id === user.id &&
+                    row.following_id === currentUser.id
+                );
+            })
+        );
+    });
+}
+
+function renderChats() {
+    const friends = getMutualFriends();
+
+    $("#chatFriends").innerHTML = friends
+        .map(function(user) {
+            return `
+                <button
+                    class="chat-friend ${
+                        currentChatUserId === user.id
+                            ? "active"
+                            : ""
+                    }"
+                    data-chat-user="${escapeHTML(user.id)}"
+                >
+                    <span class="chat-friend-avatar">
+                        ${escapeHTML(initial(user.username))}
+                    </span>
+                    <span>${escapeHTML(user.username)}</span>
+                </button>
+            `;
+        })
+        .join("") ||
+        `
+            <p class="muted-text">
+                You have no mutual-follow friends yet.
+            </p>
+        `;
+
+    if (
+        !currentChatUserId ||
+        !friends.some(function(user) {
+            return user.id === currentChatUserId;
+        })
+    ) {
+        currentChatUserId = null;
+
+        $("#chatTitle").textContent = "Choose a friend";
+
+        $("#chatMessages").innerHTML = `
+            <p class="chat-empty">
+                Follow each other to start a private chat.
+            </p>
+        `;
+
+        $("#messageInput").disabled = true;
+        $("#sendMessageBtn").disabled = true;
+    }
+}
+
+/* OPEN CONVERSATION */
+
+async function openChat(userId) {
+    const friend = getUser(userId);
+
+    if (
+        !friend ||
+        !getMutualFriends().some(function(user) {
+            return user.id === userId;
+        })
+    ) {
+        toast(
+            "Chats are available between mutual followers."
+        );
+        return;
+    }
+
+    currentChatUserId = userId;
+
+    $("#chatTitle").textContent =
+        "Chat with " + friend.username;
+
+    $("#messageInput").disabled = false;
+    $("#sendMessageBtn").disabled = false;
+
+    renderChats();
+
+    await loadConversation();
+}
+
+/* LOAD CONVERSATION */
+
+async function loadConversation() {
+    if (!currentChatUserId) {
+        return;
+    }
+
+    const other = currentChatUserId;
+
+    const result = await supabaseClient
+        .from("messages")
+        .select(
+            "id,sender_id,recipient_id,content,created_at"
+        )
+        .or(
+            `and(sender_id.eq.${currentUser.id},recipient_id.eq.${other}),and(sender_id.eq.${other},recipient_id.eq.${currentUser.id})`
+        )
+        .order("created_at", {
+            ascending: true
+        })
+        .limit(150);
+
+    if (result.error) {
+        console.error(result.error);
+        toast("Could not load this conversation.");
+        return;
+    }
+
+    $("#chatMessages").innerHTML =
+        (result.data || []).map(function(message) {
+            const mine =
+                message.sender_id === currentUser.id;
+
+            return `
+                <div class="chat-bubble ${mine ? "mine" : ""}">
+                    ${escapeHTML(message.content)}
+                    <time>${timeAgo(message.created_at)}</time>
+                </div>
+            `;
+        }).join("") ||
+        `
+            <p class="chat-empty">
+                Say hello to start the conversation.
+            </p>
+        `;
+
+    $("#chatMessages").scrollTop =
+        $("#chatMessages").scrollHeight;
+}
+
+/* SEND MESSAGE */
+
+async function sendMessage(event) {
+    event.preventDefault();
+
+    const content =
+        $("#messageInput").value.trim();
+
+    if (!content || !currentChatUserId) {
+        return;
+    }
+
+    try {
+        const result = await supabaseClient
+            .from("messages")
+            .insert({
+                sender_id: currentUser.id,
+                recipient_id: currentChatUserId,
+                content: content
+            });
+
+        if (result.error) {
+            throw result.error;
+        }
+
+        $("#messageInput").value = "";
+
+        await loadConversation();
+    } catch (error) {
+        console.error(error);
+
+        toast(
+            error.message || "Message could not be sent."
+        );
+    }
+}
+
+/* REALTIME CHAT UPDATES */
+
+function subscribeToMessages() {
+    if (chatChannel) {
+        supabaseClient.removeChannel(chatChannel);
+    }
+
+    chatChannel = supabaseClient
+        .channel("gocat-messages-" + currentUser.id)
+        .on(
+            "postgres_changes",
+            {
+                event: "INSERT",
+                schema: "public",
+                table: "messages"
+            },
+            function(payload) {
+                const row = payload.new;
+
+                const relevant =
+                    row.sender_id === currentUser.id ||
+                    row.recipient_id === currentUser.id;
+
+                if (
+                    relevant &&
+                    currentChatUserId &&
+                    (
+                        row.sender_id === currentChatUserId ||
+                        row.recipient_id === currentChatUserId
+                    )
+                ) {
+                    loadConversation();
+                }
+            }
+        )
+        .subscribe();
+}
+
+/* PROFILE EDITING */
+
+async function saveProfile(event) {
+    event.preventDefault();
+
+    const username =
+        $("#editUsername").value.trim();
+
+    const bio =
+        $("#editBio").value.trim();
 
     if (username.length < 3) {
-        showToast("Username must be at least 3 characters.");
-        return;
+        return toast(
+            "Username needs at least 3 characters."
+        );
+    }
+
+    const duplicate = users.some(function(user) {
+        return (
+            user.id !== currentUser.id &&
+            user.username.toLowerCase() === username.toLowerCase()
+        );
+    });
+
+    if (duplicate) {
+        return toast("That username is already taken.");
     }
 
     try {
@@ -2368,702 +3099,738 @@ async function saveProfile() {
                 bio: bio
             })
             .eq("id", currentUser.id)
-            .select("*")
+            .select(
+                "id,username,email,bio,created_at"
+            )
             .single();
 
         if (result.error) {
             throw result.error;
         }
 
-        currentUser.username = result.data.username;
-        currentUser.bio = result.data.bio || "";
-
         const index = users.findIndex(function(user) {
             return user.id === currentUser.id;
         });
 
-        if (index !== -1) {
-            users[index] = result.data;
-        }
+        users[index] = result.data;
 
-        closeModal(editModal);
+        currentUser.username =
+            result.data.username;
+
+        currentUser.bio =
+            result.data.bio || "";
+
+        $("#editProfileModal").classList.add("hidden");
+
         updateUserUI();
+        renderAll();
 
-        renderHome();
-        renderShorts();
-        renderFollowing();
-        renderExplore();
-        renderProfile();
-
-        showToast("Profile updated!");
+        toast("Profile updated.");
     } catch (error) {
         console.error(error);
-        showToast("Could not save profile.");
+
+        toast(
+            error.message || "Could not save profile."
+        );
     }
+}
+
+/* UPDATE USER DISPLAY */
+
+function updateUserUI() {
+    if (!currentUser) {
+        return;
+    }
+
+    $("#welcomeName").textContent =
+        currentUser.username;
+
+    $("#topProfileBtn").textContent =
+        initial(currentUser.username);
 }
 
 /* NOTIFICATIONS */
 
 function renderNotifications() {
-    if (!notificationList) {
-        return;
-    }
+    const list = notifications;
 
-    if (!notifications.length) {
-        notificationList.innerHTML = `
-            <div class="empty-state">
+    $("#notificationList").innerHTML =
+        list.map(function(item) {
+            return `
+                <article class="notification-item">
+                    <span class="notification-icon">
+                        ${escapeHTML(item.icon || "🔔")}
+                    </span>
+
+                    <div>
+                        <p>
+                            ${escapeHTML(
+                                item.message ||
+                                item.text ||
+                                "GoCat activity"
+                            )}
+                        </p>
+
+                        <small>
+                            ${timeAgo(
+                                item.created_at ||
+                                item.createdAt
+                            )}
+                        </small>
+                    </div>
+                </article>
+            `;
+        }).join("") ||
+        `
+            <div class="empty-card">
                 <div>🔔</div>
-                <h2>No notifications yet</h2>
-                <p>Your GoCat activity will appear here.</p>
+                <h3>No notifications yet</h3>
+                <p>Your activity will appear here.</p>
             </div>
         `;
-        return;
+}
+
+/* PAGE RENDER HELPERS */
+
+function renderAllFeeds() {
+    renderHome();
+    renderReels();
+    renderFollowing();
+    renderExplore();
+    renderPosts();
+    renderSuggestedCreators();
+    renderProfile();
+}
+
+function renderAll() {
+    updateUserUI();
+
+    renderHome();
+    renderReels();
+    renderExplore();
+    renderFollowing();
+    renderPosts();
+    renderChats();
+    renderNotifications();
+    renderProfile();
+}
+
+/* NAVIGATION */
+
+function showPage(page) {
+    currentPage = page;
+
+    $$(".page-section").forEach(function(section) {
+        section.classList.toggle(
+            "hidden",
+            section.id !== "page-" + page
+        );
+    });
+
+    $$("[data-page]").forEach(function(button) {
+        button.classList.toggle(
+            "active",
+            button.dataset.page === page
+        );
+    });
+
+    $("#sidebar").classList.remove("open");
+
+    if (page === "home") {
+        renderHome();
     }
 
-    notificationList.innerHTML = notifications
-        .map(function(notification) {
-            return `
-                <div class="notification">
-                    <div class="notification-icon">
-                        ${escapeHTML(notification.icon)}
-                    </div>
+    if (page === "reels") {
+        renderReels();
+    }
 
-                    <div class="notification-text">
-                        <strong>${escapeHTML(notification.text)}</strong>
+    if (page === "explore") {
+        renderExplore();
+    }
 
-                        <div class="notification-time">
-                            ${formatDate(notification.createdAt)}
-                        </div>
-                    </div>
-                </div>
-            `;
-        })
-        .join("");
+    if (page === "following") {
+        renderFollowing();
+    }
+
+    if (page === "posts") {
+        renderPosts();
+    }
+
+    if (page === "chats") {
+        renderChats();
+    }
+
+    if (page === "notifications") {
+        renderNotifications();
+    }
+
+    if (page === "profile") {
+        renderProfile();
+    }
+}
+
+/* CLOSE MODAL */
+
+function closeModal(id) {
+    const modal = document.getElementById(id);
+
+    if (modal) {
+        modal.classList.add("hidden");
+    }
 }
 
 /* THEME */
 
-function applyGoCatTheme(isDark) {
-    document.body.classList.toggle("dark", isDark);
+function applyTheme(dark) {
+    document.body.classList.toggle("dark", dark);
 
     localStorage.setItem(
         "gocat_theme",
-        isDark ? "dark" : "light"
+        dark ? "dark" : "light"
     );
 
-    const button = document.getElementById("themeBtn");
+    $("#themeIcon").textContent =
+        dark ? "☀️" : "🌙";
 
-    if (!button) {
-        return;
-    }
-
-    const icon = button.querySelector(".theme-icon");
-    const label = button.querySelector(".theme-label");
-    const status = button.querySelector(".theme-status");
-
-    if (icon) {
-        icon.textContent = isDark ? "☀️" : "🌙";
-    }
-
-    if (label) {
-        label.textContent = isDark ? "Light Mode" : "Dark Mode";
-    }
-
-    if (status) {
-        status.textContent = isDark ? "DARK" : "LIGHT";
-    }
+    $("#themeLabel").textContent =
+        dark ? "Light mode" : "Dark mode";
 }
 
-function loadTheme() {
-    applyGoCatTheme(
-        localStorage.getItem("gocat_theme") === "dark"
-    );
+/* REFRESH FEEDS */
+
+function refreshFeeds() {
+    homeLimit = 5;
+    exploreLimit = 6;
+    peopleLimit = 6;
+    postLimit = 6;
+    reelLimit = 5;
+
+    renderAllFeeds();
 }
 
-function toggleTheme() {
-    applyGoCatTheme(
-        !document.body.classList.contains("dark")
-    );
-}
+/* EVENT HANDLERS */
 
-/* LOGOUT */
+function bindEvents() {
 
-async function logout() {
-    await supabaseClient.auth.signOut();
+    /* LOGIN AND REGISTER */
 
-    currentUser = null;
-    users = [];
-    videos = [];
-    currentProfileUserId = null;
-    notifications = [];
-
-    showLoginScreen();
-    showToast("Logged out.");
-}
-
-/* AUTH — REGISTER */
-
-async function handleRegister(event) {
-    event.preventDefault();
-
-    const username =
-        document.getElementById("registerUsername").value.trim();
-
-    const email =
-        document.getElementById("registerEmail").value.trim();
-
-    const password =
-        document.getElementById("registerPassword").value;
-
-    const confirmPassword =
-        document.getElementById("registerConfirm").value;
-
-    if (password !== confirmPassword) {
-        setAuthMessage("Passwords do not match.");
-        return;
-    }
-
-    if (username.length < 3) {
-        setAuthMessage("Username must be at least 3 characters.");
-        return;
-    }
-
-    if (password.length < 6) {
-        setAuthMessage("Password must be at least 6 characters.");
-        return;
-    }
-
-    setAuthMessage("Creating your account...", true);
-
-    try {
-        const result = await supabaseClient
-            .auth
-            .signUp({
-                email: email,
-                password: password,
-                options: {
-                    data: {
-                        username: username
-                    }
-                }
-            });
-
-        if (result.error) {
-            throw result.error;
-        }
-
-        if (!result.data.user) {
-            throw new Error("Could not create account.");
-        }
-
-        if (result.data.session) {
-            const profile = await ensureProfile(result.data.user);
-
-            if (!profile) {
-                throw new Error(
-                    "Account created, but the GoCat profile could not be created."
-                );
-            }
-
-            setAuthMessage("Account created!", true);
-            await startUserSession();
-            return;
-        }
-
-        setAuthMessage(
-            "Account created. Check your email to confirm your account.",
-            true
-        );
-    } catch (error) {
-        console.error(error);
-        setAuthMessage(error.message || "Could not create account.");
-    }
-}
-
-/* AUTH — LOGIN */
-
-async function handleLogin(event) {
-    event.preventDefault();
-
-    const email =
-        document.getElementById("loginUsername").value.trim();
-
-    const password =
-        document.getElementById("loginPassword").value;
-
-    if (!email) {
-        setAuthMessage("Enter your email.");
-        return;
-    }
-
-    setAuthMessage("Signing in...", true);
-
-    try {
-        const result = await supabaseClient
-            .auth
-            .signInWithPassword({
-                email: email,
-                password: password
-            });
-
-        if (result.error) {
-            throw result.error;
-        }
-
-        await startUserSession();
-    } catch (error) {
-        console.error(error);
-        setAuthMessage(
-            error.message || "Email or password is incorrect."
-        );
-    }
-}
-
-/* START USER SESSION */
-
-async function startUserSession() {
-    const authUser = await getAuthUser();
-
-    if (!authUser) {
-        showLoginScreen();
-        hideGoCatLoader();
-        return;
-    }
-
-    await loadAllData();
-    await loadCurrentProfile();
-
-    showApp();
-
-    currentProfileUserId = currentUser.id;
-
-    updateUserUI();
-
-    renderHome();
-    renderShorts();
-    renderFollowing();
-    renderExplore();
-    renderProfile();
-    renderNotifications();
-
-    hideGoCatLoader();
-}
-
-/* REFRESH ALL */
-
-async function refreshAll() {
-    try {
-        homeFeedOffset = 0;
-        shortsFeedOffset = 0;
-
-        await loadAllData();
-        await loadCurrentProfile();
-
-        updateUserUI();
-
-        renderHome();
-        renderShorts();
-        renderFollowing();
-        renderExplore();
-        renderProfile();
-        renderNotifications();
-
-        showToast("Feed refreshed.");
-    } catch (error) {
-        console.error(error);
-        showToast("Could not refresh GoCat.");
-    }
-}
-
-/* SEARCH */
-
-function handleSearchInput() {
-    homeFeedOffset = 0;
-    shortsFeedOffset = 0;
-
-    if (!searchInput) {
-        return;
-    }
-
-    clearSearch.classList.toggle(
-        "hidden",
-        !searchInput.value
+    $("#loginForm").addEventListener(
+        "submit",
+        handleLogin
     );
 
-    if (currentPage === "home") {
-        renderHome();
-    }
+    $("#registerForm").addEventListener(
+        "submit",
+        handleRegister
+    );
 
-    if (currentPage === "shorts") {
-        renderShorts();
-    }
-
-    if (currentPage === "following") {
-        renderFollowing();
-    }
-
-    if (currentPage === "explore") {
-        renderExplore();
-    }
-
-    if (currentPage === "profile") {
-        renderProfile();
-    }
-}
-
-/* TOPIC BUTTONS */
-
-function bindTopicButtons() {
-    document
-        .querySelectorAll(".topic-chip")
-        .forEach(function(button) {
-            button.addEventListener("click", function() {
-                activeHomeTopic = button.dataset.topic;
-                homeFeedOffset = 0;
-
-                document
-                    .querySelectorAll(".topic-chip")
-                    .forEach(function(item) {
-                        item.classList.toggle(
-                            "active",
-                            item === button
-                        );
-                    });
-
-                showPage("home");
-            });
-        });
-}
-
-/* EXPLORE TABS */
-
-function bindExploreTabs() {
-    document
-        .querySelectorAll(".explore-tab")
-        .forEach(function(button) {
-            button.addEventListener("click", function() {
-                exploreMode = button.dataset.explore;
-
-                document
-                    .querySelectorAll(".explore-tab")
-                    .forEach(function(item) {
-                        item.classList.toggle(
-                            "active",
-                            item === button
-                        );
-                    });
-
-                renderExplore();
-            });
-        });
-}
-
-/* GENERAL CLICK EVENTS */
-
-function bindGeneralEvents() {
-
-    /* AUTH */
-
-    showRegister.addEventListener("click", function() {
-        showRegisterScreen();
-    });
-
-    showLogin.addEventListener("click", function() {
-        showLoginScreen();
-    });
-
-    loginForm.addEventListener("submit", handleLogin);
-    registerForm.addEventListener("submit", handleRegister);
-
-    /* PASSWORD VISIBILITY */
-
-    document
-        .querySelectorAll(".password-btn")
-        .forEach(function(button) {
-            button.addEventListener("click", function() {
-                const target =
-                    document.getElementById(button.dataset.target);
-
-                if (!target) {
-                    return;
-                }
-
-                if (target.type === "password") {
-                    target.type = "text";
-                    button.textContent = "🙈";
-                } else {
-                    target.type = "password";
-                    button.textContent = "👁";
-                }
-            });
-        });
-
-    /* NAVIGATION */
-
-    document
-        .querySelectorAll(".nav-item")
-        .forEach(function(button) {
-            button.addEventListener("click", function() {
-                if (button.dataset.page) {
-                    showPage(button.dataset.page);
-                }
-            });
-        });
-
-    /* PROFILE TOP BUTTON */
-
-    const profileTopBtn =
-        document.getElementById("profileTopBtn");
-
-    if (profileTopBtn) {
-        profileTopBtn.addEventListener("click", function() {
-            if (!currentUser) {
-                return;
-            }
-
-            currentProfileUserId = currentUser.id;
-            showPage("profile");
-        });
-    }
-
-    /* NORMAL VIDEO UPLOAD BUTTONS */
-
-    document
-        .querySelectorAll(".upload-trigger")
-        .forEach(function(button) {
-            button.addEventListener("click", function() {
-                openUploadModal("video");
-            });
-        });
-
-    /* SHORTS UPLOAD BUTTONS */
-
-    document
-        .querySelectorAll(".short-upload-trigger")
-        .forEach(function(button) {
-            button.addEventListener("click", function() {
-                openUploadModal("short");
-            });
-        });
-
-    /* TOP UPLOAD BUTTON */
-
-    const uploadTopBtn =
-        document.getElementById("uploadTopBtn");
-
-    if (uploadTopBtn) {
-        uploadTopBtn.addEventListener("click", function() {
-            openUploadModal("video");
-        });
-    }
-
-    /* FILE INPUT */
-
-    videoFile.addEventListener("change", updateSelectedFile);
-
-    dropArea.addEventListener("dragover", function(event) {
-        event.preventDefault();
-        dropArea.classList.add("dragging");
-    });
-
-    dropArea.addEventListener("dragleave", function() {
-        dropArea.classList.remove("dragging");
-    });
-
-    dropArea.addEventListener("drop", function(event) {
-        event.preventDefault();
-        dropArea.classList.remove("dragging");
-
-        const files = event.dataTransfer.files;
-
-        if (files && files.length) {
-            videoFile.files = files;
-            updateSelectedFile();
-        }
-    });
-
-    publishVideo.addEventListener(
+    $("#showRegister").addEventListener(
         "click",
-        publishUploadedVideo
+        showRegister
     );
 
-    /* SEARCH INPUT */
-
-    searchInput.addEventListener(
-        "input",
-        handleSearchInput
+    $("#showLogin").addEventListener(
+        "click",
+        showLogin
     );
 
-    clearSearch.addEventListener("click", function() {
-        searchInput.value = "";
-        clearSearch.classList.add("hidden");
-        handleSearchInput();
-    });
-
-    /* TOPICS */
-
-    bindTopicButtons();
-
-    /* EXPLORE TABS */
-
-    bindExploreTabs();
-
-    /* REFRESH FEED */
-
-    const refreshFeed =
-        document.getElementById("refreshFeed");
-
-    if (refreshFeed) {
-        refreshFeed.addEventListener("click", refreshAll);
-    }
+    $("#logoutBtn").addEventListener(
+        "click",
+        logout
+    );
 
     /* THEME */
 
-    const themeBtn =
-        document.getElementById("themeBtn");
+    $("#themeBtn").addEventListener(
+        "click",
+        function() {
+            applyTheme(
+                !document.body.classList.contains("dark")
+            );
+        }
+    );
 
-    if (themeBtn) {
-        themeBtn.addEventListener("click", toggleTheme);
-    }
+    /* MOBILE MENU */
 
-    /* LOGOUT */
+    $("#mobileMenuBtn").addEventListener(
+        "click",
+        function() {
+            $("#sidebar").classList.toggle("open");
+        }
+    );
 
-    const logoutBtn =
-        document.getElementById("logoutBtn");
+    /* PROFILE BUTTON */
 
-    if (logoutBtn) {
-        logoutBtn.addEventListener("click", logout);
-    }
+    $("#topProfileBtn").addEventListener(
+        "click",
+        function() {
+            currentProfileUserId = currentUser.id;
+            showPage("profile");
+        }
+    );
+
+    /* UPLOAD BUTTONS */
+
+    $("#uploadTopBtn").addEventListener(
+        "click",
+        function() {
+            openUpload("video");
+        }
+    );
+
+    $("#createReelBtn").addEventListener(
+        "click",
+        function() {
+            openUpload("reel");
+        }
+    );
+
+    /* REFRESH */
+
+    $("#refreshFeedBtn").addEventListener(
+        "click",
+        async function() {
+            try {
+                await loadAllData();
+                refreshFeeds();
+                toast("Feed refreshed.");
+            } catch (error) {
+                toast(error.message);
+            }
+        }
+    );
+
+    /* LOAD MORE BUTTONS */
+
+    $("#homeLoadMore").addEventListener(
+        "click",
+        function() {
+            homeLimit += 5;
+            renderHome();
+        }
+    );
+
+    $("#exploreLoadMore").addEventListener(
+        "click",
+        function() {
+            if (exploreMode === "videos") {
+                exploreLimit += 6;
+            } else {
+                peopleLimit += 6;
+            }
+
+            renderExplore();
+        }
+    );
+
+    $("#reelsLoadMore").addEventListener(
+        "click",
+        function() {
+            reelLimit += 5;
+            renderReels();
+        }
+    );
+
+    $("#postsLoadMore").addEventListener(
+        "click",
+        function() {
+            postLimit += 6;
+            renderPosts();
+        }
+    );
+
+    /* SEARCH */
+
+    $("#searchInput").addEventListener(
+        "input",
+        function() {
+            homeLimit = 5;
+            exploreLimit = 6;
+            peopleLimit = 6;
+            reelLimit = 5;
+
+            renderHome();
+            renderExplore();
+            renderReels();
+            renderFollowing();
+        }
+    );
+
+    $("#clearSearch").addEventListener(
+        "click",
+        function() {
+            $("#searchInput").value = "";
+
+            renderHome();
+            renderExplore();
+            renderReels();
+            renderFollowing();
+        }
+    );
+
+    /* TOPIC FILTERS */
+
+    $$(".topic-chip").forEach(function(button) {
+        button.addEventListener("click", function() {
+            activeHomeTopic = button.dataset.topic;
+
+            $$(".topic-chip").forEach(function(chip) {
+                chip.classList.toggle(
+                    "active",
+                    chip === button
+                );
+            });
+
+            homeLimit = 5;
+
+            renderHome();
+        });
+    });
+
+    /* EXPLORE TABS */
+
+    $$("[data-explore-tab]").forEach(function(button) {
+        button.addEventListener("click", function() {
+            exploreMode = button.dataset.exploreTab;
+
+            $$("[data-explore-tab]").forEach(function(tab) {
+                tab.classList.toggle(
+                    "active",
+                    tab === button
+                );
+            });
+
+            renderExplore();
+        });
+    });
+
+    /* VIDEO FILE */
+
+    $("#videoFile").addEventListener(
+        "change",
+        function(event) {
+            const file = event.target.files[0];
+
+            if (!file) {
+                return;
+            }
+
+            setSelectedVideo(file);
+        }
+    );
+
+    /* REEL EDITOR */
+
+    $("#reelOverlayText").addEventListener(
+        "input",
+        updateReelEditorPreview
+    );
+
+    $("#reelFilter").addEventListener(
+        "change",
+        updateReelEditorPreview
+    );
+
+    $("#reelFraming").addEventListener(
+        "change",
+        updateReelEditorPreview
+    );
+
+    $("#exportReelBtn").addEventListener(
+        "click",
+        exportEditedReel
+    );
+
+    /* PUBLISH VIDEO */
+
+    $("#uploadForm").addEventListener(
+        "submit",
+        publishVideo
+    );
 
     /* COMMENTS */
 
-    commentForm.addEventListener(
+    $("#commentForm").addEventListener(
         "submit",
         submitComment
     );
 
-    /* SAVE PROFILE */
+    /* PROFILE */
 
-    saveProfileBtn.addEventListener(
-        "click",
+    $("#editProfileForm").addEventListener(
+        "submit",
         saveProfile
+    );
+
+    /* POSTS */
+
+    $("#createPostForm").addEventListener(
+        "submit",
+        createPost
+    );
+
+    $("#postImage").addEventListener(
+        "change",
+        function(event) {
+            postImageFile =
+                event.target.files[0] || null;
+
+            $("#postImageName").textContent =
+                postImageFile ? postImageFile.name : "";
+        }
+    );
+
+    /* CHATS */
+
+    $("#chatForm").addEventListener(
+        "submit",
+        sendMessage
     );
 
     /* CLEAR NOTIFICATIONS */
 
-    const clearNotifications =
-        document.getElementById("clearNotifications");
-
-    if (clearNotifications) {
-        clearNotifications.addEventListener("click", function() {
+    $("#clearNotificationsBtn").addEventListener(
+        "click",
+        function() {
             notifications = [];
 
-            saveStoredNotifications();
+            localStorage.setItem(
+                "gocat_notifications_" + currentUser.id,
+                "[]"
+            );
+
             renderNotifications();
 
-            showToast("Notifications cleared.");
-        });
-    }
+            toast("Notifications cleared.");
+        }
+    );
+
+    /* PROFILE ACTION */
+
+    $("#profileActionBtn").addEventListener(
+        "click",
+        function() {
+            const user = getUser(currentProfileUserId);
+
+            if (!user) {
+                return;
+            }
+
+            if (user.id !== currentUser.id) {
+                return toggleFollow(user.id);
+            }
+
+            $("#editUsername").value =
+                currentUser.username;
+
+            $("#editBio").value =
+                currentUser.bio || "";
+
+            $("#editProfileModal").classList.remove("hidden");
+        }
+    );
+
+    /* DYNAMIC BUTTONS */
+
+    document.addEventListener(
+        "click",
+        function(event) {
+            const target = event.target.closest("button");
+
+            if (!target) {
+                return;
+            }
+
+            if (target.dataset.page) {
+                showPage(target.dataset.page);
+            }
+
+            if (target.dataset.goPage) {
+                showPage(target.dataset.goPage);
+            }
+
+            if (target.dataset.openUpload) {
+                openUpload(target.dataset.openUpload);
+            }
+
+            if (target.dataset.createReel !== undefined) {
+                openUpload("reel");
+            }
+
+            if (target.dataset.close) {
+                closeModal(target.dataset.close);
+            }
+
+            if (target.dataset.profileUser) {
+                openProfile(target.dataset.profileUser);
+            }
+
+            if (target.dataset.followUser) {
+                toggleFollow(target.dataset.followUser);
+            }
+
+            if (target.dataset.likeVideo) {
+                toggleVideoLike(target.dataset.likeVideo);
+            }
+
+            if (target.dataset.commentVideo) {
+                openComments(target.dataset.commentVideo);
+            }
+
+            if (target.dataset.shareVideo) {
+                shareVideo(target.dataset.shareVideo);
+            }
+
+            if (target.dataset.deleteVideo) {
+                deleteVideo(target.dataset.deleteVideo);
+            }
+
+            if (target.dataset.likePost) {
+                togglePostLike(target.dataset.likePost);
+            }
+
+            if (target.dataset.deletePost) {
+                deletePost(target.dataset.deletePost);
+            }
+
+            if (target.dataset.chatUser) {
+                openChat(target.dataset.chatUser);
+            }
+
+            if (target.dataset.reelSound) {
+                const video = $(
+                    `[data-reel-video="${CSS.escape(target.dataset.reelSound)}"]`
+                );
+
+                if (video) {
+                    video.muted = !video.muted;
+
+                    target.textContent =
+                        video.muted ? "🔇" : "🔊";
+                }
+            }
+        }
+    );
 
     /* CLOSE MODALS */
 
-    document
-        .querySelectorAll("[data-close]")
-        .forEach(function(button) {
-            button.addEventListener("click", function() {
-                const target =
-                    document.getElementById(button.dataset.close);
+    $$("[data-close]").forEach(function(button) {
+        button.addEventListener(
+            "click",
+            function() {
+                closeModal(button.dataset.close);
+            }
+        );
+    });
 
-                closeModal(target);
-            });
-        });
+    /* PASSWORD VISIBILITY */
 
-    document
-        .querySelectorAll(".modal-overlay")
-        .forEach(function(overlay) {
-            overlay.addEventListener("click", function() {
-                const modal = overlay.closest(".modal");
-                closeModal(modal);
-            });
-        });
+    $$(".show-password").forEach(function(button) {
+        button.addEventListener(
+            "click",
+            function() {
+                const input = document.getElementById(
+                    button.dataset.target
+                );
 
-    /* MOBILE SIDEBAR MENU */
+                if (!input) {
+                    return;
+                }
 
-    const mobileMenu =
-        document.getElementById("mobileMenu");
+                input.type =
+                    input.type === "password"
+                        ? "text"
+                        : "password";
 
-    const sidebar =
-        document.querySelector(".sidebar");
+                button.textContent =
+                    input.type === "password"
+                        ? "Show"
+                        : "Hide";
+            }
+        );
+    });
 
-    if (mobileMenu && sidebar) {
-        mobileMenu.addEventListener("click", function() {
-            sidebar.classList.toggle("open");
-        });
-    }
+    /* TAP REEL TO PAUSE OR PLAY */
+
+    $("#reelsFeed").addEventListener(
+        "click",
+        function(event) {
+            const video = event.target
+                .closest(".reel-item")
+                ?.querySelector(".reel-video");
+
+            if (
+                video &&
+                !event.target.closest("button")
+            ) {
+                if (video.paused) {
+                    video.play().catch(function() {});
+                } else {
+                    video.pause();
+                }
+            }
+        }
+    );
 }
 
 /* INITIALIZE GOCAT */
 
 async function initGoCat() {
-    loadTheme();
+    const savedTheme =
+        localStorage.getItem("gocat_theme") === "dark";
 
-    try {
-        await loadSupabaseSDK();
+    applyTheme(savedTheme);
 
-        supabaseClient =
-            window.supabase.createClient(
-                SUPABASE_URL,
-                SUPABASE_PUBLISHABLE_KEY
-            );
-    } catch (error) {
-        console.error(error);
-        hideGoCatLoader();
+    bindEvents();
 
-        alert("GoCat could not load Supabase.");
+    if (!window.supabase?.createClient) {
+        showLoader(false);
+
+        setAuthMessage(
+            "Supabase could not load. Check your internet connection and refresh."
+        );
+
         return;
     }
 
-    bindGeneralEvents();
+    supabaseClient = window.supabase.createClient(
+        SUPABASE_URL,
+        SUPABASE_PUBLISHABLE_KEY
+    );
 
     try {
-        const sessionResult =
+        const result =
             await supabaseClient.auth.getSession();
 
-        if (sessionResult.error) {
-            throw sessionResult.error;
+        if (result.error) {
+            throw result.error;
         }
 
-        if (sessionResult.data.session) {
-            await startUserSession();
+        if (result.data.session) {
+            await startSession();
         } else {
-            showLoginScreen();
-            hideGoCatLoader();
+            showLogin();
+            showLoader(false);
         }
     } catch (error) {
         console.error(error);
-        showLoginScreen();
-        hideGoCatLoader();
+
+        showLogin();
+        showLoader(false);
+
+        setAuthMessage(
+            error.message || "Could not connect to GoCat."
+        );
     }
 
-    /* AUTH STATE CHANGES */
-
     supabaseClient.auth.onAuthStateChange(
-        async function(event, session) {
+        function(event) {
             if (event === "SIGNED_OUT") {
                 currentUser = null;
-                users = [];
-                videos = [];
 
-                showLoginScreen();
-                return;
-            }
+                $("#app").classList.add("hidden");
 
-            if (event === "SIGNED_IN" && session) {
-                try {
-                    await startUserSession();
-                } catch (error) {
-                    console.error(error);
-                }
+                showLogin();
             }
         }
     );
@@ -3072,4 +3839,3 @@ async function initGoCat() {
 /* START GOCAT */
 
 initGoCat();
-
