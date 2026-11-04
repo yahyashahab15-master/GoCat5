@@ -3,158 +3,368 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#12b981">
-    <title>GoCat — Share what you love</title>
-    <link rel="stylesheet" href="random go.css">
+    <meta name="theme-color" content="#12bd7d">
+    <title>GoCat — Discover. Create. Connect.</title>
+
+    <link rel="stylesheet" href="randomgo.css">
+
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="randomgo.js" defer></script>
 </head>
 <body>
 
+    <!-- LOADING -->
     <div id="loader" class="loader-screen">
-        <div class="loader-card">
-            <div class="logo-mark">🐱</div>
+        <div class="loader-content">
+            <div class="loader-cat">🐱</div>
             <h1>GoCat</h1>
-            <div class="loader-paws">🐾　🐾　🐾</div>
-            <p>Getting your feed ready...</p>
+            <div class="loader-dots"><span></span><span></span><span></span></div>
+            <p>Preparing your world...</p>
         </div>
     </div>
 
-    <!-- AUTH -->
+    <!-- AUTHENTICATION -->
     <section id="authScreen" class="auth-screen">
-        <div class="auth-glow auth-glow-one"></div>
-        <div class="auth-glow auth-glow-two"></div>
+        <div class="auth-orb orb-one"></div>
+        <div class="auth-orb orb-two"></div>
+
         <div class="auth-card">
-            <div class="auth-brand"><span>🐱</span><b>GoCat</b></div>
+            <div class="auth-logo">
+                <span>🐱</span>
+                <strong>GoCat</strong>
+            </div>
+
             <div class="auth-heading">
                 <h1 id="authTitle">Welcome back</h1>
                 <p id="authSubtitle">Sign in to continue to GoCat.</p>
             </div>
 
             <form id="loginForm" class="auth-form">
-                <label>Email<input id="loginEmail" type="email" autocomplete="email" placeholder="you@example.com" required></label>
-                <label>Password<div class="password-wrap"><input id="loginPassword" type="password" autocomplete="current-password" placeholder="Your password" required><button type="button" class="show-password" data-target="loginPassword">Show</button></div></label>
-                <button class="primary-btn full-btn" type="submit">Log in</button>
-                <p class="auth-switch">New to GoCat? <button id="showRegister" type="button">Create account</button></p>
+                <label>
+                    Email
+                    <input id="loginEmail" type="email" autocomplete="email"
+                        placeholder="you@example.com" required>
+                </label>
+
+                <label>
+                    Password
+                    <input id="loginPassword" type="password"
+                        autocomplete="current-password"
+                        placeholder="Your password" required>
+                </label>
+
+                <button class="primary-btn full-btn" type="submit">
+                    Log in
+                </button>
+
+                <p class="auth-switch">
+                    New to GoCat?
+                    <button id="showRegister" type="button">Create account</button>
+                </p>
             </form>
 
             <form id="registerForm" class="auth-form hidden">
-                <label>Username<input id="registerUsername" type="text" minlength="3" maxlength="20" autocomplete="username" placeholder="Choose a username" required></label>
-                <label>Email<input id="registerEmail" type="email" autocomplete="email" placeholder="you@example.com" required></label>
-                <label>Password<div class="password-wrap"><input id="registerPassword" type="password" minlength="6" autocomplete="new-password" placeholder="At least 6 characters" required><button type="button" class="show-password" data-target="registerPassword">Show</button></div></label>
-                <label>Confirm password<input id="registerConfirm" type="password" minlength="6" autocomplete="new-password" placeholder="Repeat password" required></label>
-                <button class="primary-btn full-btn" type="submit">Create account</button>
-                <p class="auth-switch">Already a member? <button id="showLogin" type="button">Log in</button></p>
+                <label>
+                    Username
+                    <input id="registerUsername" type="text"
+                        minlength="3" maxlength="20"
+                        autocomplete="username"
+                        placeholder="Choose a username" required>
+                </label>
+
+                <label>
+                    Email
+                    <input id="registerEmail" type="email"
+                        autocomplete="email"
+                        placeholder="you@example.com" required>
+                </label>
+
+                <label>
+                    Password
+                    <input id="registerPassword" type="password"
+                        minlength="6" autocomplete="new-password"
+                        placeholder="At least 6 characters" required>
+                </label>
+
+                <label>
+                    Confirm password
+                    <input id="registerConfirm" type="password"
+                        minlength="6" autocomplete="new-password"
+                        placeholder="Repeat your password" required>
+                </label>
+
+                <button class="primary-btn full-btn" type="submit">
+                    Create account
+                </button>
+
+                <p class="auth-switch">
+                    Already have an account?
+                    <button id="showLogin" type="button">Log in</button>
+                </p>
             </form>
+
             <p id="authMessage" class="auth-message" aria-live="polite"></p>
-            <div class="auth-footnote">🔒 Your GoCat account is powered by Supabase.</div>
+            <div class="auth-footnote">🔒 Secure GoCat account powered by Supabase.</div>
         </div>
     </section>
 
-    <!-- APP -->
+    <!-- MAIN APPLICATION -->
     <div id="app" class="app hidden">
-        <aside class="sidebar" id="sidebar">
-            <a class="brand" href="#home" aria-label="GoCat home"><span class="brand-icon">🐱</span><strong>GoCat</strong></a>
-            <nav class="side-nav" aria-label="Main navigation">
-                <button class="nav-link active" data-page="home"><span>⌂</span>Home</button>
-                <button class="nav-link" data-page="reels"><span>▶</span>Reels</button>
-                <button class="nav-link" data-page="explore"><span>⌕</span>Explore</button>
-                <button class="nav-link" data-page="following"><span>♧</span>Following</button>
-                <button class="nav-link" data-page="posts"><span>▤</span>Posts</button>
-                <button class="nav-link" data-page="chats"><span>✉</span>Chats</button>
-                <button class="nav-link" data-page="notifications"><span>♧</span>Notifications</button>
-                <button class="nav-link" data-page="profile"><span>◉</span>Profile</button>
+
+        <!-- DESKTOP SIDEBAR -->
+        <aside id="sidebar" class="sidebar">
+            <a href="#" class="brand" data-page="home">
+                <span>🐱</span>
+                <strong>GoCat</strong>
+            </a>
+
+            <div class="sidebar-label">MENU</div>
+
+            <nav class="side-nav">
+                <button class="nav-link active" data-page="home">
+                    <span>⌂</span> Home
+                </button>
+                <button class="nav-link" data-page="reels">
+                    <span>▶</span> Reels
+                </button>
+                <button class="nav-link" data-page="explore">
+                    <span>⌕</span> Explore
+                </button>
+                <button class="nav-link" data-page="following">
+                    <span>♧</span> Following
+                </button>
+                <button class="nav-link" data-page="posts">
+                    <span>▤</span> Posts
+                </button>
+                <button class="nav-link" data-page="chats">
+                    <span>✉</span> Messages
+                </button>
+                <button class="nav-link" data-page="notifications">
+                    <span>♢</span> Notifications
+                </button>
+                <button class="nav-link" data-page="profile">
+                    <span>◉</span> Profile
+                </button>
             </nav>
+
             <div class="sidebar-bottom">
-                <button id="themeBtn" class="sidebar-utility"><span id="themeIcon">🌙</span><span id="themeLabel">Dark mode</span></button>
-                <button id="logoutBtn" class="sidebar-utility logout-btn"><span>↪</span>Log out</button>
+                <button id="themeBtn" class="utility-btn">
+                    <span id="themeIcon">🌙</span>
+                    <span id="themeLabel">Dark mode</span>
+                </button>
+
+                <button id="logoutBtn" class="utility-btn logout-btn">
+                    <span>↪</span> Log out
+                </button>
             </div>
         </aside>
 
+        <!-- MAIN -->
         <main class="main-area">
+
             <header class="topbar">
-                <button id="mobileMenuBtn" class="mobile-menu-btn" aria-label="Open menu">☰</button>
-                <a class="mobile-brand" href="#home">🐱 GoCat</a>
-                <div class="search-box"><span>⌕</span><input id="searchInput" type="search" placeholder="Search videos and creators..."><button id="clearSearch" type="button" aria-label="Clear search" class="hidden">×</button></div>
-                <div class="topbar-actions"><button id="uploadTopBtn" class="primary-btn">＋ Upload video</button><button id="topProfileBtn" class="top-avatar" aria-label="My profile">G</button></div>
+                <button id="mobileMenuBtn" class="mobile-menu-btn"
+                    aria-label="Open navigation">☰</button>
+
+                <a href="#" class="mobile-brand" data-page="home">
+                    🐱 GoCat
+                </a>
+
+                <div class="search-box">
+                    <span>⌕</span>
+                    <input id="searchInput" type="search"
+                        placeholder="Search GoCat...">
+                    <button id="clearSearch" type="button"
+                        class="hidden">×</button>
+                </div>
+
+                <div class="topbar-actions">
+                    <button id="uploadTopBtn" class="primary-btn">
+                        ＋ Upload
+                    </button>
+                    <button id="topProfileBtn" class="top-avatar"
+                        aria-label="Open profile">G</button>
+                </div>
             </header>
 
-            <div class="page-wrap" id="pageWrap">
+            <div class="page-wrap">
 
-                <!-- HOME -->
+                <!-- FOR YOU -->
                 <section id="page-home" class="page-section">
                     <div class="hero-banner">
-                        <div><span class="eyebrow">YOUR GOCAT SPACE</span><h1>Hey, <span id="welcomeName">creator</span> 👋</h1><p>Find new ideas, share your videos and connect with creators.</p></div>
+                        <div>
+                            <span class="eyebrow">YOUR GOCAT WORLD</span>
+                            <h1>Welcome back, <span id="welcomeName">Creator</span> 👋</h1>
+                            <p>Discover videos, Reels, posts and creators picked for you.</p>
+                        </div>
                         <div class="hero-cat">🐱</div>
                     </div>
-                    <div class="section-head"><div><h2>For You</h2><p>Recommendations based on what you enjoy.</p></div><button id="refreshFeedBtn" class="soft-btn">↻ Refresh</button></div>
-                    <div id="topicChips" class="topic-chips">
+
+                    <div class="section-heading">
+                        <div>
+                            <h2>For You</h2>
+                            <p>A mix of content you may enjoy.</p>
+                        </div>
+                        <button id="refreshFeedBtn" class="soft-btn">↻ Refresh</button>
+                    </div>
+
+                    <div class="topic-chips" id="topicChips">
                         <button class="topic-chip active" data-topic="All">✨ All</button>
                         <button class="topic-chip" data-topic="Gaming">🎮 Gaming</button>
                         <button class="topic-chip" data-topic="Cooking">🍳 Cooking</button>
                         <button class="topic-chip" data-topic="School">📚 School</button>
-                        <button class="topic-chip" data-topic="Technology">💻 Tech</button>
+                        <button class="topic-chip" data-topic="Technology">💻 Technology</button>
                         <button class="topic-chip" data-topic="Sports">⚽ Sports</button>
                         <button class="topic-chip" data-topic="Art">🎨 Art</button>
                         <button class="topic-chip" data-topic="Entertainment">😂 Fun</button>
                         <button class="topic-chip" data-topic="Other">🌍 Other</button>
                     </div>
-                    <div class="section-head small-head"><div><h2>Creators to discover</h2><p>Accounts you might like.</p></div></div>
+
+                    <div class="section-heading compact-heading">
+                        <div>
+                            <h2>Suggested creators</h2>
+                            <p>Find people who post things you like.</p>
+                        </div>
+                    </div>
+
                     <div id="suggestedCreators" class="creator-strip"></div>
-                    <div id="homeFeed" class="video-grid"></div>
-                    <div id="homeEmpty" class="empty-card hidden"><div>🎬</div><h3>No videos here yet</h3><p>Try another topic or upload the first video.</p><button class="primary-btn" data-open-upload="video">Upload a video</button></div>
-                    <div id="homeLoadMoreWrap" class="load-more-wrap hidden"><button id="homeLoadMore" class="soft-btn">Show more videos ↓</button><span id="homeCount" class="muted-text"></span></div>
+
+                    <div id="homeFeed" class="mixed-feed"></div>
+
+                    <div id="homeEmpty" class="empty-card hidden">
+                        <div>🌱</div>
+                        <h3>Your feed is getting ready</h3>
+                        <p>Try another topic or discover some creators.</p>
+                        <button class="primary-btn" data-page="explore">Explore GoCat</button>
+                    </div>
+
+                    <div id="homeLoadMoreWrap" class="load-more-wrap hidden">
+                        <button id="homeLoadMore" class="soft-btn">Show more content ↓</button>
+                        <span id="homeCount" class="muted-text"></span>
+                    </div>
                 </section>
 
                 <!-- REELS -->
                 <section id="page-reels" class="page-section hidden">
-                    <div class="reels-page-head"><div><span class="eyebrow">QUICK DISCOVERY</span><h1>Reels</h1><p>Scroll through vertical videos from GoCat creators.</p></div><button id="createReelBtn" class="primary-btn">＋ Create Reel</button></div>
+                    <div class="reels-heading">
+                        <div>
+                            <span class="eyebrow">VERTICAL VIDEO</span>
+                            <h1>Reels</h1>
+                            <p>Swipe through videos from GoCat creators.</p>
+                        </div>
+                        <button id="createReelBtn" class="primary-btn">
+                            ＋ Create Reel
+                        </button>
+                    </div>
+
                     <div id="reelsFeed" class="reels-feed"></div>
-                    <div id="reelsLoadMoreWrap" class="load-more-wrap hidden"><button id="reelsLoadMore" class="soft-btn">Load more Reels ↓</button></div>
+
+                    <div class="load-more-wrap hidden" id="reelsLoadMoreWrap">
+                        <button id="reelsLoadMore" class="soft-btn">
+                            Load more Reels
+                        </button>
+                    </div>
                 </section>
 
                 <!-- EXPLORE -->
                 <section id="page-explore" class="page-section hidden">
-                    <div class="page-title"><span class="eyebrow">DISCOVER SOMETHING NEW</span><h1>Explore</h1><p>Find videos and creators. Search to narrow the results.</p></div>
-                    <div class="tab-row"><button class="tab-btn active" data-explore-tab="videos">Videos</button><button class="tab-btn" data-explore-tab="people">People</button></div>
+                    <div class="page-heading">
+                        <span class="eyebrow">DISCOVER THE COMMUNITY</span>
+                        <h1>Explore</h1>
+                        <p>Discover videos, Reels and creators.</p>
+                    </div>
+
+                    <div class="tabs">
+                        <button class="tab-btn active" data-explore-tab="videos">Videos</button>
+                        <button class="tab-btn" data-explore-tab="reels">Reels</button>
+                        <button class="tab-btn" data-explore-tab="people">People</button>
+                        <button class="tab-btn" data-explore-tab="posts">Posts</button>
+                    </div>
+
                     <div id="exploreVideos" class="video-grid"></div>
                     <div id="explorePeople" class="people-grid hidden"></div>
-                    <div id="exploreLoadMoreWrap" class="load-more-wrap hidden"><button id="exploreLoadMore" class="soft-btn">Load more ↓</button><span id="exploreCount" class="muted-text"></span></div>
+                    <div id="explorePosts" class="posts-feed hidden"></div>
+
+                    <div id="exploreLoadMoreWrap" class="load-more-wrap hidden">
+                        <button id="exploreLoadMore" class="soft-btn">Load more ↓</button>
+                        <span id="exploreCount" class="muted-text"></span>
+                    </div>
                 </section>
 
                 <!-- FOLLOWING -->
                 <section id="page-following" class="page-section hidden">
-                    <div class="page-title"><span class="eyebrow">YOUR COMMUNITY</span><h1>Following</h1><p>Latest videos from creators you follow.</p></div>
+                    <div class="page-heading">
+                        <span class="eyebrow">YOUR NETWORK</span>
+                        <h1>Following</h1>
+                        <p>Recent videos from creators you follow.</p>
+                    </div>
+
                     <div id="followingFeed" class="video-grid"></div>
-                    <div id="followingEmpty" class="empty-card hidden"><div>👥</div><h3>Your feed is quiet</h3><p>Follow creators to see their videos here.</p><button class="primary-btn" data-go-page="explore">Explore creators</button></div>
+
+                    <div id="followingEmpty" class="empty-card hidden">
+                        <div>👥</div>
+                        <h3>Follow some creators</h3>
+                        <p>Their videos will appear here.</p>
+                        <button class="primary-btn" data-page="explore">Explore</button>
+                    </div>
                 </section>
 
                 <!-- POSTS -->
                 <section id="page-posts" class="page-section hidden">
-                    <div class="page-title"><span class="eyebrow">COMMUNITY UPDATES</span><h1>Posts</h1><p>Share a thought or a picture with GoCat.</p></div>
+                    <div class="page-heading">
+                        <span class="eyebrow">COMMUNITY</span>
+                        <h1>Posts</h1>
+                        <p>Share updates and pictures.</p>
+                    </div>
+
                     <form id="createPostForm" class="create-post-card">
-                        <textarea id="postContent" maxlength="1000" placeholder="What's happening?" aria-label="Post text"></textarea>
-                        <div class="post-compose-row"><label class="file-pill">＋ Photo<input id="postImage" type="file" accept="image/jpeg,image/png,image/webp" hidden></label><span id="postImageName" class="muted-text"></span><button class="primary-btn" type="submit">Publish post</button></div>
+                        <textarea id="postContent" maxlength="1000"
+                            placeholder="What's happening?"></textarea>
+
+                        <div class="post-compose-row">
+                            <label class="file-pill">
+                                🖼 Add photo
+                                <input id="postImage" type="file"
+                                    accept="image/jpeg,image/png,image/webp" hidden>
+                            </label>
+                            <span id="postImageName" class="muted-text"></span>
+                            <button type="submit" class="primary-btn">Publish</button>
+                        </div>
                     </form>
+
                     <div id="postsFeed" class="posts-feed"></div>
-                    <div id="postsLoadMoreWrap" class="load-more-wrap hidden"><button id="postsLoadMore" class="soft-btn">Load more posts ↓</button></div>
+
+                    <div id="postsLoadMoreWrap" class="load-more-wrap hidden">
+                        <button id="postsLoadMore" class="soft-btn">Load more posts</button>
+                    </div>
                 </section>
 
                 <!-- CHATS -->
                 <section id="page-chats" class="page-section hidden">
-                    <div class="page-title"><span class="eyebrow">PRIVATE MESSAGES</span><h1>Chats</h1><p>Chat with people who follow you back.</p></div>
+                    <div class="page-heading">
+                        <span class="eyebrow">PRIVATE MESSAGES</span>
+                        <h1>Messages</h1>
+                        <p>Chat with people who follow you back.</p>
+                    </div>
+
                     <div class="chat-layout">
                         <aside class="chat-friends">
                             <h3>Friends</h3>
                             <div id="chatFriends"></div>
                         </aside>
+
                         <div class="chat-panel">
-                            <div id="chatTitle" class="chat-title">Choose a friend</div>
-                            <div id="chatMessages" class="chat-messages">
-                                <p class="chat-empty">Select a friend to open your conversation.</p>
+                            <div id="chatTitle" class="chat-title">
+                                Select a friend
                             </div>
+
+                            <div id="chatMessages" class="chat-messages">
+                                <p class="chat-empty">Choose a friend to begin.</p>
+                            </div>
+
                             <form id="chatForm" class="chat-compose">
-                                <input id="messageInput" maxlength="2000" placeholder="Write a message..." autocomplete="off" required disabled>
+                                <input id="messageInput" maxlength="2000"
+                                    placeholder="Write a message..." required disabled>
                                 <button id="sendMessageBtn" type="submit" disabled>➤</button>
                             </form>
                         </div>
@@ -163,132 +373,221 @@
 
                 <!-- NOTIFICATIONS -->
                 <section id="page-notifications" class="page-section hidden">
-                    <div class="page-title page-title-row">
-                        <div><span class="eyebrow">YOUR ACTIVITY</span><h1>Notifications</h1><p>Activity saved in this browser.</p></div>
+                    <div class="page-heading page-heading-row">
+                        <div>
+                            <span class="eyebrow">YOUR ACTIVITY</span>
+                            <h1>Notifications</h1>
+                        </div>
                         <button id="clearNotificationsBtn" class="soft-btn">Clear</button>
                     </div>
+
                     <div id="notificationList" class="notification-list"></div>
                 </section>
 
                 <!-- PROFILE -->
                 <section id="page-profile" class="page-section hidden">
                     <div class="profile-cover"></div>
+
                     <div class="profile-header">
                         <div id="profileAvatar" class="profile-avatar">G</div>
+
                         <div class="profile-details">
                             <h1 id="profileUsername">Creator</h1>
                             <p id="profileEmail" class="muted-text"></p>
                             <p id="profileBio">Welcome to GoCat.</p>
                         </div>
-                        <button id="profileActionBtn" class="soft-btn">Edit profile</button>
+
+                        <button id="profileActionBtn" class="soft-btn">
+                            Edit profile
+                        </button>
                     </div>
+
                     <div class="profile-stats">
-                        <div><strong id="profilePostCount">0</strong><span>Videos</span></div>
-                        <div><strong id="profileFollowers">0</strong><span>Followers</span></div>
-                        <div><strong id="profileFollowing">0</strong><span>Following</span></div>
+                        <div><strong id="profileVideoCount">0</strong><span>Videos</span></div>
+                        <div><strong id="profileFollowerCount">0</strong><span>Followers</span></div>
+                        <div><strong id="profileFollowingCount">0</strong><span>Following</span></div>
+                        <div><strong id="profilePostCount">0</strong><span>Posts</span></div>
                     </div>
-                    <div class="section-head">
-                        <div><h2 id="profileVideosHeading">Your videos</h2></div>
-                        <button class="primary-btn" data-open-upload="video" id="profileUploadBtn">＋ Upload</button>
+
+                    <div class="profile-tabs">
+                        <button class="profile-tab active" data-profile-tab="home">⌂ Home</button>
+                        <button class="profile-tab" data-profile-tab="reels">▶ Reels</button>
+                        <button class="profile-tab" data-profile-tab="videos">▣ Videos</button>
+                        <button class="profile-tab" data-profile-tab="posts">▤ Posts</button>
                     </div>
-                    <div id="profileVideos" class="video-grid"></div>
+
+                    <div id="profileHome" class="profile-content"></div>
+                    <div id="profileReels" class="video-grid profile-content hidden"></div>
+                    <div id="profileVideos" class="video-grid profile-content hidden"></div>
+                    <div id="profilePosts" class="posts-feed profile-content hidden"></div>
                 </section>
+
             </div>
         </main>
 
         <!-- MOBILE NAV -->
-        <nav class="mobile-nav" aria-label="Mobile navigation">
-            <button class="mobile-nav-btn active" data-page="home"><span>⌂</span><small>Home</small></button>
-            <button class="mobile-nav-btn" data-page="reels"><span>▶</span><small>Reels</small></button>
-            <button class="mobile-nav-btn" data-page="explore"><span>⌕</span><small>Explore</small></button>
-            <button class="mobile-nav-btn" data-page="posts"><span>▤</span><small>Posts</small></button>
-            <button class="mobile-nav-btn" data-page="chats"><span>✉</span><small>Chats</small></button>
-            <button class="mobile-nav-btn" data-page="profile"><span>◉</span><small>Profile</small></button>
+        <nav class="mobile-nav">
+            <button class="mobile-nav-btn active" data-page="home">
+                <span>⌂</span><small>Home</small>
+            </button>
+            <button class="mobile-nav-btn" data-page="reels">
+                <span>▶</span><small>Reels</small>
+            </button>
+            <button class="mobile-nav-btn" data-page="explore">
+                <span>⌕</span><small>Explore</small>
+            </button>
+            <button class="mobile-nav-btn" data-page="posts">
+                <span>▤</span><small>Posts</small>
+            </button>
+            <button class="mobile-nav-btn" data-page="chats">
+                <span>✉</span><small>Chats</small>
+            </button>
+            <button class="mobile-nav-btn" data-page="profile">
+                <span>◉</span><small>Profile</small>
+            </button>
         </nav>
     </div>
 
-    <!-- VIDEO / REEL UPLOAD MODAL -->
-    <div id="uploadModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="uploadTitle">
+    <!-- VIDEO / REEL UPLOAD -->
+    <div id="uploadModal" class="modal hidden">
         <div class="modal-backdrop" data-close="uploadModal"></div>
-        <div class="modal-card modal-wide">
-            <button class="modal-close" type="button" data-close="uploadModal">×</button>
-            <h2 id="uploadTitle">Upload a video</h2>
-            <p id="uploadDescription" class="muted-text">Share a video with the GoCat community.</p>
 
-            <label id="videoDropArea" class="drop-area">
+        <div class="modal-card modal-wide">
+            <button class="modal-close" data-close="uploadModal">×</button>
+
+            <h2 id="uploadTitle">Upload video</h2>
+            <p id="uploadDescription" class="muted-text"></p>
+
+            <label class="drop-area">
                 <input id="videoFile" type="file" accept="video/*" hidden>
                 <span class="drop-icon">☁</span>
                 <strong>Choose a video</strong>
-                <small>Click here to select a video file</small>
+                <small>Choose from your device</small>
                 <span id="selectedVideoName" class="selected-file"></span>
             </label>
 
+            <!-- REEL EDITOR -->
             <div id="reelEditor" class="reel-editor hidden">
                 <h3>✂️ Reel editor</h3>
+
                 <div class="editor-preview-wrap">
-                    <video id="reelPreview" controls playsinline></video>
+                    <video id="reelPreview" playsinline controls></video>
                     <div id="reelOverlayPreview" class="editor-overlay"></div>
                 </div>
+
                 <div class="editor-grid">
-                    <label>Trim start (seconds)<input id="trimStart" type="number" min="0" step="0.1" value="0"></label>
-                    <label>Trim end (seconds)<input id="trimEnd" type="number" min="0" step="0.1"></label>
-                    <label>Filter<select id="reelFilter"><option value="none">Original</option><option value="warm">Warm</option><option value="cool">Cool</option><option value="mono">Black & white</option><option value="vivid">Vivid</option></select></label>
-                    <label>Framing<select id="reelFraming"><option value="cover">Fill portrait</option><option value="contain">Fit whole video</option></select></label>
+                    <label>Trim start<input id="trimStart" type="number" min="0" step="0.1" value="0"></label>
+                    <label>Trim end<input id="trimEnd" type="number" min="0" step="0.1"></label>
+
+                    <label>Filter
+                        <select id="reelFilter">
+                            <option value="none">Original</option>
+                            <option value="warm">Warm</option>
+                            <option value="cool">Cool</option>
+                            <option value="mono">Black & white</option>
+                            <option value="vivid">Vivid</option>
+                        </select>
+                    </label>
+
+                    <label>Framing
+                        <select id="reelFraming">
+                            <option value="cover">Fill portrait</option>
+                            <option value="contain">Fit whole video</option>
+                        </select>
+                    </label>
                 </div>
-                <label class="editor-text-label">Text on Reel<input id="reelOverlayText" type="text" maxlength="80" placeholder="Add a title or caption"></label>
-                <button id="exportReelBtn" type="button" class="soft-btn full-btn">Apply edits and prepare Reel</button>
-                <p id="editorStatus" class="muted-text editor-status">Editing is done in your browser. Exported Reels are uploaded as a new video.</p>
+
+                <label class="editor-text-label">
+                    Text on Reel
+                    <input id="reelOverlayText" maxlength="80"
+                        placeholder="Add text to your Reel">
+                </label>
+
+                <button id="exportReelBtn" type="button" class="soft-btn full-btn">
+                    Apply edits
+                </button>
+
+                <p id="editorStatus" class="muted-text editor-status">
+                    Preview, trim and customize your clip.
+                </p>
             </div>
 
             <form id="uploadForm" class="upload-fields">
-                <label>Title / caption<input id="videoTitle" maxlength="100" placeholder="Give it a title" required></label>
-                <label>Description<textarea id="videoDescription" maxlength="1000" rows="3" placeholder="Write a description..."></textarea></label>
-                <label>Topic<select id="videoTopic">
-                    <option>Gaming</option>
-                    <option>Cooking</option>
-                    <option>School</option>
-                    <option>Technology</option>
-                    <option>Sports</option>
-                    <option>Art</option>
-                    <option>Entertainment</option>
-                    <option selected>Other</option>
-                </select></label>
-                <div class="upload-progress hidden" id="uploadProgress">
+                <label>Title
+                    <input id="videoTitle" maxlength="100"
+                        placeholder="Give your video a title" required>
+                </label>
+
+                <label>Description
+                    <textarea id="videoDescription" maxlength="1000"
+                        rows="3" placeholder="Write a description..."></textarea>
+                </label>
+
+                <label>Topic
+                    <select id="videoTopic">
+                        <option>Gaming</option>
+                        <option>Cooking</option>
+                        <option>School</option>
+                        <option>Technology</option>
+                        <option>Sports</option>
+                        <option>Art</option>
+                        <option>Entertainment</option>
+                        <option selected>Other</option>
+                    </select>
+                </label>
+
+                <div id="uploadProgress" class="upload-progress hidden">
                     <div id="uploadProgressBar"></div>
                 </div>
-                <button id="publishVideoBtn" class="primary-btn full-btn" type="submit">Publish video</button>
+
+                <button id="publishVideoBtn" class="primary-btn full-btn" type="submit">
+                    Publish video
+                </button>
             </form>
         </div>
     </div>
 
-    <!-- COMMENTS MODAL -->
-    <div id="commentsModal" class="modal hidden" role="dialog" aria-modal="true">
+    <!-- COMMENTS -->
+    <div id="commentsModal" class="modal hidden">
         <div class="modal-backdrop" data-close="commentsModal"></div>
+
         <div class="modal-card">
-            <button class="modal-close" type="button" data-close="commentsModal">×</button>
+            <button class="modal-close" data-close="commentsModal">×</button>
             <h2>Comments</h2>
             <div id="commentsList" class="comments-list"></div>
+
             <form id="commentForm" class="comment-compose">
-                <input id="commentInput" maxlength="500" placeholder="Write a comment..." required>
+                <input id="commentInput" maxlength="500"
+                    placeholder="Write a comment..." required>
                 <button type="submit">➤</button>
             </form>
         </div>
     </div>
 
-    <!-- EDIT PROFILE MODAL -->
-    <div id="editProfileModal" class="modal hidden" role="dialog" aria-modal="true">
+    <!-- EDIT PROFILE -->
+    <div id="editProfileModal" class="modal hidden">
         <div class="modal-backdrop" data-close="editProfileModal"></div>
+
         <div class="modal-card">
-            <button class="modal-close" type="button" data-close="editProfileModal">×</button>
+            <button class="modal-close" data-close="editProfileModal">×</button>
             <h2>Edit profile</h2>
+
             <form id="editProfileForm" class="upload-fields">
-                <label>Username<input id="editUsername" minlength="3" maxlength="20" required></label>
-                <label>Bio<textarea id="editBio" maxlength="250" rows="4"></textarea></label>
-                <button class="primary-btn full-btn" type="submit">Save profile</button>
+                <label>Username
+                    <input id="editUsername" minlength="3" maxlength="20" required>
+                </label>
+
+                <label>Bio
+                    <textarea id="editBio" maxlength="250" rows="4"></textarea>
+                </label>
+
+                <button type="submit" class="primary-btn full-btn">
+                    Save profile
+                </button>
             </form>
         </div>
     </div>
 
-    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <div id="toast" class="toast" aria-live="polite"></div>
 </body>
 </html>
