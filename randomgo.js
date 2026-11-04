@@ -1,12 +1,13 @@
-/* =========================================================
-   GOCAT — FIXED APPLICATION JAVASCRIPT
-   Navigation | Reels | Explore | Profile | Posts | Chats
-   ========================================================= */
+/* ============================================================
+   GOCAT — COMPLETE APPLICATION
+   YouTube-style Home Feed + Reels + Explore + Profiles
+   Supabase Auth + Database + Storage
+   ============================================================ */
 
 
-/* =========================================================
+/* ============================================================
    01 — SUPABASE CONFIGURATION
-   ========================================================= */
+   ============================================================ */
 
 const SUPABASE_URL =
     "https://rfwgvsijxweyzwvuqslt.supabase.co";
@@ -23,12 +24,13 @@ const db = window.supabase.createClient(
 );
 
 
-/* =========================================================
+/* ============================================================
    02 — GLOBAL DATA
-   ========================================================= */
+   ============================================================ */
 
 let currentUser = null;
 let currentProfile = null;
+
 let currentProfileUserId = null;
 let currentCommentVideoId = null;
 let currentChatUserId = null;
@@ -44,10 +46,10 @@ let activeHomeTopic = "All";
 let exploreMode = "videos";
 let profileMode = "home";
 
-let homeVisible = 5;
-let reelsVisible = 5;
+let homeVisibleCycles = 1;
 let exploreVisible = 6;
 let postsVisible = 5;
+let reelsVisible = 5;
 
 let uploadMode = "video";
 let selectedVideoFile = null;
@@ -59,13 +61,18 @@ let reelObserver = null;
 const PAGE_SIZE = 5;
 
 
-/* =========================================================
-   03 — SHORTCUTS
-   ========================================================= */
+/* ============================================================
+   03 — DOM HELPER
+   ============================================================ */
 
 function $(id) {
     return document.getElementById(id);
 }
+
+
+/* ============================================================
+   04 — BASIC HELPERS
+   ============================================================ */
 
 function escapeHTML(value) {
     return String(value ?? "")
@@ -76,6 +83,7 @@ function escapeHTML(value) {
         .replaceAll("'", "&#039;");
 }
 
+
 function getInitial(name) {
     return String(name || "?")
         .trim()
@@ -83,11 +91,13 @@ function getInitial(name) {
         .toUpperCase();
 }
 
+
 function getUser(userId) {
     return users.find(user =>
         String(user.id) === String(userId)
     );
 }
+
 
 function getUsername(userId) {
     if (
@@ -99,6 +109,26 @@ function getUsername(userId) {
 
     return getUser(userId)?.username || "GoCat creator";
 }
+
+
+function isOwnContent(userId) {
+    return String(userId) === String(currentUser?.id);
+}
+
+
+function isFollowing(userId) {
+    return follows.some(item =>
+        String(item.follower_id) === String(currentUser.id) &&
+        String(item.following_id) === String(userId)
+    );
+}
+
+
+function isShort(video) {
+    return video.is_short === true ||
+        video.is_short === "true";
+}
+
 
 function formatDate(value) {
     if (!value) return "Just now";
@@ -136,6 +166,7 @@ function formatDate(value) {
     return date.toLocaleDateString();
 }
 
+
 function topicEmoji(topic) {
     const icons = {
         Gaming: "🎮",
@@ -150,6 +181,7 @@ function topicEmoji(topic) {
 
     return icons[topic] || "🌍";
 }
+
 
 function showToast(message) {
     const toast = $("toast");
@@ -166,6 +198,7 @@ function showToast(message) {
     }, 2800);
 }
 
+
 function showAuthMessage(message, success = false) {
     const element = $("authMessage");
 
@@ -178,13 +211,16 @@ function showAuthMessage(message, success = false) {
         : "#e34e68";
 }
 
+
 function showModal(id) {
     $(id)?.classList.remove("hidden");
 }
 
+
 function hideModal(id) {
     $(id)?.classList.add("hidden");
 }
+
 
 function getVideoURL(path) {
     if (!path) return "";
@@ -198,6 +234,7 @@ function getVideoURL(path) {
         .getPublicUrl(path).data.publicUrl;
 }
 
+
 function getPostImageURL(path) {
     if (!path) return "";
 
@@ -210,21 +247,21 @@ function getPostImageURL(path) {
         .getPublicUrl(path).data.publicUrl;
 }
 
-function isFollowing(userId) {
-    return follows.some(item =>
-        String(item.follower_id) === String(currentUser.id) &&
-        String(item.following_id) === String(userId)
-    );
+
+function safeLocalJSON(key, fallback = []) {
+    try {
+        return JSON.parse(
+            localStorage.getItem(key) || JSON.stringify(fallback)
+        );
+    } catch {
+        return fallback;
+    }
 }
 
-function isOwnContent(userId) {
-    return String(userId) === String(currentUser.id);
-}
 
-
-/* =========================================================
-   04 — AUTH SCREENS
-   ========================================================= */
+/* ============================================================
+   05 — AUTHENTICATION SCREENS
+   ============================================================ */
 
 function openLoginScreen() {
     $("authScreen").classList.remove("hidden");
@@ -234,11 +271,13 @@ function openLoginScreen() {
     $("registerForm").classList.add("hidden");
 
     $("authTitle").textContent = "Welcome back";
+
     $("authSubtitle").textContent =
         "Sign in to continue to GoCat.";
 
     showAuthMessage("");
 }
+
 
 function openRegisterScreen() {
     $("authScreen").classList.remove("hidden");
@@ -247,25 +286,37 @@ function openRegisterScreen() {
     $("loginForm").classList.add("hidden");
     $("registerForm").classList.remove("hidden");
 
-    $("authTitle").textContent = "Create your GoCat account";
+    $("authTitle").textContent =
+        "Create your GoCat account";
+
     $("authSubtitle").textContent =
         "Join the GoCat community.";
 
     showAuthMessage("");
 }
 
+
 function openApp() {
     $("authScreen").classList.add("hidden");
     $("app").classList.remove("hidden");
 }
 
-$("showRegister").addEventListener("click", openRegisterScreen);
-$("showLogin").addEventListener("click", openLoginScreen);
+
+$("showRegister").addEventListener(
+    "click",
+    openRegisterScreen
+);
 
 
-/* =========================================================
-   05 — LOGIN
-   ========================================================= */
+$("showLogin").addEventListener(
+    "click",
+    openLoginScreen
+);
+
+
+/* ============================================================
+   06 — LOGIN
+   ============================================================ */
 
 $("loginForm").addEventListener("submit", async function(event) {
     event.preventDefault();
@@ -292,7 +343,8 @@ $("loginForm").addEventListener("submit", async function(event) {
         await startGoCat();
 
     } catch (error) {
-        showAuthMessage(error.message);
+        console.error(error);
+        showAuthMessage(error.message || "Login failed.");
     }
 
     button.disabled = false;
@@ -300,9 +352,9 @@ $("loginForm").addEventListener("submit", async function(event) {
 });
 
 
-/* =========================================================
-   06 — REGISTER
-   ========================================================= */
+/* ============================================================
+   07 — REGISTER
+   ============================================================ */
 
 $("registerForm").addEventListener("submit", async function(event) {
     event.preventDefault();
@@ -313,7 +365,9 @@ $("registerForm").addEventListener("submit", async function(event) {
     const confirm = $("registerConfirm").value;
 
     if (username.length < 3) {
-        showAuthMessage("Username must have at least 3 characters.");
+        showAuthMessage(
+            "Username must have at least 3 characters."
+        );
         return;
     }
 
@@ -333,7 +387,9 @@ $("registerForm").addEventListener("submit", async function(event) {
             email,
             password,
             options: {
-                data: { username }
+                data: {
+                    username: username
+                }
             }
         });
 
@@ -352,7 +408,8 @@ $("registerForm").addEventListener("submit", async function(event) {
         }
 
     } catch (error) {
-        showAuthMessage(error.message);
+        console.error(error);
+        showAuthMessage(error.message || "Registration failed.");
     }
 
     button.disabled = false;
@@ -360,9 +417,10 @@ $("registerForm").addEventListener("submit", async function(event) {
 });
 
 
-/* =========================================================
-   07 — ENSURE USER PROFILE
-   ========================================================= */
+/* ============================================================
+   08 — ENSURE USER PROFILE
+   users.id IS TEXT — KEEP IT THAT WAY
+   ============================================================ */
 
 async function ensureProfile() {
     const existing = await db
@@ -371,7 +429,9 @@ async function ensureProfile() {
         .eq("id", currentUser.id)
         .maybeSingle();
 
-    if (existing.error) throw existing.error;
+    if (existing.error) {
+        throw existing.error;
+    }
 
     if (existing.data) {
         currentProfile = existing.data;
@@ -387,26 +447,28 @@ async function ensureProfile() {
         .replace(/\s+/g, "_")
         .slice(0, 20);
 
-    const result = await db
+    const insert = await db
         .from("users")
         .insert({
             id: currentUser.id,
-            username,
+            username: username,
             email: currentUser.email || "",
             bio: "Welcome to my GoCat profile."
         })
         .select("*")
         .single();
 
-    if (result.error) throw result.error;
+    if (insert.error) {
+        throw insert.error;
+    }
 
-    currentProfile = result.data;
+    currentProfile = insert.data;
 }
 
 
-/* =========================================================
-   08 — LOAD USERS
-   ========================================================= */
+/* ============================================================
+   09 — LOAD USERS
+   ============================================================ */
 
 async function loadUsers() {
     const result = await db
@@ -414,30 +476,50 @@ async function loadUsers() {
         .select("id,username,email,bio,created_at")
         .order("created_at", { ascending: false });
 
-    if (result.error) throw result.error;
+    if (result.error) {
+        throw result.error;
+    }
 
     users = result.data || [];
+
+    if (
+        !users.some(user =>
+            String(user.id) === String(currentUser.id)
+        )
+    ) {
+        users.unshift(currentProfile);
+    }
+
+    currentProfile =
+        users.find(user =>
+            String(user.id) === String(currentUser.id)
+        ) || currentProfile;
 }
 
 
-/* =========================================================
-   09 — LOAD VIDEOS, LIKES AND COMMENTS
-   ========================================================= */
+/* ============================================================
+   10 — LOAD VIDEOS, LIKES AND COMMENTS
+   ============================================================ */
 
 async function loadVideos() {
-    const [videoResult, likeResult, commentResult] =
-        await Promise.all([
-            db.from("videos")
-                .select("*")
-                .order("created_at", { ascending: false }),
+    const [
+        videoResult,
+        likeResult,
+        commentResult
+    ] = await Promise.all([
 
-            db.from("likes")
-                .select("video_id,user_id"),
+        db.from("videos")
+            .select("*")
+            .order("created_at", { ascending: false }),
 
-            db.from("comments")
-                .select("*")
-                .order("created_at", { ascending: true })
-        ]);
+        db.from("likes")
+            .select("video_id,user_id"),
+
+        db.from("comments")
+            .select("*")
+            .order("created_at", { ascending: true })
+
+    ]);
 
     if (videoResult.error) throw videoResult.error;
     if (likeResult.error) throw likeResult.error;
@@ -462,9 +544,26 @@ async function loadVideos() {
 }
 
 
-/* =========================================================
-   10 — LOAD POSTS
-   ========================================================= */
+/* ============================================================
+   11 — LOAD FOLLOWS
+   ============================================================ */
+
+async function loadFollows() {
+    const result = await db
+        .from("follows")
+        .select("follower_id,following_id");
+
+    if (result.error) {
+        throw result.error;
+    }
+
+    follows = result.data || [];
+}
+
+
+/* ============================================================
+   12 — LOAD POSTS AND POST LIKES
+   ============================================================ */
 
 async function loadPosts() {
     const result = await db
@@ -473,51 +572,39 @@ async function loadPosts() {
         .order("created_at", { ascending: false });
 
     if (result.error) {
-        console.warn("Posts table:", result.error.message);
+        console.warn("Posts could not load:", result.error.message);
         posts = [];
         return;
     }
 
-    const likeResult = await db
+    const likesResult = await db
         .from("post_likes")
         .select("post_id,user_id");
 
-    if (likeResult.error) {
-        console.warn("Post likes:", likeResult.error.message);
+    if (likesResult.error) {
+        console.warn(
+            "Post likes could not load:",
+            likesResult.error.message
+        );
     }
 
-    const allLikes = likeResult.data || [];
+    const allLikes = likesResult.data || [];
 
     posts = (result.data || []).map(post => ({
         ...post,
 
         likes: allLikes
-            .filter(item =>
-                String(item.post_id) === String(post.id)
+            .filter(like =>
+                String(like.post_id) === String(post.id)
             )
-            .map(item => String(item.user_id))
+            .map(like => String(like.user_id))
     }));
 }
 
 
-/* =========================================================
-   11 — LOAD FOLLOWS
-   ========================================================= */
-
-async function loadFollows() {
-    const result = await db
-        .from("follows")
-        .select("follower_id,following_id");
-
-    if (result.error) throw result.error;
-
-    follows = result.data || [];
-}
-
-
-/* =========================================================
-   12 — LOAD EVERYTHING
-   ========================================================= */
+/* ============================================================
+   13 — LOAD ALL DATA
+   ============================================================ */
 
 async function loadAllData() {
     await Promise.all([
@@ -529,9 +616,9 @@ async function loadAllData() {
 }
 
 
-/* =========================================================
-   13 — START GOCAT
-   ========================================================= */
+/* ============================================================
+   14 — START GOCAT
+   ============================================================ */
 
 async function startGoCat() {
     try {
@@ -540,10 +627,9 @@ async function startGoCat() {
 
         currentProfileUserId = currentUser.id;
 
-        notifications = JSON.parse(
-            localStorage.getItem(
-                "gocat_notifications_" + currentUser.id
-            ) || "[]"
+        notifications = safeLocalJSON(
+            "gocat_notifications_" + currentUser.id,
+            []
         );
 
         $("welcomeName").textContent =
@@ -560,14 +646,17 @@ async function startGoCat() {
 
     } catch (error) {
         console.error(error);
-        showToast("GoCat loading error: " + error.message);
+
+        showToast(
+            "GoCat loading error: " + error.message
+        );
     }
 }
 
 
-/* =========================================================
-   14 — RENDER EVERYTHING
-   ========================================================= */
+/* ============================================================
+   15 — RENDER ALL PAGES
+   ============================================================ */
 
 function renderEverything() {
     renderHomeFeed();
@@ -582,14 +671,14 @@ function renderEverything() {
 }
 
 
-/* =========================================================
-   15 — VIDEO CARD
-   ========================================================= */
+/* ============================================================
+   16 — VIDEO CARD
+   ============================================================ */
 
 function videoCard(video) {
     const username = getUsername(video.owner_id);
-    const own = isOwnContent(video.owner_id);
 
+    const own = isOwnContent(video.owner_id);
     const following = isFollowing(video.owner_id);
 
     const liked = video.likes?.includes(
@@ -699,9 +788,9 @@ function videoCard(video) {
 }
 
 
-/* =========================================================
-   16 — POST CARD
-   ========================================================= */
+/* ============================================================
+   17 — POST CARD
+   ============================================================ */
 
 function postCard(post) {
     const username = getUsername(post.user_id);
@@ -752,7 +841,7 @@ function postCard(post) {
                     <img
                         class="post-image"
                         src="${escapeHTML(imageURL)}"
-                        alt="Post picture"
+                        alt="Post image"
                         loading="lazy">
                 `
                 : ""
@@ -774,209 +863,371 @@ function postCard(post) {
 }
 
 
-/* =========================================================
-   17 — REEL PREVIEW CARD
-   ========================================================= */
+/* ============================================================
+   18 — HOME SHORTS CARD
+   ============================================================ */
 
-function reelFeedCard(video) {
+function homeShortCard(video) {
     const username = getUsername(video.owner_id);
 
+    const liked = video.likes?.includes(
+        String(currentUser.id)
+    );
+
     return `
-        <article class="feed-post-card feed-reel-card">
-
-            <div class="feed-post-top">
-
-                <div class="feed-post-avatar">
-                    ${escapeHTML(getInitial(username))}
-                </div>
-
-                <div class="feed-post-user">
-                    <strong>${escapeHTML(username)}</strong>
-                    <small>GoCat Reel</small>
-                </div>
-
-            </div>
-
-            <div class="reel-thumb">
-
-                <video
-                    src="${escapeHTML(getVideoURL(video.storage_path))}"
-                    muted
-                    playsinline
-                    preload="metadata">
-                </video>
-
-                <span class="reel-thumb-label">
-                    ▶ REEL
-                </span>
-
-            </div>
-
-            <p class="feed-post-content">
-                ${escapeHTML(video.title)}
-            </p>
+        <article class="home-short-card">
 
             <button
-                class="feed-reel-open"
+                class="home-short-open"
                 data-open-reel-id="${escapeHTML(video.id)}">
-                Watch Reel
+
+                <div class="home-short-thumbnail">
+
+                    <video
+                        src="${escapeHTML(getVideoURL(video.storage_path))}"
+                        muted
+                        playsinline
+                        preload="metadata">
+                    </video>
+
+                    <span class="home-short-play">▶</span>
+
+                </div>
+
+                <div class="home-short-info">
+
+                    <strong>${escapeHTML(video.title)}</strong>
+
+                    <small>@${escapeHTML(username)}</small>
+
+                    <small>
+                        ▶ ${Number(video.views || 0)} views
+                    </small>
+
+                </div>
+
             </button>
+
+            <div class="home-short-actions">
+
+                <button
+                    data-like-video="${escapeHTML(video.id)}"
+                    class="${liked ? "liked" : ""}">
+                    ${liked ? "♥" : "♡"}
+                    ${video.likes?.length || 0}
+                </button>
+
+                <button
+                    data-comments-video="${escapeHTML(video.id)}">
+                    💬
+                </button>
+
+            </div>
 
         </article>
     `;
 }
 
 
-/* =========================================================
-   18 — PERSONALIZED HOME FEED
-   ========================================================= */
+/* ============================================================
+   19 — HOME FEED DATA
+   ============================================================ */
 
-function getHomeItems() {
+function getHomeFeedData() {
     const query = $("searchInput").value
         .trim()
         .toLowerCase();
 
-    let items = [];
-
-    videos.forEach(video => {
-        items.push({
-            type: video.is_short === true ? "reel" : "video",
-            data: video,
-            date: new Date(video.created_at).getTime()
-        });
-    });
-
-    posts.forEach(post => {
-        items.push({
-            type: "post",
-            data: post,
-            date: new Date(post.created_at).getTime()
-        });
-    });
-
-    items = items.filter(item => {
-        if (
-            activeHomeTopic !== "All" &&
-            item.type !== "post" &&
-            item.data.topic !== activeHomeTopic
-        ) {
-            return false;
-        }
-
-        if (
-            activeHomeTopic !== "All" &&
-            item.type === "post"
-        ) {
-            return false;
-        }
-
+    function matchesSearch(item, type) {
         if (!query) return true;
 
+        const ownerId = type === "post"
+            ? item.user_id
+            : item.owner_id;
+
         const content = [
-            item.data.title,
-            item.data.description,
-            item.data.content,
-            getUsername(
-                item.type === "post"
-                    ? item.data.user_id
-                    : item.data.owner_id
-            )
+            item.title,
+            item.description,
+            item.content,
+            getUsername(ownerId)
         ].join(" ").toLowerCase();
 
         return content.includes(query);
-    });
+    }
 
-    return items.sort((a, b) => {
-        const score = item => {
-            let points = 0;
+    const regularVideos = videos
+        .filter(video => !isShort(video))
+        .filter(video =>
+            activeHomeTopic === "All" ||
+            video.topic === activeHomeTopic
+        )
+        .filter(video => matchesSearch(video, "video"))
+        .slice()
+        .sort((a, b) => {
+            const score = video => {
+                let points = 0;
 
-            const ownerId =
-                item.type === "post"
-                    ? item.data.user_id
-                    : item.data.owner_id;
+                if (isFollowing(video.owner_id)) {
+                    points += 5;
+                }
 
-            if (isFollowing(ownerId)) {
-                points += 4;
-            }
+                const ageHours =
+                    (Date.now() -
+                        new Date(video.created_at).getTime()) /
+                    3600000;
 
-            if (
-                item.type !== "post" &&
-                activeHomeTopic !== "All" &&
-                item.data.topic === activeHomeTopic
-            ) {
-                points += 5;
-            }
+                points += Math.max(0, 4 - ageHours / 24);
 
-            const ageHours =
-                (Date.now() - item.date) / 3600000;
-
-            points += Math.max(0, 3 - ageHours / 24);
-
-            if (item.type !== "post") {
                 points += Math.min(
-                    Number(item.data.views || 0) / 100,
-                    2
+                    Number(video.views || 0) / 100,
+                    3
                 );
 
                 points += Math.min(
-                    (item.data.likes?.length || 0) / 5,
+                    (video.likes?.length || 0) / 5,
                     2
                 );
-            }
 
-            return points;
-        };
+                return points;
+            };
 
-        return score(b) - score(a);
-    });
+            return score(b) - score(a);
+        });
+
+    const shorts = videos
+        .filter(video => isShort(video))
+        .filter(video =>
+            activeHomeTopic === "All" ||
+            video.topic === activeHomeTopic
+        )
+        .filter(video => matchesSearch(video, "video"))
+        .slice()
+        .sort((a, b) =>
+            new Date(b.created_at) - new Date(a.created_at)
+        );
+
+    const communityPosts = posts
+        .filter(post => matchesSearch(post, "post"))
+        .slice()
+        .sort((a, b) =>
+            new Date(b.created_at) - new Date(a.created_at)
+        );
+
+    return {
+        regularVideos,
+        shorts,
+        communityPosts
+    };
 }
 
+
+/* ============================================================
+   20 — BUILD REPEATING YOUTUBE-STYLE SECTIONS
+   ============================================================ */
+
+function buildHomeFeedCycles() {
+    const data = getHomeFeedData();
+
+    const regularVideos = data.regularVideos;
+    const shorts = data.shorts;
+    const communityPosts = data.communityPosts;
+
+    let videoIndex = 0;
+    let shortsIndex = 0;
+    let postIndex = 0;
+
+    const cycles = [];
+
+    while (
+        videoIndex < regularVideos.length ||
+        shortsIndex < shorts.length ||
+        postIndex < communityPosts.length
+    ) {
+        const sections = [];
+
+        /* FOUR REGULAR VIDEOS */
+
+        if (videoIndex < regularVideos.length) {
+            const group = regularVideos.slice(
+                videoIndex,
+                videoIndex + 4
+            );
+
+            videoIndex += group.length;
+
+            sections.push(`
+                <section class="home-feed-section">
+
+                    <div class="home-feed-heading">
+
+                        <div>
+                            <h2>Videos for you</h2>
+                            <p>Recommended videos from GoCat creators.</p>
+                        </div>
+
+                    </div>
+
+                    <div class="home-feed-video-grid">
+                        ${group.map(videoCard).join("")}
+                    </div>
+
+                </section>
+            `);
+        }
+
+        /* FOUR SHORTS */
+
+        if (shortsIndex < shorts.length) {
+            const group = shorts.slice(
+                shortsIndex,
+                shortsIndex + 4
+            );
+
+            shortsIndex += group.length;
+
+            sections.push(`
+                <section class="home-feed-section">
+
+                    <div class="home-feed-heading">
+
+                        <div class="home-shelf-title">
+
+                            <span class="shorts-logo">▶</span>
+
+                            <div>
+                                <h2>Shorts</h2>
+                                <p>Quick videos to discover.</p>
+                            </div>
+
+                        </div>
+
+                        <button
+                            class="soft-btn"
+                            data-go-page="reels">
+                            See all →
+                        </button>
+
+                    </div>
+
+                    <div class="home-shorts-shelf">
+                        ${group.map(homeShortCard).join("")}
+                    </div>
+
+                </section>
+            `);
+        }
+
+        /* ONE OR TWO POSTS */
+
+        if (postIndex < communityPosts.length) {
+            const group = communityPosts.slice(
+                postIndex,
+                postIndex + 2
+            );
+
+            postIndex += group.length;
+
+            sections.push(`
+                <section class="home-feed-section">
+
+                    <div class="home-feed-heading">
+
+                        <div>
+                            <h2>Community posts</h2>
+                            <p>Updates from GoCat creators.</p>
+                        </div>
+
+                        <button
+                            class="soft-btn"
+                            data-go-page="posts">
+                            View posts →
+                        </button>
+
+                    </div>
+
+                    <div class="home-feed-post-grid">
+                        ${group.map(postCard).join("")}
+                    </div>
+
+                </section>
+            `);
+        }
+
+        cycles.push(sections.join(""));
+    }
+
+    return cycles;
+}
+
+
+/* ============================================================
+   21 — RENDER HOME FEED
+   ============================================================ */
+
 function renderHomeFeed() {
-    const allItems = getHomeItems();
+    const cycles = buildHomeFeedCycles();
 
-    const page = allItems.slice(0, homeVisible);
+    const visibleCycles = cycles.slice(
+        0,
+        homeVisibleCycles
+    );
 
-    $("homeFeed").innerHTML = page.map(item => {
-        if (item.type === "video") {
-            return videoCard(item.data);
-        }
+    $("homeFeed").innerHTML =
+        visibleCycles.join("");
 
-        if (item.type === "reel") {
-            return reelFeedCard(item.data);
-        }
+    const data = getHomeFeedData();
 
-        return postCard(item.data);
-    }).join("");
+    const totalItems =
+        data.regularVideos.length +
+        data.shorts.length +
+        data.communityPosts.length;
+
+    const shownItems = Math.min(
+        totalItems,
+        visibleCycles.reduce((total, html) => {
+            const matches = html.match(
+                /class="video-card"|class="post-card"|class="home-short-card"/g
+            );
+
+            return total + (matches ? matches.length : 0);
+        }, 0)
+    );
 
     $("homeEmpty").classList.toggle(
         "hidden",
-        allItems.length > 0
+        totalItems > 0
     );
 
     $("homeLoadMoreWrap").classList.toggle(
         "hidden",
-        homeVisible >= allItems.length
+        homeVisibleCycles >= cycles.length
     );
 
     $("homeCount").textContent =
-        "Showing " + page.length + " of " + allItems.length;
+        "Showing " + shownItems +
+        " of " + totalItems + " items";
 }
 
+
+/* ============================================================
+   22 — HOME LOAD MORE
+   ============================================================ */
+
 $("homeLoadMore").addEventListener("click", function() {
-    homeVisible += PAGE_SIZE;
+    homeVisibleCycles += 1;
     renderHomeFeed();
 });
 
 
-/* =========================================================
-   19 — HOME TOPIC BUTTONS
-   ========================================================= */
+/* ============================================================
+   23 — HOME TOPIC FILTERS
+   ============================================================ */
 
 document.querySelectorAll("[data-topic]").forEach(button => {
     button.addEventListener("click", function() {
         activeHomeTopic = this.dataset.topic;
 
-        homeVisible = PAGE_SIZE;
+        homeVisibleCycles = 1;
 
         document.querySelectorAll("[data-topic]")
             .forEach(item => item.classList.remove("active"));
@@ -988,9 +1239,9 @@ document.querySelectorAll("[data-topic]").forEach(button => {
 });
 
 
-/* =========================================================
-   20 — SUGGESTED CREATORS
-   ========================================================= */
+/* ============================================================
+   24 — SUGGESTED CREATORS
+   ============================================================ */
 
 function renderSuggestedCreators() {
     const suggestions = users
@@ -1022,9 +1273,9 @@ function renderSuggestedCreators() {
 }
 
 
-/* =========================================================
-   21 — FOLLOW / UNFOLLOW
-   ========================================================= */
+/* ============================================================
+   25 — FOLLOW / UNFOLLOW
+   ============================================================ */
 
 async function toggleFollow(userId) {
     if (isOwnContent(userId)) return;
@@ -1063,11 +1314,6 @@ async function toggleFollow(userId) {
                 following_id: userId
             });
 
-            addLocalNotification(
-                "👥",
-                "You followed " + getUsername(userId)
-            );
-
             showToast("Following " + getUsername(userId));
         }
 
@@ -1080,9 +1326,9 @@ async function toggleFollow(userId) {
 }
 
 
-/* =========================================================
-   22 — VIDEO LIKES
-   ========================================================= */
+/* ============================================================
+   26 — VIDEO LIKES
+   ============================================================ */
 
 async function toggleVideoLike(videoId) {
     const video = videos.find(item =>
@@ -1120,11 +1366,9 @@ async function toggleVideoLike(videoId) {
             if (result.error) throw result.error;
 
             video.likes.push(String(currentUser.id));
-
-            addLocalNotification("❤️", "You liked a video.");
         }
 
-        renderCurrentPage();
+        renderEverything();
 
     } catch (error) {
         console.error(error);
@@ -1133,9 +1377,9 @@ async function toggleVideoLike(videoId) {
 }
 
 
-/* =========================================================
-   23 — VIDEO COMMENTS
-   ========================================================= */
+/* ============================================================
+   27 — VIDEO COMMENTS
+   ============================================================ */
 
 async function openComments(videoId) {
     currentCommentVideoId = videoId;
@@ -1147,6 +1391,7 @@ async function openComments(videoId) {
 
     await renderComments();
 }
+
 
 async function renderComments() {
     const result = await db
@@ -1165,13 +1410,18 @@ async function renderComments() {
     $("commentsList").innerHTML = comments.length
         ? comments.map(comment => `
             <div class="comment-item">
-                <strong>${escapeHTML(getUsername(comment.user_id))}</strong>
+                <strong>
+                    ${escapeHTML(getUsername(comment.user_id))}
+                </strong>
+
                 <p>${escapeHTML(comment.text)}</p>
+
                 <small>${formatDate(comment.created_at)}</small>
             </div>
         `).join("")
         : "<p class='muted-text'>No comments yet. Start the conversation!</p>";
 }
+
 
 $("commentForm").addEventListener("submit", async function(event) {
     event.preventDefault();
@@ -1185,7 +1435,7 @@ $("commentForm").addEventListener("submit", async function(event) {
         .insert({
             video_id: currentCommentVideoId,
             user_id: currentUser.id,
-            text
+            text: text
         });
 
     if (result.error) {
@@ -1198,15 +1448,15 @@ $("commentForm").addEventListener("submit", async function(event) {
     await loadVideos();
     await renderComments();
 
-    renderCurrentPage();
+    renderEverything();
 
     showToast("Comment posted!");
 });
 
 
-/* =========================================================
-   24 — SHARE VIDEO
-   ========================================================= */
+/* ============================================================
+   28 — SHARE VIDEO
+   ============================================================ */
 
 async function shareVideo(videoId) {
     const url =
@@ -1218,7 +1468,7 @@ async function shareVideo(videoId) {
             await navigator.share({
                 title: "GoCat video",
                 text: "Check out this video on GoCat!",
-                url
+                url: url
             });
         } else {
             await navigator.clipboard.writeText(url);
@@ -1232,9 +1482,9 @@ async function shareVideo(videoId) {
 }
 
 
-/* =========================================================
-   25 — DELETE VIDEO
-   ========================================================= */
+/* ============================================================
+   29 — DELETE VIDEO
+   ============================================================ */
 
 async function deleteVideo(videoId) {
     const video = videos.find(item =>
@@ -1270,18 +1520,21 @@ async function deleteVideo(videoId) {
 }
 
 
-/* =========================================================
-   26 — REELS PAGE
-   ========================================================= */
+/* ============================================================
+   30 — REELS PAGE
+   ============================================================ */
 
 function renderReels() {
     const container = $("reelsFeed");
 
-    const allReels = videos.filter(
-        video => video.is_short === true
+    const allReels = videos.filter(video =>
+        isShort(video)
     );
 
-    const page = allReels.slice(0, reelsVisible);
+    const page = allReels.slice(
+        0,
+        reelsVisible
+    );
 
     if (!allReels.length) {
         container.innerHTML = `
@@ -1289,6 +1542,7 @@ function renderReels() {
                 <div>
                     <h2>No Reels yet 🐱</h2>
                     <p>Be the first to create a GoCat Reel.</p>
+
                     <button
                         class="primary-btn"
                         data-create-reel>
@@ -1304,7 +1558,11 @@ function renderReels() {
 
     container.innerHTML = page.map(video => {
         const username = getUsername(video.owner_id);
-        const liked = video.likes.includes(String(currentUser.id));
+
+        const liked = video.likes.includes(
+            String(currentUser.id)
+        );
+
         const following = isFollowing(video.owner_id);
 
         return `
@@ -1406,6 +1664,7 @@ function renderReels() {
     observeReels();
 }
 
+
 function observeReels() {
     if (reelObserver) {
         reelObserver.disconnect();
@@ -1433,40 +1692,49 @@ function observeReels() {
     });
 }
 
+
 $("reelsLoadMore").addEventListener("click", function() {
     reelsVisible += PAGE_SIZE;
     renderReels();
 });
 
 
-/* =========================================================
-   27 — OPEN A SPECIFIC REEL
-   ========================================================= */
-
 function openSpecificReel(videoId) {
+    const allReels = videos.filter(video => isShort(video));
+
+    const index = allReels.findIndex(video =>
+        String(video.id) === String(videoId)
+    );
+
+    if (index >= 0) {
+        reelsVisible = Math.max(reelsVisible, index + 1);
+    }
+
     openPage("reels");
 
     setTimeout(() => {
-        const item = document.querySelector(
-            `[data-reel-item="${CSS.escape(String(videoId))}"]`
+        const items =
+            Array.from(document.querySelectorAll("[data-reel-item]"));
+
+        const target = items.find(item =>
+            item.dataset.reelItem === String(videoId)
         );
 
-        if (item) {
-            item.scrollIntoView({
-                behavior: "smooth",
-                block: "start"
-            });
-        }
-    }, 150);
+        target?.scrollIntoView({
+            behavior: "smooth",
+            block: "start"
+        });
+    }, 180);
 }
 
 
-/* =========================================================
-   28 — EXPLORE: ALL FOUR TABS
-   ========================================================= */
+/* ============================================================
+   31 — EXPLORE TABS
+   ============================================================ */
 
 function setExploreTab(mode) {
     exploreMode = mode;
+    exploreVisible = 6;
 
     document.querySelectorAll("[data-explore-tab]")
         .forEach(button => {
@@ -1491,10 +1759,9 @@ function setExploreTab(mode) {
         mode !== "posts"
     );
 
-    exploreVisible = 6;
-
     renderExplore();
 }
+
 
 document.querySelectorAll("[data-explore-tab]").forEach(button => {
     button.addEventListener("click", function() {
@@ -1503,9 +1770,9 @@ document.querySelectorAll("[data-explore-tab]").forEach(button => {
 });
 
 
-/* =========================================================
-   29 — EXPLORE REELS CARDS
-   ========================================================= */
+/* ============================================================
+   32 — EXPLORE REEL CARD
+   ============================================================ */
 
 function exploreReelCard(video) {
     const username = getUsername(video.owner_id);
@@ -1514,6 +1781,7 @@ function exploreReelCard(video) {
         <article class="feed-post-card feed-reel-card">
 
             <div class="feed-post-top">
+
                 <div class="feed-post-avatar">
                     ${escapeHTML(getInitial(username))}
                 </div>
@@ -1522,9 +1790,11 @@ function exploreReelCard(video) {
                     <strong>${escapeHTML(username)}</strong>
                     <small>GoCat Reel</small>
                 </div>
+
             </div>
 
             <div class="reel-thumb">
+
                 <video
                     src="${escapeHTML(getVideoURL(video.storage_path))}"
                     muted
@@ -1532,7 +1802,10 @@ function exploreReelCard(video) {
                     preload="metadata">
                 </video>
 
-                <span class="reel-thumb-label">▶ REEL</span>
+                <span class="reel-thumb-label">
+                    ▶ REEL
+                </span>
+
             </div>
 
             <p class="feed-post-content">
@@ -1550,9 +1823,9 @@ function exploreReelCard(video) {
 }
 
 
-/* =========================================================
-   30 — EXPLORE RENDERER
-   ========================================================= */
+/* ============================================================
+   33 — EXPLORE RENDERER
+   ============================================================ */
 
 function renderExplore() {
     const query = $("searchInput").value
@@ -1561,7 +1834,7 @@ function renderExplore() {
 
     if (exploreMode === "videos") {
         const found = videos.filter(video =>
-            video.is_short !== true &&
+            !isShort(video) &&
             (
                 !query ||
                 String(video.title || "").toLowerCase().includes(query) ||
@@ -1570,17 +1843,17 @@ function renderExplore() {
             )
         );
 
-        const page = found.slice(0, exploreVisible);
-
         $("exploreVideos").innerHTML =
-            page.map(videoCard).join("");
+            found.slice(0, exploreVisible)
+                .map(videoCard)
+                .join("");
 
         updateExploreMore(found.length);
     }
 
     else if (exploreMode === "reels") {
         const found = videos.filter(video =>
-            video.is_short === true &&
+            isShort(video) &&
             (
                 !query ||
                 String(video.title || "").toLowerCase().includes(query) ||
@@ -1589,10 +1862,10 @@ function renderExplore() {
             )
         );
 
-        const page = found.slice(0, exploreVisible);
-
         $("exploreVideos").innerHTML =
-            page.map(exploreReelCard).join("");
+            found.slice(0, exploreVisible)
+                .map(exploreReelCard)
+                .join("");
 
         updateExploreMore(found.length);
     }
@@ -1607,10 +1880,8 @@ function renderExplore() {
             )
         );
 
-        const page = found.slice(0, exploreVisible);
-
         $("explorePeople").innerHTML =
-            page.map(user => `
+            found.slice(0, exploreVisible).map(user => `
                 <div class="person-card">
 
                     <div class="person-avatar">
@@ -1646,14 +1917,15 @@ function renderExplore() {
             getUsername(post.user_id).toLowerCase().includes(query)
         );
 
-        const page = found.slice(0, exploreVisible);
-
         $("explorePosts").innerHTML =
-            page.map(postCard).join("");
+            found.slice(0, exploreVisible)
+                .map(postCard)
+                .join("");
 
         updateExploreMore(found.length);
     }
 }
+
 
 function updateExploreMore(total) {
     $("exploreLoadMoreWrap").classList.toggle(
@@ -1666,15 +1938,16 @@ function updateExploreMore(total) {
         " of " + total;
 }
 
+
 $("exploreLoadMore").addEventListener("click", function() {
     exploreVisible += 6;
     renderExplore();
 });
 
 
-/* =========================================================
-   31 — FOLLOWING
-   ========================================================= */
+/* ============================================================
+   34 — FOLLOWING PAGE
+   ============================================================ */
 
 function renderFollowing() {
     const followingIds = follows
@@ -1685,7 +1958,7 @@ function renderFollowing() {
 
     const selected = videos.filter(video =>
         followingIds.includes(String(video.owner_id)) &&
-        video.is_short !== true
+        !isShort(video)
     );
 
     $("followingFeed").innerHTML =
@@ -1698,9 +1971,9 @@ function renderFollowing() {
 }
 
 
-/* =========================================================
-   32 — VIDEO UPLOAD MODAL
-   ========================================================= */
+/* ============================================================
+   35 — OPEN UPLOAD MODAL
+   ============================================================ */
 
 function openUpload(mode = "video") {
     uploadMode = mode;
@@ -1722,7 +1995,7 @@ function openUpload(mode = "video") {
     $("uploadDescription").textContent =
         mode === "reel"
             ? "Create a vertical video for GoCat."
-            : "Share a video with the community.";
+            : "Share a video with the GoCat community.";
 
     $("publishVideoBtn").textContent =
         mode === "reel" ? "Publish Reel" : "Publish video";
@@ -1730,18 +2003,20 @@ function openUpload(mode = "video") {
     showModal("uploadModal");
 }
 
-$("uploadTopBtn").addEventListener("click", () => {
+
+$("uploadTopBtn").addEventListener("click", function() {
     openUpload("video");
 });
 
-$("createReelBtn").addEventListener("click", () => {
+
+$("createReelBtn").addEventListener("click", function() {
     openUpload("reel");
 });
 
 
-/* =========================================================
-   33 — SELECT VIDEO FILE
-   ========================================================= */
+/* ============================================================
+   36 — VIDEO FILE SELECTION
+   ============================================================ */
 
 $("videoFile").addEventListener("change", function() {
     const file = this.files[0];
@@ -1764,9 +2039,9 @@ $("videoFile").addEventListener("change", function() {
 });
 
 
-/* =========================================================
-   34 — REEL PREVIEW AND EDITOR
-   ========================================================= */
+/* ============================================================
+   37 — REEL PREVIEW
+   ============================================================ */
 
 function prepareReelPreview(file) {
     const preview = $("reelPreview");
@@ -1782,17 +2057,21 @@ function prepareReelPreview(file) {
     $("reelEditor").classList.remove("hidden");
 
     $("editorStatus").textContent =
-        "Adjust your video, then apply the edits.";
+        "Choose your trim, filter, framing and text.";
 
-    preview.onloadedmetadata = () => {
-        $("trimStart").value = 0;
-        $("trimEnd").value = preview.duration.toFixed(1);
+    preview.onloadedmetadata = function() {
+        $("trimStart").value = "0";
+
+        $("trimEnd").value =
+            preview.duration.toFixed(1);
     };
 }
+
 
 $("reelOverlayText").addEventListener("input", function() {
     $("reelOverlayPreview").textContent = this.value;
 });
+
 
 $("reelFilter").addEventListener("change", function() {
     const filters = {
@@ -1807,15 +2086,16 @@ $("reelFilter").addEventListener("change", function() {
         filters[this.value] || "none";
 });
 
+
 $("reelFraming").addEventListener("change", function() {
     $("reelPreview").style.objectFit =
         this.value === "contain" ? "contain" : "cover";
 });
 
 
-/* =========================================================
-   35 — APPLY REEL EDITS
-   ========================================================= */
+/* ============================================================
+   38 — APPLY REEL EDITS
+   ============================================================ */
 
 $("exportReelBtn").addEventListener("click", async function() {
     const preview = $("reelPreview");
@@ -1830,9 +2110,9 @@ $("exportReelBtn").addEventListener("click", async function() {
         !preview.captureStream
     ) {
         $("editorStatus").textContent =
-            "This browser cannot export edits. The original video can still be uploaded.";
+            "This browser cannot export edits. You can still upload the original video.";
 
-        showToast("Video editing export is unsupported here.");
+        showToast("Video export is not supported here.");
         return;
     }
 
@@ -1858,7 +2138,7 @@ $("exportReelBtn").addEventListener("click", async function() {
 
     const ctx = canvas.getContext("2d");
 
-    const filters = {
+    const filterMap = {
         none: "none",
         warm: "sepia(.4) saturate(1.3)",
         cool: "hue-rotate(15deg) saturate(.9)",
@@ -1866,29 +2146,32 @@ $("exportReelBtn").addEventListener("click", async function() {
         vivid: "saturate(1.8) contrast(1.1)"
     };
 
+    const filter =
+        filterMap[$("reelFilter").value] || "none";
+
     const framing = $("reelFraming").value;
-    const filter = filters[$("reelFilter").value] || "none";
     const overlay = $("reelOverlayText").value.trim();
 
     const canvasStream = canvas.captureStream(30);
 
     let sourceStream = null;
+    let recorder = null;
+    let animationId = null;
 
-    let recorder;
-    let chunks = [];
-
-    let rafId = null;
+    const chunks = [];
 
     const mimeType =
         MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
             ? "video/webm;codecs=vp9"
             : "video/webm";
 
-    this.disabled = true;
-    this.textContent = "Rendering...";
+    const button = this;
+
+    button.disabled = true;
+    button.textContent = "Rendering...";
 
     $("editorStatus").textContent =
-        "Rendering your edits. Keep this window open.";
+        "Rendering edits. Keep this window open.";
 
     try {
         sourceStream = preview.captureStream();
@@ -1907,22 +2190,33 @@ $("exportReelBtn").addEventListener("click", async function() {
             }
         };
 
-        const completed = new Promise((resolve, reject) => {
+        const finished = new Promise((resolve, reject) => {
             recorder.onstop = resolve;
             recorder.onerror = reject;
         });
 
-        function drawFrame() {
-            if (preview.readyState < 2) {
-                rafId = requestAnimationFrame(drawFrame);
-                return;
+        let stopped = false;
+
+        function stopRecording() {
+            if (stopped) return;
+
+            stopped = true;
+
+            preview.pause();
+
+            if (recorder.state !== "inactive") {
+                recorder.stop();
             }
+        }
+
+        function drawFrame() {
+            if (stopped) return;
 
             const width = preview.videoWidth;
             const height = preview.videoHeight;
 
             if (!width || !height) {
-                rafId = requestAnimationFrame(drawFrame);
+                animationId = requestAnimationFrame(drawFrame);
                 return;
             }
 
@@ -1962,17 +2256,12 @@ $("exportReelBtn").addEventListener("click", async function() {
                 ctx.fillText(overlay, 360, 1140);
             }
 
-            if (preview.currentTime >= end) {
-                preview.pause();
-
-                if (recorder.state !== "inactive") {
-                    recorder.stop();
-                }
-
+            if (preview.currentTime >= end || preview.ended) {
+                stopRecording();
                 return;
             }
 
-            rafId = requestAnimationFrame(drawFrame);
+            animationId = requestAnimationFrame(drawFrame);
         }
 
         preview.pause();
@@ -1989,7 +2278,7 @@ $("exportReelBtn").addEventListener("click", async function() {
 
         drawFrame();
 
-        await completed;
+        await finished;
 
         exportedReelFile = new File(
             chunks,
@@ -1998,44 +2287,40 @@ $("exportReelBtn").addEventListener("click", async function() {
         );
 
         $("editorStatus").textContent =
-            "Your edited Reel is ready to upload.";
+            "Edits applied. Your Reel is ready to upload.";
 
-        showToast("Edits applied!");
+        showToast("Reel edits completed!");
 
     } catch (error) {
         console.error(error);
 
         $("editorStatus").textContent =
-            "Export failed. You can upload the original video instead.";
+            "Export failed. You can still upload the original video.";
 
-        showToast("Could not export edits.");
+        showToast("Could not export the edited video.");
 
     } finally {
-        if (rafId) {
-            cancelAnimationFrame(rafId);
+        if (animationId) {
+            cancelAnimationFrame(animationId);
         }
 
         preview.pause();
 
-        canvasStream.getTracks().forEach(track => {
-            track.stop();
-        });
+        canvasStream.getTracks().forEach(track => track.stop());
 
         if (sourceStream) {
-            sourceStream.getTracks().forEach(track => {
-                track.stop();
-            });
+            sourceStream.getTracks().forEach(track => track.stop());
         }
 
-        this.disabled = false;
-        this.textContent = "Apply edits and prepare Reel";
+        button.disabled = false;
+        button.textContent = "Apply edits";
     }
 });
 
 
-/* =========================================================
-   36 — PUBLISH VIDEO OR REEL
-   ========================================================= */
+/* ============================================================
+   39 — PUBLISH VIDEO OR REEL
+   ============================================================ */
 
 $("uploadForm").addEventListener("submit", async function(event) {
     event.preventDefault();
@@ -2057,14 +2342,14 @@ $("uploadForm").addEventListener("submit", async function(event) {
     }
 
     const button = $("publishVideoBtn");
+    const bar = $("uploadProgressBar");
 
     button.disabled = true;
     button.textContent = "Uploading...";
 
-    const bar = $("uploadProgressBar");
-
     $("uploadProgress").classList.remove("hidden");
-    bar.style.width = "20%";
+
+    bar.style.width = "10%";
 
     let storagePath = null;
 
@@ -2086,15 +2371,15 @@ $("uploadForm").addEventListener("submit", async function(event) {
 
         if (upload.error) throw upload.error;
 
-        bar.style.width = "75%";
+        bar.style.width = "70%";
 
         const result = await db
             .from("videos")
             .insert({
                 owner_id: currentUser.id,
-                title,
-                description,
-                topic,
+                title: title,
+                description: description,
+                topic: topic,
                 storage_path: storagePath,
                 views: 0,
                 is_short: uploadMode === "reel"
@@ -2105,6 +2390,9 @@ $("uploadForm").addEventListener("submit", async function(event) {
         bar.style.width = "100%";
 
         await loadVideos();
+
+        homeVisibleCycles = 1;
+        reelsVisible = Math.max(reelsVisible, PAGE_SIZE);
 
         renderEverything();
 
@@ -2117,8 +2405,8 @@ $("uploadForm").addEventListener("submit", async function(event) {
 
         showToast(
             uploadMode === "reel"
-                ? "Reel published!"
-                : "Video published!"
+                ? "Your Reel was published!"
+                : "Your video was published!"
         );
 
     } catch (error) {
@@ -2143,14 +2431,15 @@ $("uploadForm").addEventListener("submit", async function(event) {
 });
 
 
-/* =========================================================
-   37 — CREATE POST
-   ========================================================= */
+/* ============================================================
+   40 — CREATE POSTS
+   ============================================================ */
 
 $("postImage").addEventListener("change", function() {
     $("postImageName").textContent =
         this.files[0]?.name || "";
 });
+
 
 $("createPostForm").addEventListener("submit", async function(event) {
     event.preventDefault();
@@ -2163,7 +2452,8 @@ $("createPostForm").addEventListener("submit", async function(event) {
         return;
     }
 
-    const button = this.querySelector('button[type="submit"]');
+    const button =
+        this.querySelector('button[type="submit"]');
 
     button.disabled = true;
     button.textContent = "Publishing...";
@@ -2195,7 +2485,7 @@ $("createPostForm").addEventListener("submit", async function(event) {
             .from("posts")
             .insert({
                 user_id: currentUser.id,
-                content,
+                content: content,
                 media_path: storagePath
             });
 
@@ -2207,9 +2497,12 @@ $("createPostForm").addEventListener("submit", async function(event) {
 
         await loadPosts();
 
+        postsVisible = Math.max(postsVisible, PAGE_SIZE);
+
         renderPosts();
         renderHomeFeed();
         renderExplore();
+        renderProfile();
 
         showToast("Post published!");
 
@@ -2231,9 +2524,9 @@ $("createPostForm").addEventListener("submit", async function(event) {
 });
 
 
-/* =========================================================
-   38 — POST LIKE
-   ========================================================= */
+/* ============================================================
+   41 — POST LIKES
+   ============================================================ */
 
 async function togglePostLike(postId) {
     const post = posts.find(item =>
@@ -2276,16 +2569,18 @@ async function togglePostLike(postId) {
         renderPosts();
         renderHomeFeed();
         renderExplore();
+        renderProfile();
 
     } catch (error) {
+        console.error(error);
         showToast("Post like failed: " + error.message);
     }
 }
 
 
-/* =========================================================
-   39 — DELETE POST
-   ========================================================= */
+/* ============================================================
+   42 — DELETE POST
+   ============================================================ */
 
 async function deletePost(postId) {
     const post = posts.find(item =>
@@ -2324,14 +2619,9 @@ async function deletePost(postId) {
 }
 
 
-/* =========================================================
-   40 — POSTS PAGINATION
-   ========================================================= */
-
-$("postsLoadMore").addEventListener("click", function() {
-    postsVisible += PAGE_SIZE;
-    renderPosts();
-});
+/* ============================================================
+   43 — POSTS PAGE
+   ============================================================ */
 
 function renderPosts() {
     const page = posts.slice(0, postsVisible);
@@ -2346,18 +2636,23 @@ function renderPosts() {
 }
 
 
-/* =========================================================
-   41 — PROFILE PAGE
-   ========================================================= */
+$("postsLoadMore").addEventListener("click", function() {
+    postsVisible += PAGE_SIZE;
+    renderPosts();
+});
 
-function openProfile(userId) {
+
+/* ============================================================
+   44 — PROFILE PAGE
+   ============================================================ */
+
+function openOtherProfile(userId) {
     currentProfileUserId = userId;
     profileMode = "home";
 
-    renderProfile();
-
     openPage("profile");
 }
+
 
 function renderProfile() {
     const profileId =
@@ -2412,12 +2707,12 @@ function renderProfile() {
         String(video.owner_id) === String(profileId)
     );
 
-    const myRegularVideos = myVideos.filter(
-        video => video.is_short !== true
+    const myReels = myVideos.filter(video =>
+        isShort(video)
     );
 
-    const myReels = myVideos.filter(
-        video => video.is_short === true
+    const myRegularVideos = myVideos.filter(video =>
+        !isShort(video)
     );
 
     const myPosts = posts.filter(post =>
@@ -2483,9 +2778,9 @@ function renderProfile() {
 }
 
 
-/* =========================================================
-   42 — PROFILE TABS
-   ========================================================= */
+/* ============================================================
+   45 — PROFILE TABS
+   ============================================================ */
 
 function renderProfileTab(tab) {
     profileMode = tab;
@@ -2513,6 +2808,7 @@ function renderProfileTab(tab) {
     });
 }
 
+
 document.querySelectorAll("[data-profile-tab]").forEach(button => {
     button.addEventListener("click", function() {
         renderProfileTab(this.dataset.profileTab);
@@ -2520,9 +2816,9 @@ document.querySelectorAll("[data-profile-tab]").forEach(button => {
 });
 
 
-/* =========================================================
-   43 — EDIT PROFILE
-   ========================================================= */
+/* ============================================================
+   46 — EDIT PROFILE
+   ============================================================ */
 
 $("editProfileForm").addEventListener("submit", async function(event) {
     event.preventDefault();
@@ -2537,7 +2833,10 @@ $("editProfileForm").addEventListener("submit", async function(event) {
 
     const result = await db
         .from("users")
-        .update({ username, bio })
+        .update({
+            username,
+            bio
+        })
         .eq("id", currentUser.id)
         .select("*")
         .single();
@@ -2555,18 +2854,18 @@ $("editProfileForm").addEventListener("submit", async function(event) {
 
     renderEverything();
 
-    hideModal("editProfileModal");
-
     $("welcomeName").textContent = username;
     $("topProfileBtn").textContent = getInitial(username);
+
+    hideModal("editProfileModal");
 
     showToast("Profile updated!");
 });
 
 
-/* =========================================================
-   44 — NOTIFICATIONS
-   ========================================================= */
+/* ============================================================
+   47 — NOTIFICATIONS
+   ============================================================ */
 
 function addLocalNotification(icon, text) {
     notifications.unshift({
@@ -2586,6 +2885,7 @@ function addLocalNotification(icon, text) {
     renderNotifications();
 }
 
+
 function renderNotifications() {
     const container = $("notificationList");
 
@@ -2594,7 +2894,7 @@ function renderNotifications() {
             <div class="empty-card">
                 <div>🔔</div>
                 <h3>No notifications yet</h3>
-                <p>Your GoCat activity will appear here.</p>
+                <p>Your activity will appear here.</p>
             </div>
         `;
         return;
@@ -2616,6 +2916,7 @@ function renderNotifications() {
     `).join("");
 }
 
+
 $("clearNotificationsBtn").addEventListener("click", function() {
     notifications = [];
 
@@ -2628,9 +2929,9 @@ $("clearNotificationsBtn").addEventListener("click", function() {
 });
 
 
-/* =========================================================
-   45 — MUTUAL FRIENDS FOR CHATS
-   ========================================================= */
+/* ============================================================
+   48 — MUTUAL FRIENDS
+   ============================================================ */
 
 function getMutualFriends() {
     const followingIds = follows
@@ -2652,13 +2953,18 @@ function getMutualFriends() {
     );
 }
 
+
 function renderChatFriends() {
     const friends = getMutualFriends();
 
     $("chatFriends").innerHTML = friends.length
         ? friends.map(user => `
             <button
-                class="chat-friend ${String(currentChatUserId) === String(user.id) ? "active" : ""}"
+                class="chat-friend ${
+                    String(currentChatUserId) === String(user.id)
+                        ? "active"
+                        : ""
+                }"
                 data-chat-user="${escapeHTML(user.id)}">
 
                 <span class="chat-friend-avatar">
@@ -2673,9 +2979,9 @@ function renderChatFriends() {
 }
 
 
-/* =========================================================
-   46 — OPEN CHAT
-   ========================================================= */
+/* ============================================================
+   49 — OPEN CHAT
+   ============================================================ */
 
 async function openChat(userId) {
     const allowed = getMutualFriends().some(user =>
@@ -2689,7 +2995,8 @@ async function openChat(userId) {
 
     currentChatUserId = userId;
 
-    $("chatTitle").textContent = getUsername(userId);
+    $("chatTitle").textContent =
+        getUsername(userId);
 
     $("messageInput").disabled = false;
     $("sendMessageBtn").disabled = false;
@@ -2700,34 +3007,30 @@ async function openChat(userId) {
 }
 
 
-/* =========================================================
-   47 — LOAD CHAT MESSAGES
-   ========================================================= */
+/* ============================================================
+   50 — LOAD MESSAGES
+   ============================================================ */
 
 async function loadMessages() {
     if (!currentChatUserId) return;
 
-    const first = [
-        "and(sender_id.eq." + currentUser.id,
-        "recipient_id.eq." + currentChatUserId + ")"
-    ].join(",");
-
-    const second = [
-        "and(sender_id.eq." + currentChatUserId,
-        "recipient_id.eq." + currentUser.id + ")"
-    ].join(",");
+    const filter =
+        "and(sender_id.eq." + currentUser.id +
+        ",recipient_id.eq." + currentChatUserId +
+        "),and(sender_id.eq." + currentChatUserId +
+        ",recipient_id.eq." + currentUser.id + ")";
 
     const result = await db
         .from("messages")
         .select("*")
-        .or(first + "," + second)
+        .or(filter)
         .order("created_at", { ascending: true });
 
     if (result.error) {
         console.error(result.error);
 
         $("chatMessages").innerHTML =
-            "<p class='chat-empty'>Could not load messages. Check your table permissions.</p>";
+            "<p class='chat-empty'>Could not load messages. Check your Messages table and permissions.</p>";
 
         return;
     }
@@ -2753,9 +3056,9 @@ async function loadMessages() {
 }
 
 
-/* =========================================================
-   48 — SEND MESSAGE
-   ========================================================= */
+/* ============================================================
+   51 — SEND MESSAGE
+   ============================================================ */
 
 $("chatForm").addEventListener("submit", async function(event) {
     event.preventDefault();
@@ -2769,7 +3072,7 @@ $("chatForm").addEventListener("submit", async function(event) {
         .insert({
             sender_id: currentUser.id,
             recipient_id: currentChatUserId,
-            text
+            text: text
         });
 
     if (result.error) {
@@ -2783,12 +3086,12 @@ $("chatForm").addEventListener("submit", async function(event) {
 });
 
 
-/* =========================================================
-   49 — NAVIGATION
-   ========================================================= */
+/* ============================================================
+   52 — NAVIGATION
+   ============================================================ */
 
 function openPage(page) {
-    const validPages = [
+    const allowedPages = [
         "home",
         "reels",
         "explore",
@@ -2799,19 +3102,7 @@ function openPage(page) {
         "profile"
     ];
 
-    if (!validPages.includes(page)) {
-        return;
-    }
-
-    /*
-       IMPORTANT FIX:
-       When the Profile navigation button is clicked,
-       always show the logged-in user's own profile.
-    */
-
-    if (page === "profile" && !currentProfileUserId) {
-        currentProfileUserId = currentUser.id;
-    }
+    if (!allowedPages.includes(page)) return;
 
     currentPage = page;
 
@@ -2841,16 +3132,23 @@ function openPage(page) {
     });
 }
 
+
 function renderCurrentPage() {
     if (currentPage === "home") renderHomeFeed();
     if (currentPage === "reels") renderReels();
     if (currentPage === "explore") renderExplore();
     if (currentPage === "following") renderFollowing();
     if (currentPage === "posts") renderPosts();
-    if (currentPage === "profile") renderProfile();
     if (currentPage === "chats") renderChatFriends();
     if (currentPage === "notifications") renderNotifications();
+    if (currentPage === "profile") renderProfile();
 }
+
+
+/* ============================================================
+   53 — PROFILE NAVIGATION FIX
+   Clicking Profile always opens MY profile
+   ============================================================ */
 
 document.addEventListener("click", function(event) {
     const button = event.target.closest("[data-page]");
@@ -2861,12 +3159,6 @@ document.addEventListener("click", function(event) {
 
     const page = button.dataset.page;
 
-    /*
-       This is the second important Profile fix:
-       clicking your Profile icon resets the selected profile
-       to your own account.
-    */
-
     if (page === "profile") {
         currentProfileUserId = currentUser.id;
         profileMode = "home";
@@ -2876,9 +3168,9 @@ document.addEventListener("click", function(event) {
 });
 
 
-/* =========================================================
-   50 — PROFILE BUTTON
-   ========================================================= */
+/* ============================================================
+   54 — TOP PROFILE BUTTON
+   ============================================================ */
 
 $("topProfileBtn").addEventListener("click", function() {
     currentProfileUserId = currentUser.id;
@@ -2888,40 +3180,28 @@ $("topProfileBtn").addEventListener("click", function() {
 });
 
 
-/* =========================================================
-   51 — VIEW ANOTHER USER'S PROFILE
-   ========================================================= */
-
-function openOtherProfile(userId) {
-    currentProfileUserId = userId;
-    profileMode = "home";
-
-    openPage("profile");
-}
-
-
-/* =========================================================
-   52 — MOBILE MENU
-   ========================================================= */
+/* ============================================================
+   55 — MOBILE MENU
+   ============================================================ */
 
 $("mobileMenuBtn").addEventListener("click", function() {
     $("sidebar").classList.toggle("open");
 });
 
 
-/* =========================================================
-   53 — SEARCH
-   ========================================================= */
+/* ============================================================
+   56 — SEARCH
+   ============================================================ */
 
 $("searchInput").addEventListener("input", function() {
-    const hasText = this.value.trim().length > 0;
+    const query = this.value.trim();
 
     $("clearSearch").classList.toggle(
         "hidden",
-        !hasText
+        query.length === 0
     );
 
-    homeVisible = PAGE_SIZE;
+    homeVisibleCycles = 1;
     exploreVisible = 6;
 
     if (currentPage === "home") {
@@ -2933,19 +3213,23 @@ $("searchInput").addEventListener("input", function() {
     }
 });
 
+
 $("clearSearch").addEventListener("click", function() {
     $("searchInput").value = "";
 
     this.classList.add("hidden");
+
+    homeVisibleCycles = 1;
+    exploreVisible = 6;
 
     renderHomeFeed();
     renderExplore();
 });
 
 
-/* =========================================================
-   54 — THEME BUTTON
-   ========================================================= */
+/* ============================================================
+   57 — THEME BUTTON
+   ============================================================ */
 
 function updateTheme() {
     const dark =
@@ -2958,11 +3242,13 @@ function updateTheme() {
         dark ? "Light mode" : "Dark mode";
 }
 
+
 if (localStorage.getItem("gocat_theme") === "dark") {
     document.body.classList.add("dark");
 }
 
 updateTheme();
+
 
 $("themeBtn").addEventListener("click", function() {
     document.body.classList.toggle("dark");
@@ -2979,29 +3265,45 @@ $("themeBtn").addEventListener("click", function() {
 });
 
 
-/* =========================================================
-   55 — VIDEO VIEW COUNT
-   ========================================================= */
+/* ============================================================
+   58 — REFRESH HOME FEED
+   ============================================================ */
+
+$("refreshFeedBtn").addEventListener("click", async function() {
+    this.disabled = true;
+
+    try {
+        await loadAllData();
+
+        homeVisibleCycles = 1;
+
+        renderEverything();
+
+        showToast("Feed refreshed!");
+
+    } catch (error) {
+        console.error(error);
+        showToast("Could not refresh the feed.");
+    }
+
+    this.disabled = false;
+});
+
+
+/* ============================================================
+   59 — VIDEO VIEWS
+   One view per signed-in browser user per video
+   ============================================================ */
 
 document.addEventListener("play", async function(event) {
     const videoElement = event.target;
-
     const videoId = videoElement.dataset.playVideo;
 
-    if (!videoId) return;
+    if (!videoId || !currentUser) return;
 
-    const key =
-        "gocat_viewed_" + currentUser.id;
+    const key = "gocat_viewed_" + currentUser.id;
 
-    let viewed = [];
-
-    try {
-        viewed = JSON.parse(
-            localStorage.getItem(key) || "[]"
-        );
-    } catch {
-        viewed = [];
-    }
+    const viewed = safeLocalJSON(key, []);
 
     if (viewed.includes(String(videoId))) {
         return;
@@ -3020,14 +3322,13 @@ document.addEventListener("play", async function(event) {
 
     if (!video) return;
 
-    const newViews =
-        Number(video.views || 0) + 1;
-
-    video.views = newViews;
+    video.views = Number(video.views || 0) + 1;
 
     const result = await db
         .from("videos")
-        .update({ views: newViews })
+        .update({
+            views: video.views
+        })
         .eq("id", videoId);
 
     if (result.error) {
@@ -3037,22 +3338,40 @@ document.addEventListener("play", async function(event) {
 }, true);
 
 
-/* =========================================================
-   56 — OPEN REEL FROM EXPLORE / HOME
-   ========================================================= */
+/* ============================================================
+   60 — MODAL CLOSE BUTTONS
+   ============================================================ */
 
-document.addEventListener("click", function(event) {
-    const button = event.target.closest("[data-open-reel-id]");
-
-    if (!button) return;
-
-    openSpecificReel(button.dataset.openReelId);
+document.querySelectorAll("[data-close]").forEach(button => {
+    button.addEventListener("click", function() {
+        hideModal(this.dataset.close);
+    });
 });
 
 
-/* =========================================================
-   57 — GLOBAL BUTTON ACTIONS
-   ========================================================= */
+/* ============================================================
+   61 — LOGOUT
+   ============================================================ */
+
+$("logoutBtn").addEventListener("click", async function() {
+    const result = await db.auth.signOut();
+
+    if (result.error) {
+        showToast(result.error.message);
+        return;
+    }
+
+    currentUser = null;
+    currentProfile = null;
+    currentProfileUserId = null;
+
+    openLoginScreen();
+});
+
+
+/* ============================================================
+   62 — GLOBAL BUTTON ACTIONS
+   ============================================================ */
 
 document.addEventListener("click", function(event) {
     const button = event.target.closest("button");
@@ -3095,6 +3414,10 @@ document.addEventListener("click", function(event) {
         deletePost(button.dataset.deletePost);
     }
 
+    if (button.dataset.openReelId) {
+        openSpecificReel(button.dataset.openReelId);
+    }
+
     if (button.dataset.reelSound !== undefined) {
         const reel = button.closest(".reel-item");
         const video = reel?.querySelector(".reel-video");
@@ -3125,40 +3448,9 @@ document.addEventListener("click", function(event) {
 });
 
 
-/* =========================================================
-   58 — CLOSE MODALS
-   ========================================================= */
-
-document.querySelectorAll("[data-close]").forEach(button => {
-    button.addEventListener("click", function() {
-        hideModal(this.dataset.close);
-    });
-});
-
-
-/* =========================================================
-   59 — LOGOUT
-   ========================================================= */
-
-$("logoutBtn").addEventListener("click", async function() {
-    const result = await db.auth.signOut();
-
-    if (result.error) {
-        showToast(result.error.message);
-        return;
-    }
-
-    currentUser = null;
-    currentProfile = null;
-    currentProfileUserId = null;
-
-    openLoginScreen();
-});
-
-
-/* =========================================================
-   60 — AUTH SESSION
-   ========================================================= */
+/* ============================================================
+   63 — AUTH SESSION
+   ============================================================ */
 
 async function initializeGoCat() {
     const loader = $("loader");
@@ -3172,7 +3464,9 @@ async function initializeGoCat() {
 
         if (session?.user) {
             currentUser = session.user;
+
             await startGoCat();
+
         } else {
             openLoginScreen();
         }
@@ -3192,8 +3486,23 @@ async function initializeGoCat() {
 }
 
 
-/* =========================================================
-   61 — START APPLICATION
-   ========================================================= */
+/* ============================================================
+   64 — AUTH STATE CHANGES
+   ============================================================ */
+
+db.auth.onAuthStateChange((event, session) => {
+    if (event === "SIGNED_OUT") {
+        currentUser = null;
+        currentProfile = null;
+        currentProfileUserId = null;
+
+        openLoginScreen();
+    }
+});
+
+
+/* ============================================================
+   65 — START APPLICATION
+   ============================================================ */
 
 initializeGoCat();
