@@ -1,11 +1,11 @@
 /* =========================================================
-   GOCAT — APPLICATION JAVASCRIPT
-   Supabase Auth, Videos, Reels, Posts, Follows and Chats
+   GOCAT — FIXED APPLICATION JAVASCRIPT
+   Navigation | Reels | Explore | Profile | Posts | Chats
    ========================================================= */
 
 
 /* =========================================================
-   01. SUPABASE CONFIG
+   01 — SUPABASE CONFIGURATION
    ========================================================= */
 
 const SUPABASE_URL =
@@ -24,11 +24,14 @@ const db = window.supabase.createClient(
 
 
 /* =========================================================
-   02. APPLICATION DATA
+   02 — GLOBAL DATA
    ========================================================= */
 
 let currentUser = null;
 let currentProfile = null;
+let currentProfileUserId = null;
+let currentCommentVideoId = null;
+let currentChatUserId = null;
 
 let users = [];
 let videos = [];
@@ -37,40 +40,32 @@ let follows = [];
 let notifications = [];
 
 let currentPage = "home";
-let currentProfileUserId = null;
-let currentCommentVideoId = null;
-let currentChatUserId = null;
-
 let activeHomeTopic = "All";
 let exploreMode = "videos";
 let profileMode = "home";
 
-let homeOffset = 0;
-let reelsOffset = 0;
-let postsOffset = 0;
-let exploreOffset = 0;
-
-const PAGE_SIZE = 5;
+let homeVisible = 5;
+let reelsVisible = 5;
+let exploreVisible = 6;
+let postsVisible = 5;
 
 let uploadMode = "video";
 let selectedVideoFile = null;
 let exportedReelFile = null;
-
 let currentObjectURL = null;
+
+let reelObserver = null;
+
+const PAGE_SIZE = 5;
 
 
 /* =========================================================
-   03. SHORT DOM HELPER
+   03 — SHORTCUTS
    ========================================================= */
 
 function $(id) {
     return document.getElementById(id);
 }
-
-
-/* =========================================================
-   04. BASIC HELPERS
-   ========================================================= */
 
 function escapeHTML(value) {
     return String(value ?? "")
@@ -88,18 +83,21 @@ function getInitial(name) {
         .toUpperCase();
 }
 
-function getUsername(userId) {
-    const person = users.find(
-        user => String(user.id) === String(userId)
+function getUser(userId) {
+    return users.find(user =>
+        String(user.id) === String(userId)
     );
-
-    return person?.username || "GoCat user";
 }
 
-function getUser(userId) {
-    return users.find(
-        user => String(user.id) === String(userId)
-    );
+function getUsername(userId) {
+    if (
+        currentProfile &&
+        String(currentProfile.id) === String(userId)
+    ) {
+        return currentProfile.username || "Creator";
+    }
+
+    return getUser(userId)?.username || "GoCat creator";
 }
 
 function formatDate(value) {
@@ -118,13 +116,22 @@ function formatDate(value) {
     if (seconds < 60) return "Just now";
 
     const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return minutes + "m ago";
+
+    if (minutes < 60) {
+        return minutes + "m ago";
+    }
 
     const hours = Math.floor(minutes / 60);
-    if (hours < 24) return hours + "h ago";
+
+    if (hours < 24) {
+        return hours + "h ago";
+    }
 
     const days = Math.floor(hours / 24);
-    if (days < 30) return days + "d ago";
+
+    if (days < 30) {
+        return days + "d ago";
+    }
 
     return date.toLocaleDateString();
 }
@@ -165,35 +172,10 @@ function showAuthMessage(message, success = false) {
     if (!element) return;
 
     element.textContent = message;
-    element.style.color = success ? "#078c5d" : "#e34e68";
-}
 
-function getVideoURL(path) {
-    if (!path) return "";
-
-    if (String(path).startsWith("http")) {
-        return path;
-    }
-
-    const result = db.storage
-        .from(VIDEO_BUCKET)
-        .getPublicUrl(path);
-
-    return result.data.publicUrl;
-}
-
-function getPostImageURL(path) {
-    if (!path) return "";
-
-    if (String(path).startsWith("http")) {
-        return path;
-    }
-
-    const result = db.storage
-        .from(POST_BUCKET)
-        .getPublicUrl(path);
-
-    return result.data.publicUrl;
+    element.style.color = success
+        ? "#078c5d"
+        : "#e34e68";
 }
 
 function showModal(id) {
@@ -204,27 +186,44 @@ function hideModal(id) {
     $(id)?.classList.add("hidden");
 }
 
-function addLocalNotification(icon, message) {
-    notifications.unshift({
-        id: crypto.randomUUID(),
-        icon,
-        text: message,
-        created_at: new Date().toISOString()
-    });
+function getVideoURL(path) {
+    if (!path) return "";
 
-    notifications = notifications.slice(0, 100);
+    if (String(path).startsWith("http")) {
+        return path;
+    }
 
-    localStorage.setItem(
-        "gocat_notifications_" + currentUser.id,
-        JSON.stringify(notifications)
+    return db.storage
+        .from(VIDEO_BUCKET)
+        .getPublicUrl(path).data.publicUrl;
+}
+
+function getPostImageURL(path) {
+    if (!path) return "";
+
+    if (String(path).startsWith("http")) {
+        return path;
+    }
+
+    return db.storage
+        .from(POST_BUCKET)
+        .getPublicUrl(path).data.publicUrl;
+}
+
+function isFollowing(userId) {
+    return follows.some(item =>
+        String(item.follower_id) === String(currentUser.id) &&
+        String(item.following_id) === String(userId)
     );
+}
 
-    renderNotifications();
+function isOwnContent(userId) {
+    return String(userId) === String(currentUser.id);
 }
 
 
 /* =========================================================
-   05. AUTHENTICATION SCREENS
+   04 — AUTH SCREENS
    ========================================================= */
 
 function openLoginScreen() {
@@ -248,7 +247,7 @@ function openRegisterScreen() {
     $("loginForm").classList.add("hidden");
     $("registerForm").classList.remove("hidden");
 
-    $("authTitle").textContent = "Create your account";
+    $("authTitle").textContent = "Create your GoCat account";
     $("authSubtitle").textContent =
         "Join the GoCat community.";
 
@@ -260,9 +259,12 @@ function openApp() {
     $("app").classList.remove("hidden");
 }
 
+$("showRegister").addEventListener("click", openRegisterScreen);
+$("showLogin").addEventListener("click", openLoginScreen);
+
 
 /* =========================================================
-   06. LOGIN
+   05 — LOGIN
    ========================================================= */
 
 $("loginForm").addEventListener("submit", async function(event) {
@@ -271,7 +273,8 @@ $("loginForm").addEventListener("submit", async function(event) {
     const email = $("loginEmail").value.trim();
     const password = $("loginPassword").value;
 
-    const button = this.querySelector('button[type="submit"]');
+    const button =
+        this.querySelector('button[type="submit"]');
 
     button.disabled = true;
     button.textContent = "Signing in...";
@@ -289,7 +292,7 @@ $("loginForm").addEventListener("submit", async function(event) {
         await startGoCat();
 
     } catch (error) {
-        showAuthMessage(error.message || "Login failed.");
+        showAuthMessage(error.message);
     }
 
     button.disabled = false;
@@ -298,7 +301,7 @@ $("loginForm").addEventListener("submit", async function(event) {
 
 
 /* =========================================================
-   07. REGISTER
+   06 — REGISTER
    ========================================================= */
 
 $("registerForm").addEventListener("submit", async function(event) {
@@ -309,12 +312,18 @@ $("registerForm").addEventListener("submit", async function(event) {
     const password = $("registerPassword").value;
     const confirm = $("registerConfirm").value;
 
+    if (username.length < 3) {
+        showAuthMessage("Username must have at least 3 characters.");
+        return;
+    }
+
     if (password !== confirm) {
         showAuthMessage("Passwords do not match.");
         return;
     }
 
-    const button = this.querySelector('button[type="submit"]');
+    const button =
+        this.querySelector('button[type="submit"]');
 
     button.disabled = true;
     button.textContent = "Creating account...";
@@ -324,32 +333,26 @@ $("registerForm").addEventListener("submit", async function(event) {
             email,
             password,
             options: {
-                data: {
-                    username: username
-                }
+                data: { username }
             }
         });
 
         if (result.error) throw result.error;
 
-        if (!result.data.user) {
-            throw new Error("Account could not be created.");
-        }
-
         if (result.data.session) {
             currentUser = result.data.user;
             await startGoCat();
         } else {
+            openLoginScreen();
+
             showAuthMessage(
-                "Account created. Check your email if confirmation is enabled.",
+                "Account created. Log in after any required email confirmation.",
                 true
             );
-            openLoginScreen();
-            showAuthMessage("Account created. You can now log in.", true);
         }
 
     } catch (error) {
-        showAuthMessage(error.message || "Registration failed.");
+        showAuthMessage(error.message);
     }
 
     button.disabled = false;
@@ -358,20 +361,20 @@ $("registerForm").addEventListener("submit", async function(event) {
 
 
 /* =========================================================
-   08. PROFILE CREATION
+   07 — ENSURE USER PROFILE
    ========================================================= */
 
 async function ensureProfile() {
-    const result = await db
+    const existing = await db
         .from("users")
         .select("*")
         .eq("id", currentUser.id)
         .maybeSingle();
 
-    if (result.error) throw result.error;
+    if (existing.error) throw existing.error;
 
-    if (result.data) {
-        currentProfile = result.data;
+    if (existing.data) {
+        currentProfile = existing.data;
         return;
     }
 
@@ -384,88 +387,83 @@ async function ensureProfile() {
         .replace(/\s+/g, "_")
         .slice(0, 20);
 
-    const insert = await db
+    const result = await db
         .from("users")
         .insert({
             id: currentUser.id,
-            username: username,
+            username,
             email: currentUser.email || "",
             bio: "Welcome to my GoCat profile."
         })
         .select("*")
         .single();
 
-    if (insert.error) throw insert.error;
+    if (result.error) throw result.error;
 
-    currentProfile = insert.data;
+    currentProfile = result.data;
 }
 
 
 /* =========================================================
-   09. LOAD DATABASE DATA
+   08 — LOAD USERS
    ========================================================= */
 
-async function loadAllData() {
-    const userResult = await db
+async function loadUsers() {
+    const result = await db
         .from("users")
         .select("id,username,email,bio,created_at")
         .order("created_at", { ascending: false });
 
-    if (userResult.error) throw userResult.error;
+    if (result.error) throw result.error;
 
-    users = userResult.data || [];
-
-    const videoResult = await db
-        .from("videos")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-    if (videoResult.error) throw videoResult.error;
-
-    const likeResult = await db
-        .from("likes")
-        .select("video_id,user_id");
-
-    if (likeResult.error) throw likeResult.error;
-
-    const commentResult = await db
-        .from("comments")
-        .select("*")
-        .order("created_at", { ascending: true });
-
-    if (commentResult.error) throw commentResult.error;
-
-    const followResult = await db
-        .from("follows")
-        .select("follower_id,following_id");
-
-    if (followResult.error) throw followResult.error;
-
-    const videoLikes = likeResult.data || [];
-    const videoComments = commentResult.data || [];
-
-    videos = (videoResult.data || []).map(video => {
-        return {
-            ...video,
-
-            likes: videoLikes
-                .filter(item => item.video_id === video.id)
-                .map(item => String(item.user_id)),
-
-            comments: videoComments.filter(
-                item => item.video_id === video.id
-            )
-        };
-    });
-
-    follows = followResult.data || [];
-
-    await loadPosts();
+    users = result.data || [];
 }
 
 
 /* =========================================================
-   10. LOAD POSTS
+   09 — LOAD VIDEOS, LIKES AND COMMENTS
+   ========================================================= */
+
+async function loadVideos() {
+    const [videoResult, likeResult, commentResult] =
+        await Promise.all([
+            db.from("videos")
+                .select("*")
+                .order("created_at", { ascending: false }),
+
+            db.from("likes")
+                .select("video_id,user_id"),
+
+            db.from("comments")
+                .select("*")
+                .order("created_at", { ascending: true })
+        ]);
+
+    if (videoResult.error) throw videoResult.error;
+    if (likeResult.error) throw likeResult.error;
+    if (commentResult.error) throw commentResult.error;
+
+    const allLikes = likeResult.data || [];
+    const allComments = commentResult.data || [];
+
+    videos = (videoResult.data || []).map(video => ({
+        ...video,
+
+        likes: allLikes
+            .filter(item =>
+                String(item.video_id) === String(video.id)
+            )
+            .map(item => String(item.user_id)),
+
+        comments: allComments.filter(item =>
+            String(item.video_id) === String(video.id)
+        )
+    }));
+}
+
+
+/* =========================================================
+   10 — LOAD POSTS
    ========================================================= */
 
 async function loadPosts() {
@@ -475,28 +473,64 @@ async function loadPosts() {
         .order("created_at", { ascending: false });
 
     if (result.error) {
-        console.warn("Posts could not be loaded:", result.error.message);
+        console.warn("Posts table:", result.error.message);
         posts = [];
         return;
     }
 
-    const likes = await db
+    const likeResult = await db
         .from("post_likes")
         .select("post_id,user_id");
 
-    const postLikes = likes.data || [];
+    if (likeResult.error) {
+        console.warn("Post likes:", likeResult.error.message);
+    }
+
+    const allLikes = likeResult.data || [];
 
     posts = (result.data || []).map(post => ({
         ...post,
-        likes: postLikes
-            .filter(like => like.post_id === post.id)
-            .map(like => String(like.user_id))
+
+        likes: allLikes
+            .filter(item =>
+                String(item.post_id) === String(post.id)
+            )
+            .map(item => String(item.user_id))
     }));
 }
 
 
 /* =========================================================
-   11. START GOCAT
+   11 — LOAD FOLLOWS
+   ========================================================= */
+
+async function loadFollows() {
+    const result = await db
+        .from("follows")
+        .select("follower_id,following_id");
+
+    if (result.error) throw result.error;
+
+    follows = result.data || [];
+}
+
+
+/* =========================================================
+   12 — LOAD EVERYTHING
+   ========================================================= */
+
+async function loadAllData() {
+    await Promise.all([
+        loadUsers(),
+        loadVideos(),
+        loadFollows(),
+        loadPosts()
+    ]);
+}
+
+
+/* =========================================================
+   13 — START GOCAT
    ========================================================= */
 
 async function startGoCat() {
@@ -504,13 +538,13 @@ async function startGoCat() {
         await ensureProfile();
         await loadAllData();
 
+        currentProfileUserId = currentUser.id;
+
         notifications = JSON.parse(
             localStorage.getItem(
                 "gocat_notifications_" + currentUser.id
             ) || "[]"
         );
-
-        openApp();
 
         $("welcomeName").textContent =
             currentProfile.username || "Creator";
@@ -518,26 +552,29 @@ async function startGoCat() {
         $("topProfileBtn").textContent =
             getInitial(currentProfile.username);
 
+        openApp();
+
         renderEverything();
+
         openPage("home");
 
     } catch (error) {
         console.error(error);
-        showToast("Could not load GoCat: " + error.message);
+        showToast("GoCat loading error: " + error.message);
     }
 }
 
 
 /* =========================================================
-   12. RENDER ALL PAGES
+   14 — RENDER EVERYTHING
    ========================================================= */
 
 function renderEverything() {
-    renderSuggestedCreators();
     renderHomeFeed();
     renderReels();
     renderExplore();
     renderFollowing();
+    renderSuggestedCreators();
     renderPosts();
     renderProfile();
     renderNotifications();
@@ -546,28 +583,24 @@ function renderEverything() {
 
 
 /* =========================================================
-   13. VIDEO CARD
+   15 — VIDEO CARD
    ========================================================= */
 
 function videoCard(video) {
-    const owner = getUser(video.owner_id);
+    const username = getUsername(video.owner_id);
+    const own = isOwnContent(video.owner_id);
 
-    const username = owner?.username || "GoCat creator";
+    const following = isFollowing(video.owner_id);
 
-    const isOwner =
-        String(video.owner_id) === String(currentUser.id);
-
-    const isFollowing = follows.some(item =>
-        String(item.follower_id) === String(currentUser.id) &&
-        String(item.following_id) === String(video.owner_id)
+    const liked = video.likes?.includes(
+        String(currentUser.id)
     );
-
-    const liked = video.likes?.includes(String(currentUser.id));
 
     return `
         <article class="video-card">
 
             <div class="video-player-wrap">
+
                 <video
                     class="video-player"
                     src="${escapeHTML(getVideoURL(video.storage_path))}"
@@ -576,6 +609,7 @@ function videoCard(video) {
                     preload="metadata"
                     data-play-video="${escapeHTML(video.id)}">
                 </video>
+
             </div>
 
             <div class="video-owner">
@@ -585,20 +619,22 @@ function videoCard(video) {
                 </div>
 
                 <div class="owner-name">
+
                     <button
                         class="profile-user-btn"
                         data-profile-user="${escapeHTML(video.owner_id)}">
                         ${escapeHTML(username)}
                     </button>
+
                 </div>
 
                 ${
-                    !isOwner
+                    !own
                     ? `
                         <button
                             class="follow-btn"
                             data-follow-user="${escapeHTML(video.owner_id)}">
-                            ${isFollowing ? "Following" : "＋ Follow"}
+                            ${following ? "Following" : "＋ Follow"}
                         </button>
                     `
                     : ""
@@ -607,6 +643,7 @@ function videoCard(video) {
             </div>
 
             <div class="video-info">
+
                 <h3>${escapeHTML(video.title)}</h3>
 
                 <p>${escapeHTML(video.description || "")}</p>
@@ -615,6 +652,7 @@ function videoCard(video) {
                     ${topicEmoji(video.topic)}
                     ${escapeHTML(video.topic || "Other")}
                 </span>
+
             </div>
 
             <div class="video-meta">
@@ -643,7 +681,7 @@ function videoCard(video) {
                 </button>
 
                 ${
-                    isOwner
+                    own
                     ? `
                         <button
                             class="action-btn delete-btn"
@@ -662,183 +700,617 @@ function videoCard(video) {
 
 
 /* =========================================================
-   14. FOR YOU RECOMMENDATIONS
+   16 — POST CARD
    ========================================================= */
 
-function scoreVideo(video) {
-    let score = 0;
+function postCard(post) {
+    const username = getUsername(post.user_id);
 
-    if (activeHomeTopic !== "All") {
-        if (video.topic !== activeHomeTopic) return -100;
-        score += 10;
-    }
+    const own = isOwnContent(post.user_id);
 
-    const isFollowing = follows.some(item =>
-        String(item.follower_id) === String(currentUser.id) &&
-        String(item.following_id) === String(video.owner_id)
+    const liked = post.likes?.includes(
+        String(currentUser.id)
     );
 
-    if (isFollowing) score += 5;
+    const imageURL = getPostImageURL(post.media_path);
 
-    const watched = JSON.parse(
-        localStorage.getItem(
-            "gocat_watched_" + currentUser.id
-        ) || "[]"
-    );
+    return `
+        <article class="post-card">
 
-    if (watched.includes(video.id)) score -= 2;
+            <div class="post-author">
 
-    const age =
-        Date.now() - new Date(video.created_at).getTime();
+                <div class="post-avatar">
+                    ${escapeHTML(getInitial(username))}
+                </div>
 
-    const hoursOld = age / 3600000;
+                <div>
+                    <strong>${escapeHTML(username)}</strong>
+                    <small>${formatDate(post.created_at)}</small>
+                </div>
 
-    score += Math.max(0, 5 - hoursOld / 24);
+                ${
+                    own
+                    ? `
+                        <button
+                            class="action-btn delete-btn"
+                            data-delete-post="${escapeHTML(post.id)}">
+                            Delete
+                        </button>
+                    `
+                    : ""
+                }
 
-    score += Math.min(
-        Number(video.views || 0) / 100,
-        3
-    );
+            </div>
 
-    return score;
-}
+            <p class="post-content">
+                ${escapeHTML(post.content || "")}
+            </p>
 
-function renderHomeFeed() {
-    let selected = videos
-        .filter(video => video.is_short !== true)
-        .slice()
-        .sort((a, b) => scoreVideo(b) - scoreVideo(a));
+            ${
+                imageURL
+                ? `
+                    <img
+                        class="post-image"
+                        src="${escapeHTML(imageURL)}"
+                        alt="Post picture"
+                        loading="lazy">
+                `
+                : ""
+            }
 
-    if (activeHomeTopic !== "All") {
-        selected = selected.filter(
-            video => video.topic === activeHomeTopic
-        );
-    }
+            <div class="post-actions">
 
-    const start = homeOffset;
-    const page = selected.slice(start, start + PAGE_SIZE);
+                <button
+                    class="post-like-btn ${liked ? "liked" : ""}"
+                    data-like-post="${escapeHTML(post.id)}">
+                    ${liked ? "♥" : "♡"}
+                    ${post.likes?.length || 0} Likes
+                </button>
 
-    const feed = $("homeFeed");
-    feed.innerHTML = page.map(videoCard).join("");
+            </div>
 
-    $("homeEmpty").classList.toggle(
-        "hidden",
-        selected.length !== 0
-    );
-
-    $("homeLoadMoreWrap").classList.toggle(
-        "hidden",
-        start + PAGE_SIZE >= selected.length
-    );
-
-    $("homeCount").textContent =
-        "Showing " + Math.min(start + PAGE_SIZE, selected.length) +
-        " of " + selected.length;
+        </article>
+    `;
 }
 
 
 /* =========================================================
-   15. LOAD MORE HOME
+   17 — REEL PREVIEW CARD
    ========================================================= */
 
+function reelFeedCard(video) {
+    const username = getUsername(video.owner_id);
+
+    return `
+        <article class="feed-post-card feed-reel-card">
+
+            <div class="feed-post-top">
+
+                <div class="feed-post-avatar">
+                    ${escapeHTML(getInitial(username))}
+                </div>
+
+                <div class="feed-post-user">
+                    <strong>${escapeHTML(username)}</strong>
+                    <small>GoCat Reel</small>
+                </div>
+
+            </div>
+
+            <div class="reel-thumb">
+
+                <video
+                    src="${escapeHTML(getVideoURL(video.storage_path))}"
+                    muted
+                    playsinline
+                    preload="metadata">
+                </video>
+
+                <span class="reel-thumb-label">
+                    ▶ REEL
+                </span>
+
+            </div>
+
+            <p class="feed-post-content">
+                ${escapeHTML(video.title)}
+            </p>
+
+            <button
+                class="feed-reel-open"
+                data-open-reel-id="${escapeHTML(video.id)}">
+                Watch Reel
+            </button>
+
+        </article>
+    `;
+}
+
+
+/* =========================================================
+   18 — PERSONALIZED HOME FEED
+   ========================================================= */
+
+function getHomeItems() {
+    const query = $("searchInput").value
+        .trim()
+        .toLowerCase();
+
+    let items = [];
+
+    videos.forEach(video => {
+        items.push({
+            type: video.is_short === true ? "reel" : "video",
+            data: video,
+            date: new Date(video.created_at).getTime()
+        });
+    });
+
+    posts.forEach(post => {
+        items.push({
+            type: "post",
+            data: post,
+            date: new Date(post.created_at).getTime()
+        });
+    });
+
+    items = items.filter(item => {
+        if (
+            activeHomeTopic !== "All" &&
+            item.type !== "post" &&
+            item.data.topic !== activeHomeTopic
+        ) {
+            return false;
+        }
+
+        if (
+            activeHomeTopic !== "All" &&
+            item.type === "post"
+        ) {
+            return false;
+        }
+
+        if (!query) return true;
+
+        const content = [
+            item.data.title,
+            item.data.description,
+            item.data.content,
+            getUsername(
+                item.type === "post"
+                    ? item.data.user_id
+                    : item.data.owner_id
+            )
+        ].join(" ").toLowerCase();
+
+        return content.includes(query);
+    });
+
+    return items.sort((a, b) => {
+        const score = item => {
+            let points = 0;
+
+            const ownerId =
+                item.type === "post"
+                    ? item.data.user_id
+                    : item.data.owner_id;
+
+            if (isFollowing(ownerId)) {
+                points += 4;
+            }
+
+            if (
+                item.type !== "post" &&
+                activeHomeTopic !== "All" &&
+                item.data.topic === activeHomeTopic
+            ) {
+                points += 5;
+            }
+
+            const ageHours =
+                (Date.now() - item.date) / 3600000;
+
+            points += Math.max(0, 3 - ageHours / 24);
+
+            if (item.type !== "post") {
+                points += Math.min(
+                    Number(item.data.views || 0) / 100,
+                    2
+                );
+
+                points += Math.min(
+                    (item.data.likes?.length || 0) / 5,
+                    2
+                );
+            }
+
+            return points;
+        };
+
+        return score(b) - score(a);
+    });
+}
+
+function renderHomeFeed() {
+    const allItems = getHomeItems();
+
+    const page = allItems.slice(0, homeVisible);
+
+    $("homeFeed").innerHTML = page.map(item => {
+        if (item.type === "video") {
+            return videoCard(item.data);
+        }
+
+        if (item.type === "reel") {
+            return reelFeedCard(item.data);
+        }
+
+        return postCard(item.data);
+    }).join("");
+
+    $("homeEmpty").classList.toggle(
+        "hidden",
+        allItems.length > 0
+    );
+
+    $("homeLoadMoreWrap").classList.toggle(
+        "hidden",
+        homeVisible >= allItems.length
+    );
+
+    $("homeCount").textContent =
+        "Showing " + page.length + " of " + allItems.length;
+}
+
 $("homeLoadMore").addEventListener("click", function() {
-    homeOffset += PAGE_SIZE;
+    homeVisible += PAGE_SIZE;
     renderHomeFeed();
 });
 
 
 /* =========================================================
-   16. SUGGESTED CREATORS
+   19 — HOME TOPIC BUTTONS
+   ========================================================= */
+
+document.querySelectorAll("[data-topic]").forEach(button => {
+    button.addEventListener("click", function() {
+        activeHomeTopic = this.dataset.topic;
+
+        homeVisible = PAGE_SIZE;
+
+        document.querySelectorAll("[data-topic]")
+            .forEach(item => item.classList.remove("active"));
+
+        this.classList.add("active");
+
+        renderHomeFeed();
+    });
+});
+
+
+/* =========================================================
+   20 — SUGGESTED CREATORS
    ========================================================= */
 
 function renderSuggestedCreators() {
-    const container = $("suggestedCreators");
-
     const suggestions = users
-        .filter(user =>
-            String(user.id) !== String(currentUser.id)
-        )
-        .filter(user =>
-            !follows.some(item =>
-                String(item.follower_id) === String(currentUser.id) &&
-                String(item.following_id) === String(user.id)
-            )
-        )
+        .filter(user => !isOwnContent(user.id))
+        .filter(user => !isFollowing(user.id))
         .slice(0, 12);
 
-    container.innerHTML = suggestions.map(user => `
-        <div class="creator-card">
+    $("suggestedCreators").innerHTML =
+        suggestions.map(user => `
+            <div class="creator-card">
 
-            <div class="creator-avatar">
-                ${escapeHTML(getInitial(user.username))}
+                <div class="creator-avatar">
+                    ${escapeHTML(getInitial(user.username))}
+                </div>
+
+                <div class="creator-info">
+                    <strong>${escapeHTML(user.username)}</strong>
+                    <small>GoCat creator</small>
+                </div>
+
+                <button
+                    class="mini-follow"
+                    data-follow-user="${escapeHTML(user.id)}">
+                    Follow
+                </button>
+
             </div>
-
-            <div class="creator-info">
-                <strong>${escapeHTML(user.username)}</strong>
-                <small>GoCat creator</small>
-            </div>
-
-            <button
-                class="mini-follow"
-                data-follow-user="${escapeHTML(user.id)}">
-                Follow
-            </button>
-
-        </div>
-    `).join("");
+        `).join("");
 }
 
 
 /* =========================================================
-   17. REELS
+   21 — FOLLOW / UNFOLLOW
+   ========================================================= */
+
+async function toggleFollow(userId) {
+    if (isOwnContent(userId)) return;
+
+    const existing = follows.find(item =>
+        String(item.follower_id) === String(currentUser.id) &&
+        String(item.following_id) === String(userId)
+    );
+
+    try {
+        if (existing) {
+            const result = await db
+                .from("follows")
+                .delete()
+                .eq("follower_id", currentUser.id)
+                .eq("following_id", userId);
+
+            if (result.error) throw result.error;
+
+            follows = follows.filter(item => item !== existing);
+
+            showToast("Unfollowed " + getUsername(userId));
+
+        } else {
+            const result = await db
+                .from("follows")
+                .insert({
+                    follower_id: currentUser.id,
+                    following_id: userId
+                });
+
+            if (result.error) throw result.error;
+
+            follows.push({
+                follower_id: currentUser.id,
+                following_id: userId
+            });
+
+            addLocalNotification(
+                "👥",
+                "You followed " + getUsername(userId)
+            );
+
+            showToast("Following " + getUsername(userId));
+        }
+
+        renderEverything();
+
+    } catch (error) {
+        console.error(error);
+        showToast("Follow error: " + error.message);
+    }
+}
+
+
+/* =========================================================
+   22 — VIDEO LIKES
+   ========================================================= */
+
+async function toggleVideoLike(videoId) {
+    const video = videos.find(item =>
+        String(item.id) === String(videoId)
+    );
+
+    if (!video) return;
+
+    const liked = video.likes.includes(
+        String(currentUser.id)
+    );
+
+    try {
+        if (liked) {
+            const result = await db
+                .from("likes")
+                .delete()
+                .eq("video_id", videoId)
+                .eq("user_id", currentUser.id);
+
+            if (result.error) throw result.error;
+
+            video.likes = video.likes.filter(
+                id => id !== String(currentUser.id)
+            );
+
+        } else {
+            const result = await db
+                .from("likes")
+                .insert({
+                    video_id: videoId,
+                    user_id: currentUser.id
+                });
+
+            if (result.error) throw result.error;
+
+            video.likes.push(String(currentUser.id));
+
+            addLocalNotification("❤️", "You liked a video.");
+        }
+
+        renderCurrentPage();
+
+    } catch (error) {
+        console.error(error);
+        showToast("Like error: " + error.message);
+    }
+}
+
+
+/* =========================================================
+   23 — VIDEO COMMENTS
+   ========================================================= */
+
+async function openComments(videoId) {
+    currentCommentVideoId = videoId;
+
+    $("commentsList").innerHTML =
+        "<p class='muted-text'>Loading comments...</p>";
+
+    showModal("commentsModal");
+
+    await renderComments();
+}
+
+async function renderComments() {
+    const result = await db
+        .from("comments")
+        .select("*")
+        .eq("video_id", currentCommentVideoId)
+        .order("created_at", { ascending: true });
+
+    if (result.error) {
+        $("commentsList").textContent = result.error.message;
+        return;
+    }
+
+    const comments = result.data || [];
+
+    $("commentsList").innerHTML = comments.length
+        ? comments.map(comment => `
+            <div class="comment-item">
+                <strong>${escapeHTML(getUsername(comment.user_id))}</strong>
+                <p>${escapeHTML(comment.text)}</p>
+                <small>${formatDate(comment.created_at)}</small>
+            </div>
+        `).join("")
+        : "<p class='muted-text'>No comments yet. Start the conversation!</p>";
+}
+
+$("commentForm").addEventListener("submit", async function(event) {
+    event.preventDefault();
+
+    const text = $("commentInput").value.trim();
+
+    if (!text || !currentCommentVideoId) return;
+
+    const result = await db
+        .from("comments")
+        .insert({
+            video_id: currentCommentVideoId,
+            user_id: currentUser.id,
+            text
+        });
+
+    if (result.error) {
+        showToast("Comment error: " + result.error.message);
+        return;
+    }
+
+    $("commentInput").value = "";
+
+    await loadVideos();
+    await renderComments();
+
+    renderCurrentPage();
+
+    showToast("Comment posted!");
+});
+
+
+/* =========================================================
+   24 — SHARE VIDEO
+   ========================================================= */
+
+async function shareVideo(videoId) {
+    const url =
+        location.href.split("?")[0] +
+        "?video=" + encodeURIComponent(videoId);
+
+    try {
+        if (navigator.share) {
+            await navigator.share({
+                title: "GoCat video",
+                text: "Check out this video on GoCat!",
+                url
+            });
+        } else {
+            await navigator.clipboard.writeText(url);
+            showToast("Video link copied!");
+        }
+    } catch (error) {
+        if (error.name !== "AbortError") {
+            showToast("Sharing is unavailable.");
+        }
+    }
+}
+
+
+/* =========================================================
+   25 — DELETE VIDEO
+   ========================================================= */
+
+async function deleteVideo(videoId) {
+    const video = videos.find(item =>
+        String(item.id) === String(videoId)
+    );
+
+    if (!video || !isOwnContent(video.owner_id)) return;
+
+    if (!confirm("Delete this video permanently?")) return;
+
+    const result = await db
+        .from("videos")
+        .delete()
+        .eq("id", videoId)
+        .eq("owner_id", currentUser.id);
+
+    if (result.error) {
+        showToast("Delete error: " + result.error.message);
+        return;
+    }
+
+    if (video.storage_path) {
+        await db.storage
+            .from(VIDEO_BUCKET)
+            .remove([video.storage_path]);
+    }
+
+    await loadVideos();
+
+    renderEverything();
+
+    showToast("Video deleted.");
+}
+
+
+/* =========================================================
+   26 — REELS PAGE
    ========================================================= */
 
 function renderReels() {
     const container = $("reelsFeed");
 
-    const reelVideos = videos.filter(
+    const allReels = videos.filter(
         video => video.is_short === true
     );
 
-    if (!reelVideos.length) {
+    const page = allReels.slice(0, reelsVisible);
+
+    if (!allReels.length) {
         container.innerHTML = `
             <div class="reel-empty">
                 <div>
                     <h2>No Reels yet 🐱</h2>
-                    <p>Upload the first GoCat Reel.</p>
+                    <p>Be the first to create a GoCat Reel.</p>
                     <button
                         class="primary-btn"
-                        id="emptyCreateReel">
+                        data-create-reel>
                         Create Reel
                     </button>
                 </div>
             </div>
         `;
+
+        $("reelsLoadMoreWrap").classList.add("hidden");
         return;
     }
 
-    const page = reelVideos.slice(
-        0,
-        reelsOffset + PAGE_SIZE
-    );
-
     container.innerHTML = page.map(video => {
-        const owner = getUser(video.owner_id);
-        const username = owner?.username || "Creator";
-
-        const liked =
-            video.likes?.includes(String(currentUser.id));
-
-        const following = follows.some(item =>
-            String(item.follower_id) === String(currentUser.id) &&
-            String(item.following_id) === String(video.owner_id)
-        );
-
-        const isOwner =
-            String(video.owner_id) === String(currentUser.id);
+        const username = getUsername(video.owner_id);
+        const liked = video.likes.includes(String(currentUser.id));
+        const following = isFollowing(video.owner_id);
 
         return `
-            <article class="reel-item">
+            <article
+                class="reel-item"
+                data-reel-item="${escapeHTML(video.id)}">
 
                 <video
                     class="reel-video"
@@ -846,10 +1318,13 @@ function renderReels() {
                     playsinline
                     loop
                     muted
-                    preload="metadata">
+                    preload="metadata"
+                    data-play-video="${escapeHTML(video.id)}">
                 </video>
 
-                <button class="reel-sound-btn" data-reel-sound>
+                <button
+                    class="reel-sound-btn"
+                    data-reel-sound>
                     🔇
                 </button>
 
@@ -870,7 +1345,7 @@ function renderReels() {
                         </button>
 
                         ${
-                            !isOwner
+                            !isOwnContent(video.owner_id)
                             ? `
                                 <button
                                     class="reel-follow"
@@ -902,7 +1377,7 @@ function renderReels() {
                     </button>
 
                     <small style="color:white;text-align:center">
-                        ${video.likes?.length || 0}
+                        ${video.likes.length || 0}
                     </small>
 
                     <button
@@ -923,13 +1398,22 @@ function renderReels() {
         `;
     }).join("");
 
-    activateReelObserver();
+    $("reelsLoadMoreWrap").classList.toggle(
+        "hidden",
+        reelsVisible >= allReels.length
+    );
+
+    observeReels();
 }
 
-function activateReelObserver() {
+function observeReels() {
+    if (reelObserver) {
+        reelObserver.disconnect();
+    }
+
     const feed = $("reelsFeed");
 
-    const reelObserver = new IntersectionObserver(entries => {
+    reelObserver = new IntersectionObserver(entries => {
         entries.forEach(entry => {
             const video = entry.target;
 
@@ -950,157 +1434,246 @@ function activateReelObserver() {
 }
 
 $("reelsLoadMore").addEventListener("click", function() {
-    reelsOffset += PAGE_SIZE;
+    reelsVisible += PAGE_SIZE;
     renderReels();
 });
 
 
 /* =========================================================
-   18. EXPLORE
+   27 — OPEN A SPECIFIC REEL
    ========================================================= */
 
-function renderExplore() {
-    renderExploreVideos();
-    renderExplorePeople();
-    renderExplorePosts();
-}
+function openSpecificReel(videoId) {
+    openPage("reels");
 
-function renderExploreVideos() {
-    const query = $("searchInput").value
-        .trim()
-        .toLowerCase();
+    setTimeout(() => {
+        const item = document.querySelector(
+            `[data-reel-item="${CSS.escape(String(videoId))}"]`
+        );
 
-    const filtered = videos.filter(video => {
-        const matchesSearch =
-            !query ||
-            String(video.title || "").toLowerCase().includes(query) ||
-            String(video.description || "").toLowerCase().includes(query) ||
-            getUsername(video.owner_id).toLowerCase().includes(query);
-
-        return matchesSearch;
-    });
-
-    const page = filtered.slice(
-        exploreOffset,
-        exploreOffset + PAGE_SIZE
-    );
-
-    $("exploreVideos").innerHTML =
-        page.filter(video => video.is_short !== true)
-            .map(videoCard)
-            .join("");
-
-    $("exploreLoadMoreWrap").classList.toggle(
-        "hidden",
-        exploreOffset + PAGE_SIZE >= filtered.length
-    );
-
-    $("exploreCount").textContent =
-        "Showing " + Math.min(exploreOffset + PAGE_SIZE, filtered.length) +
-        " of " + filtered.length;
-}
-
-function renderExplorePeople() {
-    const query = $("searchInput").value
-        .trim()
-        .toLowerCase();
-
-    const people = users.filter(user => {
-        if (String(user.id) === String(currentUser.id)) {
-            return false;
+        if (item) {
+            item.scrollIntoView({
+                behavior: "smooth",
+                block: "start"
+            });
         }
-
-        return (
-            !query ||
-            String(user.username || "").toLowerCase().includes(query)
-        );
-    });
-
-    $("explorePeople").innerHTML = people.map(user => {
-        const following = follows.some(item =>
-            String(item.follower_id) === String(currentUser.id) &&
-            String(item.following_id) === String(user.id)
-        );
-
-        return `
-            <div class="person-card">
-
-                <div class="person-avatar">
-                    ${escapeHTML(getInitial(user.username))}
-                </div>
-
-                <h3>${escapeHTML(user.username)}</h3>
-
-                <p>${escapeHTML(user.bio || "GoCat creator")}</p>
-
-                <button
-                    class="primary-btn"
-                    data-profile-user="${escapeHTML(user.id)}">
-                    View profile
-                </button>
-
-                <button
-                    class="soft-btn"
-                    data-follow-user="${escapeHTML(user.id)}">
-                    ${following ? "Following" : "＋ Follow"}
-                </button>
-
-            </div>
-        `;
-    }).join("");
-}
-
-function renderExplorePosts() {
-    const query = $("searchInput").value
-        .trim()
-        .toLowerCase();
-
-    const found = posts.filter(post =>
-        !query ||
-        String(post.content || "").toLowerCase().includes(query) ||
-        getUsername(post.user_id).toLowerCase().includes(query)
-    );
-
-    $("explorePosts").innerHTML =
-        found.slice(0, PAGE_SIZE).map(postCard).join("");
+    }, 150);
 }
 
 
 /* =========================================================
-   19. EXPLORE TABS
+   28 — EXPLORE: ALL FOUR TABS
    ========================================================= */
+
+function setExploreTab(mode) {
+    exploreMode = mode;
+
+    document.querySelectorAll("[data-explore-tab]")
+        .forEach(button => {
+            button.classList.toggle(
+                "active",
+                button.dataset.exploreTab === mode
+            );
+        });
+
+    $("exploreVideos").classList.toggle(
+        "hidden",
+        mode !== "videos" && mode !== "reels"
+    );
+
+    $("explorePeople").classList.toggle(
+        "hidden",
+        mode !== "people"
+    );
+
+    $("explorePosts").classList.toggle(
+        "hidden",
+        mode !== "posts"
+    );
+
+    exploreVisible = 6;
+
+    renderExplore();
+}
 
 document.querySelectorAll("[data-explore-tab]").forEach(button => {
     button.addEventListener("click", function() {
-        exploreMode = this.dataset.exploreTab;
-
-        document.querySelectorAll("[data-explore-tab]")
-            .forEach(item => item.classList.remove("active"));
-
-        this.classList.add("active");
-
-        $("exploreVideos").classList.toggle(
-            "hidden",
-            exploreMode !== "videos"
-        );
-
-        $("explorePeople").classList.toggle(
-            "hidden",
-            exploreMode !== "people"
-        );
-
-        $("explorePosts").classList.toggle(
-            "hidden",
-            exploreMode !== "posts"
-        );
-
-        renderExplore();
+        setExploreTab(this.dataset.exploreTab);
     });
 });
 
 
 /* =========================================================
-   20. FOLLOWING PAGE
+   29 — EXPLORE REELS CARDS
+   ========================================================= */
+
+function exploreReelCard(video) {
+    const username = getUsername(video.owner_id);
+
+    return `
+        <article class="feed-post-card feed-reel-card">
+
+            <div class="feed-post-top">
+                <div class="feed-post-avatar">
+                    ${escapeHTML(getInitial(username))}
+                </div>
+
+                <div class="feed-post-user">
+                    <strong>${escapeHTML(username)}</strong>
+                    <small>GoCat Reel</small>
+                </div>
+            </div>
+
+            <div class="reel-thumb">
+                <video
+                    src="${escapeHTML(getVideoURL(video.storage_path))}"
+                    muted
+                    playsinline
+                    preload="metadata">
+                </video>
+
+                <span class="reel-thumb-label">▶ REEL</span>
+            </div>
+
+            <p class="feed-post-content">
+                ${escapeHTML(video.title)}
+            </p>
+
+            <button
+                class="feed-reel-open"
+                data-open-reel-id="${escapeHTML(video.id)}">
+                Watch this Reel
+            </button>
+
+        </article>
+    `;
+}
+
+
+/* =========================================================
+   30 — EXPLORE RENDERER
+   ========================================================= */
+
+function renderExplore() {
+    const query = $("searchInput").value
+        .trim()
+        .toLowerCase();
+
+    if (exploreMode === "videos") {
+        const found = videos.filter(video =>
+            video.is_short !== true &&
+            (
+                !query ||
+                String(video.title || "").toLowerCase().includes(query) ||
+                String(video.description || "").toLowerCase().includes(query) ||
+                getUsername(video.owner_id).toLowerCase().includes(query)
+            )
+        );
+
+        const page = found.slice(0, exploreVisible);
+
+        $("exploreVideos").innerHTML =
+            page.map(videoCard).join("");
+
+        updateExploreMore(found.length);
+    }
+
+    else if (exploreMode === "reels") {
+        const found = videos.filter(video =>
+            video.is_short === true &&
+            (
+                !query ||
+                String(video.title || "").toLowerCase().includes(query) ||
+                String(video.description || "").toLowerCase().includes(query) ||
+                getUsername(video.owner_id).toLowerCase().includes(query)
+            )
+        );
+
+        const page = found.slice(0, exploreVisible);
+
+        $("exploreVideos").innerHTML =
+            page.map(exploreReelCard).join("");
+
+        updateExploreMore(found.length);
+    }
+
+    else if (exploreMode === "people") {
+        const found = users.filter(user =>
+            !isOwnContent(user.id) &&
+            (
+                !query ||
+                String(user.username || "").toLowerCase().includes(query) ||
+                String(user.bio || "").toLowerCase().includes(query)
+            )
+        );
+
+        const page = found.slice(0, exploreVisible);
+
+        $("explorePeople").innerHTML =
+            page.map(user => `
+                <div class="person-card">
+
+                    <div class="person-avatar">
+                        ${escapeHTML(getInitial(user.username))}
+                    </div>
+
+                    <h3>${escapeHTML(user.username)}</h3>
+
+                    <p>${escapeHTML(user.bio || "GoCat creator")}</p>
+
+                    <button
+                        class="primary-btn"
+                        data-profile-user="${escapeHTML(user.id)}">
+                        View profile
+                    </button>
+
+                    <button
+                        class="soft-btn"
+                        data-follow-user="${escapeHTML(user.id)}">
+                        ${isFollowing(user.id) ? "Following" : "＋ Follow"}
+                    </button>
+
+                </div>
+            `).join("");
+
+        updateExploreMore(found.length);
+    }
+
+    else if (exploreMode === "posts") {
+        const found = posts.filter(post =>
+            !query ||
+            String(post.content || "").toLowerCase().includes(query) ||
+            getUsername(post.user_id).toLowerCase().includes(query)
+        );
+
+        const page = found.slice(0, exploreVisible);
+
+        $("explorePosts").innerHTML =
+            page.map(postCard).join("");
+
+        updateExploreMore(found.length);
+    }
+}
+
+function updateExploreMore(total) {
+    $("exploreLoadMoreWrap").classList.toggle(
+        "hidden",
+        exploreVisible >= total
+    );
+
+    $("exploreCount").textContent =
+        "Showing " + Math.min(exploreVisible, total) +
+        " of " + total;
+}
+
+$("exploreLoadMore").addEventListener("click", function() {
+    exploreVisible += 6;
+    renderExplore();
+});
+
+
+/* =========================================================
+   31 — FOLLOWING
    ========================================================= */
 
 function renderFollowing() {
@@ -1126,322 +1699,12 @@ function renderFollowing() {
 
 
 /* =========================================================
-   21. FOLLOW / UNFOLLOW
-   ========================================================= */
-
-async function toggleFollow(userId) {
-    if (String(userId) === String(currentUser.id)) {
-        return;
-    }
-
-    const existing = follows.find(item =>
-        String(item.follower_id) === String(currentUser.id) &&
-        String(item.following_id) === String(userId)
-    );
-
-    try {
-        if (existing) {
-            const result = await db
-                .from("follows")
-                .delete()
-                .eq("follower_id", currentUser.id)
-                .eq("following_id", userId);
-
-            if (result.error) throw result.error;
-
-            follows = follows.filter(item => item !== existing);
-
-            showToast("Unfollowed creator.");
-
-        } else {
-            const result = await db
-                .from("follows")
-                .insert({
-                    follower_id: currentUser.id,
-                    following_id: userId
-                });
-
-            if (result.error) throw result.error;
-
-            follows.push({
-                follower_id: currentUser.id,
-                following_id: userId
-            });
-
-            addLocalNotification(
-                "👥",
-                "You followed " + getUsername(userId)
-            );
-
-            showToast("You are now following " + getUsername(userId));
-        }
-
-        renderEverything();
-
-    } catch (error) {
-        showToast("Follow error: " + error.message);
-        console.error(error);
-    }
-}
-
-
-/* =========================================================
-   22. LIKE / UNLIKE VIDEO
-   ========================================================= */
-
-async function toggleVideoLike(videoId) {
-    const video = videos.find(item =>
-        String(item.id) === String(videoId)
-    );
-
-    if (!video) return;
-
-    const alreadyLiked =
-        video.likes.includes(String(currentUser.id));
-
-    try {
-        if (alreadyLiked) {
-            const result = await db
-                .from("likes")
-                .delete()
-                .eq("video_id", videoId)
-                .eq("user_id", currentUser.id);
-
-            if (result.error) throw result.error;
-
-            video.likes = video.likes.filter(
-                id => id !== String(currentUser.id)
-            );
-
-        } else {
-            const result = await db
-                .from("likes")
-                .insert({
-                    video_id: videoId,
-                    user_id: currentUser.id
-                });
-
-            if (result.error) throw result.error;
-
-            video.likes.push(String(currentUser.id));
-
-            addLocalNotification(
-                "❤️",
-                "You liked a video."
-            );
-        }
-
-        renderEverything();
-
-    } catch (error) {
-        showToast("Like error: " + error.message);
-        console.error(error);
-    }
-}
-
-
-/* =========================================================
-   23. VIDEO VIEWS
-   ========================================================= */
-
-document.addEventListener("play", async function(event) {
-    const videoElement = event.target;
-
-    if (!videoElement.dataset.playVideo) return;
-
-    const videoId = videoElement.dataset.playVideo;
-
-    const video = videos.find(item =>
-        String(item.id) === String(videoId)
-    );
-
-    if (!video) return;
-
-    const watchedKey = "gocat_watched_" + currentUser.id;
-
-    let watched = JSON.parse(
-        localStorage.getItem(watchedKey) || "[]"
-    );
-
-    if (watched.includes(videoId)) return;
-
-    watched.push(videoId);
-
-    localStorage.setItem(
-        watchedKey,
-        JSON.stringify(watched.slice(-200))
-    );
-
-    video.views = Number(video.views || 0) + 1;
-
-    await db
-        .from("videos")
-        .update({ views: video.views })
-        .eq("id", videoId);
-
-}, true);
-
-
-/* =========================================================
-   24. COMMENTS
-   ========================================================= */
-
-async function openComments(videoId) {
-    currentCommentVideoId = videoId;
-
-    const video = videos.find(item =>
-        String(item.id) === String(videoId)
-    );
-
-    if (!video) return;
-
-    $("commentsList").innerHTML =
-        "<p class='muted-text'>Loading comments...</p>";
-
-    showModal("commentsModal");
-
-    await renderComments();
-}
-
-async function renderComments() {
-    const result = await db
-        .from("comments")
-        .select("*")
-        .eq("video_id", currentCommentVideoId)
-        .order("created_at", { ascending: true });
-
-    if (result.error) {
-        $("commentsList").textContent = result.error.message;
-        return;
-    }
-
-    const comments = result.data || [];
-
-    $("commentsList").innerHTML = comments.map(comment => `
-        <div class="comment-item">
-            <strong>${escapeHTML(getUsername(comment.user_id))}</strong>
-            <p>${escapeHTML(comment.text)}</p>
-            <small>${formatDate(comment.created_at)}</small>
-        </div>
-    `).join("");
-
-    if (!comments.length) {
-        $("commentsList").innerHTML =
-            "<p class='muted-text'>No comments yet. Start the conversation!</p>";
-    }
-}
-
-$("commentForm").addEventListener("submit", async function(event) {
-    event.preventDefault();
-
-    const text = $("commentInput").value.trim();
-
-    if (!text || !currentCommentVideoId) return;
-
-    const result = await db
-        .from("comments")
-        .insert({
-            video_id: currentCommentVideoId,
-            user_id: currentUser.id,
-            text: text
-        });
-
-    if (result.error) {
-        showToast("Could not post comment: " + result.error.message);
-        return;
-    }
-
-    $("commentInput").value = "";
-
-    await renderComments();
-    await loadAllData();
-
-    renderHomeFeed();
-    renderReels();
-
-    showToast("Comment posted!");
-});
-
-
-/* =========================================================
-   25. SHARE VIDEO
-   ========================================================= */
-
-async function shareVideo(videoId) {
-    const url = location.href.split("?")[0] +
-        "?video=" + encodeURIComponent(videoId);
-
-    try {
-        if (navigator.share) {
-            await navigator.share({
-                title: "GoCat video",
-                text: "Check out this video on GoCat!",
-                url: url
-            });
-        } else {
-            await navigator.clipboard.writeText(url);
-            showToast("Video link copied!");
-        }
-    } catch (error) {
-        if (error.name !== "AbortError") {
-            showToast("Sharing was not available.");
-        }
-    }
-}
-
-
-/* =========================================================
-   26. DELETE VIDEO
-   ========================================================= */
-
-async function deleteVideo(videoId) {
-    const video = videos.find(item =>
-        String(item.id) === String(videoId)
-    );
-
-    if (!video) return;
-
-    if (!confirm("Delete this video permanently?")) {
-        return;
-    }
-
-    if (String(video.owner_id) !== String(currentUser.id)) {
-        showToast("You can only delete your own videos.");
-        return;
-    }
-
-    try {
-        const result = await db
-            .from("videos")
-            .delete()
-            .eq("id", videoId)
-            .eq("owner_id", currentUser.id);
-
-        if (result.error) throw result.error;
-
-        if (video.storage_path) {
-            await db.storage
-                .from(VIDEO_BUCKET)
-                .remove([video.storage_path]);
-        }
-
-        await loadAllData();
-        renderEverything();
-
-        showToast("Video deleted.");
-
-    } catch (error) {
-        showToast("Delete error: " + error.message);
-    }
-}
-
-
-/* =========================================================
-   27. CREATE VIDEO / REEL UPLOAD
+   32 — VIDEO UPLOAD MODAL
    ========================================================= */
 
 function openUpload(mode = "video") {
     uploadMode = mode;
+
     selectedVideoFile = null;
     exportedReelFile = null;
 
@@ -1458,8 +1721,8 @@ function openUpload(mode = "video") {
 
     $("uploadDescription").textContent =
         mode === "reel"
-            ? "Create a vertical video for your followers."
-            : "Share a video with the GoCat community.";
+            ? "Create a vertical video for GoCat."
+            : "Share a video with the community.";
 
     $("publishVideoBtn").textContent =
         mode === "reel" ? "Publish Reel" : "Publish video";
@@ -1475,13 +1738,18 @@ $("createReelBtn").addEventListener("click", () => {
     openUpload("reel");
 });
 
+
+/* =========================================================
+   33 — SELECT VIDEO FILE
+   ========================================================= */
+
 $("videoFile").addEventListener("change", function() {
     const file = this.files[0];
 
     if (!file) return;
 
     if (!file.type.startsWith("video/")) {
-        showToast("Please select a video file.");
+        showToast("Please select a video.");
         return;
     }
 
@@ -1497,11 +1765,11 @@ $("videoFile").addEventListener("change", function() {
 
 
 /* =========================================================
-   28. REEL PREVIEW
+   34 — REEL PREVIEW AND EDITOR
    ========================================================= */
 
 function prepareReelPreview(file) {
-    const video = $("reelPreview");
+    const preview = $("reelPreview");
 
     if (currentObjectURL) {
         URL.revokeObjectURL(currentObjectURL);
@@ -1509,16 +1777,16 @@ function prepareReelPreview(file) {
 
     currentObjectURL = URL.createObjectURL(file);
 
-    video.src = currentObjectURL;
+    preview.src = currentObjectURL;
 
     $("reelEditor").classList.remove("hidden");
 
     $("editorStatus").textContent =
-        "Choose your trim, filter, framing and overlay text.";
+        "Adjust your video, then apply the edits.";
 
-    video.onloadedmetadata = function() {
-        $("trimEnd").value =
-            video.duration.toFixed(1);
+    preview.onloadedmetadata = () => {
+        $("trimStart").value = 0;
+        $("trimEnd").value = preview.duration.toFixed(1);
     };
 }
 
@@ -1527,8 +1795,6 @@ $("reelOverlayText").addEventListener("input", function() {
 });
 
 $("reelFilter").addEventListener("change", function() {
-    const video = $("reelPreview");
-
     const filters = {
         none: "none",
         warm: "sepia(.4) saturate(1.3)",
@@ -1537,7 +1803,8 @@ $("reelFilter").addEventListener("change", function() {
         vivid: "saturate(1.8) contrast(1.1)"
     };
 
-    video.style.filter = filters[this.value] || "none";
+    $("reelPreview").style.filter =
+        filters[this.value] || "none";
 });
 
 $("reelFraming").addEventListener("change", function() {
@@ -1547,29 +1814,27 @@ $("reelFraming").addEventListener("change", function() {
 
 
 /* =========================================================
-   29. EXPORT EDITED REEL
+   35 — APPLY REEL EDITS
    ========================================================= */
 
 $("exportReelBtn").addEventListener("click", async function() {
+    const preview = $("reelPreview");
+
     if (!selectedVideoFile) {
         showToast("Choose a video first.");
         return;
     }
 
-    if (!window.MediaRecorder) {
-        showToast("Video export is not supported by this browser.");
+    if (
+        !window.MediaRecorder ||
+        !preview.captureStream
+    ) {
         $("editorStatus").textContent =
-            "Your browser cannot export the edits. The original video will be used.";
+            "This browser cannot export edits. The original video can still be uploaded.";
+
+        showToast("Video editing export is unsupported here.");
         return;
     }
-
-    const preview = $("reelPreview");
-    const canvas = document.createElement("canvas");
-
-    canvas.width = 720;
-    canvas.height = 1280;
-
-    const context = canvas.getContext("2d");
 
     const start = Math.max(
         0,
@@ -1586,7 +1851,14 @@ $("exportReelBtn").addEventListener("click", async function() {
         return;
     }
 
-    const filterMap = {
+    const canvas = document.createElement("canvas");
+
+    canvas.width = 720;
+    canvas.height = 1280;
+
+    const ctx = canvas.getContext("2d");
+
+    const filters = {
         none: "none",
         warm: "sepia(.4) saturate(1.3)",
         cool: "hue-rotate(15deg) saturate(.9)",
@@ -1594,37 +1866,39 @@ $("exportReelBtn").addEventListener("click", async function() {
         vivid: "saturate(1.8) contrast(1.1)"
     };
 
-    const recorderSupported =
+    const framing = $("reelFraming").value;
+    const filter = filters[$("reelFilter").value] || "none";
+    const overlay = $("reelOverlayText").value.trim();
+
+    const canvasStream = canvas.captureStream(30);
+
+    let sourceStream = null;
+
+    let recorder;
+    let chunks = [];
+
+    let rafId = null;
+
+    const mimeType =
         MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
             ? "video/webm;codecs=vp9"
             : "video/webm";
-
-    let stream = null;
-    let audioStream = null;
-    let recorder = null;
-    let chunks = [];
 
     this.disabled = true;
     this.textContent = "Rendering...";
 
     $("editorStatus").textContent =
-        "Rendering your edited video. Keep this window open.";
+        "Rendering your edits. Keep this window open.";
 
     try {
-        const canvasStream = canvas.captureStream(30);
+        sourceStream = preview.captureStream();
 
-        if (preview.captureStream) {
-            audioStream = preview.captureStream();
+        sourceStream.getAudioTracks().forEach(track => {
+            canvasStream.addTrack(track);
+        });
 
-            audioStream.getAudioTracks().forEach(track => {
-                canvasStream.addTrack(track);
-            });
-        }
-
-        stream = canvasStream;
-
-        recorder = new MediaRecorder(stream, {
-            mimeType: recorderSupported
+        recorder = new MediaRecorder(canvasStream, {
+            mimeType
         });
 
         recorder.ondataavailable = event => {
@@ -1633,23 +1907,26 @@ $("exportReelBtn").addEventListener("click", async function() {
             }
         };
 
-        const finished = new Promise((resolve, reject) => {
+        const completed = new Promise((resolve, reject) => {
             recorder.onstop = resolve;
             recorder.onerror = reject;
         });
 
         function drawFrame() {
-            if (preview.paused || preview.ended) return;
+            if (preview.readyState < 2) {
+                rafId = requestAnimationFrame(drawFrame);
+                return;
+            }
 
             const width = preview.videoWidth;
             const height = preview.videoHeight;
 
-            if (!width || !height) return;
+            if (!width || !height) {
+                rafId = requestAnimationFrame(drawFrame);
+                return;
+            }
 
-            const cover =
-                $("reelFraming").value === "cover";
-
-            const scale = cover
+            const scale = framing === "cover"
                 ? Math.max(720 / width, 1280 / height)
                 : Math.min(720 / width, 1280 / height);
 
@@ -1659,13 +1936,12 @@ $("exportReelBtn").addEventListener("click", async function() {
             const x = (720 - drawWidth) / 2;
             const y = (1280 - drawHeight) / 2;
 
-            context.fillStyle = "#000";
-            context.fillRect(0, 0, 720, 1280);
+            ctx.fillStyle = "#000";
+            ctx.fillRect(0, 0, 720, 1280);
 
-            context.filter =
-                filterMap[$("reelFilter").value] || "none";
+            ctx.filter = filter;
 
-            context.drawImage(
+            ctx.drawImage(
                 preview,
                 x,
                 y,
@@ -1673,24 +1949,30 @@ $("exportReelBtn").addEventListener("click", async function() {
                 drawHeight
             );
 
-            context.filter = "none";
-
-            const overlay = $("reelOverlayText").value.trim();
+            ctx.filter = "none";
 
             if (overlay) {
-                context.font = "bold 43px Arial";
-                context.textAlign = "center";
-                context.fillStyle = "white";
-                context.strokeStyle = "black";
-                context.lineWidth = 5;
+                ctx.font = "bold 42px Arial";
+                ctx.textAlign = "center";
+                ctx.fillStyle = "white";
+                ctx.strokeStyle = "black";
+                ctx.lineWidth = 5;
 
-                context.strokeText(overlay, 360, 1140);
-                context.fillText(overlay, 360, 1140);
+                ctx.strokeText(overlay, 360, 1140);
+                ctx.fillText(overlay, 360, 1140);
             }
 
-            if (preview.currentTime < end && !preview.paused) {
-                requestAnimationFrame(drawFrame);
+            if (preview.currentTime >= end) {
+                preview.pause();
+
+                if (recorder.state !== "inactive") {
+                    recorder.stop();
+                }
+
+                return;
             }
+
+            rafId = requestAnimationFrame(drawFrame);
         }
 
         preview.pause();
@@ -1707,58 +1989,42 @@ $("exportReelBtn").addEventListener("click", async function() {
 
         drawFrame();
 
-        await new Promise(resolve => {
-            const check = setInterval(() => {
-                if (
-                    preview.currentTime >= end ||
-                    preview.ended
-                ) {
-                    clearInterval(check);
-                    preview.pause();
-
-                    if (recorder.state !== "inactive") {
-                        recorder.stop();
-                    }
-
-                    resolve();
-                }
-            }, 100);
-        });
-
-        await finished;
-
-        const blob = new Blob(chunks, {
-            type: recorderSupported
-        });
+        await completed;
 
         exportedReelFile = new File(
-            [blob],
+            chunks,
             "gocat-reel.webm",
-            { type: recorderSupported }
+            { type: mimeType }
         );
 
         $("editorStatus").textContent =
-            "Edits prepared! Your edited Reel is ready to upload.";
+            "Your edited Reel is ready to upload.";
 
-        showToast("Reel edits completed!");
+        showToast("Edits applied!");
 
     } catch (error) {
         console.error(error);
 
         $("editorStatus").textContent =
-            "Export failed. You can still upload the original video.";
+            "Export failed. You can upload the original video instead.";
 
-        showToast("Could not export the edited Reel.");
+        showToast("Could not export edits.");
 
     } finally {
-        preview.pause();
-
-        if (stream) {
-            stream.getTracks().forEach(track => track.stop());
+        if (rafId) {
+            cancelAnimationFrame(rafId);
         }
 
-        if (audioStream) {
-            audioStream.getTracks().forEach(track => track.stop());
+        preview.pause();
+
+        canvasStream.getTracks().forEach(track => {
+            track.stop();
+        });
+
+        if (sourceStream) {
+            sourceStream.getTracks().forEach(track => {
+                track.stop();
+            });
         }
 
         this.disabled = false;
@@ -1768,13 +2034,13 @@ $("exportReelBtn").addEventListener("click", async function() {
 
 
 /* =========================================================
-   30. PUBLISH VIDEO
+   36 — PUBLISH VIDEO OR REEL
    ========================================================= */
 
 $("uploadForm").addEventListener("submit", async function(event) {
     event.preventDefault();
 
-    let file = exportedReelFile || selectedVideoFile;
+    const file = exportedReelFile || selectedVideoFile;
 
     if (!file) {
         showToast("Choose a video first.");
@@ -1786,7 +2052,7 @@ $("uploadForm").addEventListener("submit", async function(event) {
     const topic = $("videoTopic").value;
 
     if (!title) {
-        showToast("Add a title.");
+        showToast("Add a title first.");
         return;
     }
 
@@ -1795,23 +2061,24 @@ $("uploadForm").addEventListener("submit", async function(event) {
     button.disabled = true;
     button.textContent = "Uploading...";
 
-    const progress = $("uploadProgress");
-    const progressBar = $("uploadProgressBar");
+    const bar = $("uploadProgressBar");
 
-    progress.classList.remove("hidden");
-    progressBar.style.width = "10%";
+    $("uploadProgress").classList.remove("hidden");
+    bar.style.width = "20%";
+
+    let storagePath = null;
 
     try {
         const extension =
             file.name.split(".").pop().toLowerCase() || "mp4";
 
-        const path =
+        storagePath =
             currentUser.id + "/" +
             Date.now() + "." + extension;
 
         const upload = await db.storage
             .from(VIDEO_BUCKET)
-            .upload(path, file, {
+            .upload(storagePath, file, {
                 cacheControl: "3600",
                 upsert: false,
                 contentType: file.type
@@ -1819,31 +2086,26 @@ $("uploadForm").addEventListener("submit", async function(event) {
 
         if (upload.error) throw upload.error;
 
-        progressBar.style.width = "75%";
+        bar.style.width = "75%";
 
-        const insert = await db
+        const result = await db
             .from("videos")
             .insert({
                 owner_id: currentUser.id,
-                title: title,
-                description: description,
-                topic: topic,
-                storage_path: path,
+                title,
+                description,
+                topic,
+                storage_path: storagePath,
                 views: 0,
                 is_short: uploadMode === "reel"
             });
 
-        if (insert.error) {
-            await db.storage
-                .from(VIDEO_BUCKET)
-                .remove([path]);
+        if (result.error) throw result.error;
 
-            throw insert.error;
-        }
+        bar.style.width = "100%";
 
-        progressBar.style.width = "100%";
+        await loadVideos();
 
-        await loadAllData();
         renderEverything();
 
         hideModal("uploadModal");
@@ -1855,12 +2117,19 @@ $("uploadForm").addEventListener("submit", async function(event) {
 
         showToast(
             uploadMode === "reel"
-                ? "Your Reel was published!"
-                : "Your video was published!"
+                ? "Reel published!"
+                : "Video published!"
         );
 
     } catch (error) {
         console.error(error);
+
+        if (storagePath) {
+            await db.storage
+                .from(VIDEO_BUCKET)
+                .remove([storagePath]);
+        }
+
         showToast("Upload failed: " + error.message);
 
     } finally {
@@ -1875,97 +2144,7 @@ $("uploadForm").addEventListener("submit", async function(event) {
 
 
 /* =========================================================
-   31. POSTS
-   ========================================================= */
-
-function postCard(post) {
-    const username = getUsername(post.user_id);
-
-    const owner =
-        String(post.user_id) === String(currentUser.id);
-
-    const liked =
-        post.likes?.includes(String(currentUser.id));
-
-    const imageURL = getPostImageURL(post.media_path);
-
-    return `
-        <article class="post-card">
-
-            <div class="post-author">
-
-                <div class="post-avatar">
-                    ${escapeHTML(getInitial(username))}
-                </div>
-
-                <div>
-                    <strong>${escapeHTML(username)}</strong>
-                    <small>${formatDate(post.created_at)}</small>
-                </div>
-
-                ${
-                    owner
-                    ? `
-                        <button
-                            class="action-btn delete-btn"
-                            data-delete-post="${escapeHTML(post.id)}">
-                            Delete
-                        </button>
-                    `
-                    : ""
-                }
-
-            </div>
-
-            <p class="post-content">
-                ${escapeHTML(post.content || "")}
-            </p>
-
-            ${
-                imageURL
-                ? `
-                    <img
-                        class="post-image"
-                        src="${escapeHTML(imageURL)}"
-                        alt="Post image"
-                        loading="lazy">
-                `
-                : ""
-            }
-
-            <div class="post-actions">
-
-                <button
-                    class="post-like-btn ${liked ? "liked" : ""}"
-                    data-like-post="${escapeHTML(post.id)}">
-                    ${liked ? "♥" : "♡"}
-                    ${post.likes?.length || 0} Likes
-                </button>
-
-            </div>
-
-        </article>
-    `;
-}
-
-function renderPosts() {
-    const page = posts.slice(
-        0,
-        postsOffset + PAGE_SIZE
-    );
-
-    $("postsFeed").innerHTML =
-        page.map(postCard).join("");
-
-    $("postsLoadMoreWrap").classList.toggle(
-        "hidden",
-        postsOffset + PAGE_SIZE >= posts.length
-    );
-}
-
-
-/* =========================================================
-   32. CREATE POST
+   37 — CREATE POST
    ========================================================= */
 
 $("postImage").addEventListener("change", function() {
@@ -1980,7 +2159,7 @@ $("createPostForm").addEventListener("submit", async function(event) {
     const imageFile = $("postImage").files[0];
 
     if (!content && !imageFile) {
-        showToast("Write something or select a picture.");
+        showToast("Write something or choose a photo.");
         return;
     }
 
@@ -1989,37 +2168,35 @@ $("createPostForm").addEventListener("submit", async function(event) {
     button.disabled = true;
     button.textContent = "Publishing...";
 
-    let mediaPath = null;
+    let storagePath = null;
 
     try {
         if (imageFile) {
             if (!imageFile.type.startsWith("image/")) {
-                throw new Error("Please select an image.");
+                throw new Error("Please choose an image.");
             }
 
-            const path =
+            storagePath =
                 currentUser.id + "/" +
                 Date.now() + "-" +
                 imageFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
 
             const upload = await db.storage
                 .from(POST_BUCKET)
-                .upload(path, imageFile, {
+                .upload(storagePath, imageFile, {
                     upsert: false,
                     contentType: imageFile.type
                 });
 
             if (upload.error) throw upload.error;
-
-            mediaPath = path;
         }
 
         const result = await db
             .from("posts")
             .insert({
                 user_id: currentUser.id,
-                content: content,
-                media_path: mediaPath
+                content,
+                media_path: storagePath
             });
 
         if (result.error) throw result.error;
@@ -2031,10 +2208,20 @@ $("createPostForm").addEventListener("submit", async function(event) {
         await loadPosts();
 
         renderPosts();
+        renderHomeFeed();
+        renderExplore();
 
         showToast("Post published!");
 
     } catch (error) {
+        console.error(error);
+
+        if (storagePath) {
+            await db.storage
+                .from(POST_BUCKET)
+                .remove([storagePath]);
+        }
+
         showToast("Post failed: " + error.message);
 
     } finally {
@@ -2045,7 +2232,7 @@ $("createPostForm").addEventListener("submit", async function(event) {
 
 
 /* =========================================================
-   33. POST LIKES
+   38 — POST LIKE
    ========================================================= */
 
 async function togglePostLike(postId) {
@@ -2055,7 +2242,9 @@ async function togglePostLike(postId) {
 
     if (!post) return;
 
-    const liked = post.likes.includes(String(currentUser.id));
+    const liked = post.likes.includes(
+        String(currentUser.id)
+    );
 
     try {
         if (liked) {
@@ -2086,15 +2275,16 @@ async function togglePostLike(postId) {
 
         renderPosts();
         renderHomeFeed();
+        renderExplore();
 
     } catch (error) {
-        showToast("Post like error: " + error.message);
+        showToast("Post like failed: " + error.message);
     }
 }
 
 
 /* =========================================================
-   34. DELETE POST
+   39 — DELETE POST
    ========================================================= */
 
 async function deletePost(postId) {
@@ -2102,11 +2292,7 @@ async function deletePost(postId) {
         String(item.id) === String(postId)
     );
 
-    if (!post) return;
-
-    if (String(post.user_id) !== String(currentUser.id)) {
-        return;
-    }
+    if (!post || !isOwnContent(post.user_id)) return;
 
     if (!confirm("Delete this post?")) return;
 
@@ -2117,7 +2303,7 @@ async function deletePost(postId) {
         .eq("user_id", currentUser.id);
 
     if (result.error) {
-        showToast("Could not delete post.");
+        showToast("Delete failed: " + result.error.message);
         return;
     }
 
@@ -2131,160 +2317,46 @@ async function deletePost(postId) {
 
     renderPosts();
     renderHomeFeed();
+    renderExplore();
+    renderProfile();
 
     showToast("Post deleted.");
 }
 
 
 /* =========================================================
-   35. MIXED HOME FEED
+   40 — POSTS PAGINATION
    ========================================================= */
 
-function renderMixedFeed() {
-    const items = [];
+$("postsLoadMore").addEventListener("click", function() {
+    postsVisible += PAGE_SIZE;
+    renderPosts();
+});
 
-    videos.forEach(video => {
-        items.push({
-            type: video.is_short ? "reel" : "video",
-            data: video,
-            date: new Date(video.created_at).getTime()
-        });
-    });
+function renderPosts() {
+    const page = posts.slice(0, postsVisible);
 
-    posts.forEach(post => {
-        items.push({
-            type: "post",
-            data: post,
-            date: new Date(post.created_at).getTime()
-        });
-    });
+    $("postsFeed").innerHTML =
+        page.map(postCard).join("");
 
-    items.sort((a, b) => b.date - a.date);
-
-    const selected = items.filter(item => {
-        if (activeHomeTopic === "All") return true;
-
-        if (
-            item.type === "video" ||
-            item.type === "reel"
-        ) {
-            return item.data.topic === activeHomeTopic;
-        }
-
-        return false;
-    });
-
-    const page = selected.slice(
-        homeOffset,
-        homeOffset + PAGE_SIZE
-    );
-
-    $("homeFeed").innerHTML = page.map(item => {
-        if (item.type === "video") {
-            return videoCard(item.data);
-        }
-
-        if (item.type === "post") {
-            return postCard(item.data);
-        }
-
-        return reelFeedCard(item.data);
-
-    }).join("");
-
-    $("homeEmpty").classList.toggle(
+    $("postsLoadMoreWrap").classList.toggle(
         "hidden",
-        selected.length !== 0
+        postsVisible >= posts.length
     );
-
-    $("homeLoadMoreWrap").classList.toggle(
-        "hidden",
-        homeOffset + PAGE_SIZE >= selected.length
-    );
-
-    $("homeCount").textContent =
-        "Showing " + Math.min(homeOffset + PAGE_SIZE, selected.length) +
-        " of " + selected.length;
-}
-
-function reelFeedCard(video) {
-    const owner = getUsername(video.owner_id);
-
-    return `
-        <article class="feed-post-card feed-reel-card">
-
-            <div class="feed-post-top">
-                <div class="feed-post-avatar">
-                    ${escapeHTML(getInitial(owner))}
-                </div>
-
-                <div class="feed-post-user">
-                    <strong>${escapeHTML(owner)}</strong>
-                    <small>GoCat Reel</small>
-                </div>
-            </div>
-
-            <div class="reel-thumb">
-                <video
-                    src="${escapeHTML(getVideoURL(video.storage_path))}"
-                    muted
-                    playsinline
-                    preload="metadata">
-                </video>
-
-                <span class="reel-thumb-label">▶ REEL</span>
-            </div>
-
-            <button
-                class="feed-reel-open"
-                data-open-reels>
-                Watch Reel
-            </button>
-
-        </article>
-    `;
 }
 
 
 /* =========================================================
-   36. MIXED FEED REFRESH
-   ========================================================= */
-
-$("refreshFeedBtn").addEventListener("click", async function() {
-    this.disabled = true;
-
-    try {
-        await loadAllData();
-
-        homeOffset = 0;
-
-        renderEverything();
-
-        showToast("Feed refreshed.");
-
-    } catch (error) {
-        showToast("Could not refresh feed.");
-    }
-
-    this.disabled = false;
-});
-
-$("homeLoadMore").addEventListener("click", function() {
-    homeOffset += PAGE_SIZE;
-    renderMixedFeed();
-});
-
-
-/* =========================================================
-   37. PROFILE
+   41 — PROFILE PAGE
    ========================================================= */
 
 function openProfile(userId) {
     currentProfileUserId = userId;
-
-    openPage("profile");
+    profileMode = "home";
 
     renderProfile();
+
+    openPage("profile");
 }
 
 function renderProfile() {
@@ -2293,18 +2365,21 @@ function renderProfile() {
 
     const profile =
         getUser(profileId) ||
-        currentProfile;
+        (
+            String(currentProfile?.id) === String(profileId)
+                ? currentProfile
+                : null
+        );
 
     if (!profile) return;
 
-    const mine =
-        String(profileId) === String(currentUser.id);
+    const own = isOwnContent(profileId);
 
     $("profileUsername").textContent =
         profile.username || "Creator";
 
     $("profileEmail").textContent =
-        mine ? currentUser.email : "";
+        own ? currentUser.email : "";
 
     $("profileBio").textContent =
         profile.bio || "Welcome to GoCat.";
@@ -2313,12 +2388,19 @@ function renderProfile() {
         getInitial(profile.username);
 
     $("profileActionBtn").textContent =
-        mine ? "Edit profile" : "Follow";
+        own
+            ? "Edit profile"
+            : isFollowing(profileId)
+                ? "Following"
+                : "＋ Follow";
 
     $("profileActionBtn").onclick = function() {
-        if (mine) {
-            $("editUsername").value = profile.username || "";
-            $("editBio").value = profile.bio || "";
+        if (own) {
+            $("editUsername").value =
+                profile.username || "";
+
+            $("editBio").value =
+                profile.bio || "";
 
             showModal("editProfileModal");
         } else {
@@ -2328,6 +2410,14 @@ function renderProfile() {
 
     const myVideos = videos.filter(video =>
         String(video.owner_id) === String(profileId)
+    );
+
+    const myRegularVideos = myVideos.filter(
+        video => video.is_short !== true
+    );
+
+    const myReels = myVideos.filter(
+        video => video.is_short === true
     );
 
     const myPosts = posts.filter(post =>
@@ -2343,7 +2433,7 @@ function renderProfile() {
     ).length;
 
     $("profileVideoCount").textContent =
-        myVideos.length;
+        myRegularVideos.length;
 
     $("profileFollowerCount").textContent =
         followerCount;
@@ -2355,8 +2445,24 @@ function renderProfile() {
         myPosts.length;
 
     $("profileHome").innerHTML = `
+        <div class="section-heading">
+            <h2>Videos</h2>
+        </div>
+
         <div class="video-grid">
-            ${myVideos.slice(0, 3).map(videoCard).join("")}
+            ${myRegularVideos.slice(0, 3).map(videoCard).join("")}
+        </div>
+
+        <div class="section-heading">
+            <h2>Reels</h2>
+        </div>
+
+        <div class="video-grid">
+            ${myReels.slice(0, 3).map(videoCard).join("")}
+        </div>
+
+        <div class="section-heading">
+            <h2>Posts</h2>
         </div>
 
         <div class="posts-feed">
@@ -2365,16 +2471,10 @@ function renderProfile() {
     `;
 
     $("profileReels").innerHTML =
-        myVideos
-            .filter(video => video.is_short === true)
-            .map(videoCard)
-            .join("");
+        myReels.map(videoCard).join("");
 
     $("profileVideos").innerHTML =
-        myVideos
-            .filter(video => video.is_short !== true)
-            .map(videoCard)
-            .join("");
+        myRegularVideos.map(videoCard).join("");
 
     $("profilePosts").innerHTML =
         myPosts.map(postCard).join("");
@@ -2384,7 +2484,7 @@ function renderProfile() {
 
 
 /* =========================================================
-   38. PROFILE TABS
+   42 — PROFILE TABS
    ========================================================= */
 
 function renderProfileTab(tab) {
@@ -2398,12 +2498,18 @@ function renderProfileTab(tab) {
             );
         });
 
-    ["home", "reels", "videos", "posts"].forEach(name => {
-        const element = $("profile" + name[0].toUpperCase() + name.slice(1));
+    const panels = {
+        home: "profileHome",
+        reels: "profileReels",
+        videos: "profileVideos",
+        posts: "profilePosts"
+    };
 
-        if (element) {
-            element.classList.toggle("hidden", name !== tab);
-        }
+    Object.entries(panels).forEach(([name, id]) => {
+        $(id).classList.toggle(
+            "hidden",
+            name !== tab
+        );
     });
 }
 
@@ -2415,7 +2521,7 @@ document.querySelectorAll("[data-profile-tab]").forEach(button => {
 
 
 /* =========================================================
-   39. EDIT PROFILE
+   43 — EDIT PROFILE
    ========================================================= */
 
 $("editProfileForm").addEventListener("submit", async function(event) {
@@ -2425,16 +2531,13 @@ $("editProfileForm").addEventListener("submit", async function(event) {
     const bio = $("editBio").value.trim();
 
     if (username.length < 3) {
-        showToast("Username must be at least 3 characters.");
+        showToast("Username must have at least 3 characters.");
         return;
     }
 
     const result = await db
         .from("users")
-        .update({
-            username,
-            bio
-        })
+        .update({ username, bio })
         .eq("id", currentUser.id)
         .select("*")
         .single();
@@ -2448,6 +2551,8 @@ $("editProfileForm").addEventListener("submit", async function(event) {
 
     await loadAllData();
 
+    currentProfileUserId = currentUser.id;
+
     renderEverything();
 
     hideModal("editProfileModal");
@@ -2460,8 +2565,26 @@ $("editProfileForm").addEventListener("submit", async function(event) {
 
 
 /* =========================================================
-   40. NOTIFICATIONS
+   44 — NOTIFICATIONS
    ========================================================= */
+
+function addLocalNotification(icon, text) {
+    notifications.unshift({
+        id: crypto.randomUUID(),
+        icon,
+        text,
+        created_at: new Date().toISOString()
+    });
+
+    notifications = notifications.slice(0, 100);
+
+    localStorage.setItem(
+        "gocat_notifications_" + currentUser.id,
+        JSON.stringify(notifications)
+    );
+
+    renderNotifications();
+}
 
 function renderNotifications() {
     const container = $("notificationList");
@@ -2471,7 +2594,7 @@ function renderNotifications() {
             <div class="empty-card">
                 <div>🔔</div>
                 <h3>No notifications yet</h3>
-                <p>Your activity will appear here.</p>
+                <p>Your GoCat activity will appear here.</p>
             </div>
         `;
         return;
@@ -2479,6 +2602,7 @@ function renderNotifications() {
 
     container.innerHTML = notifications.map(item => `
         <div class="notification-item">
+
             <div class="notification-icon">
                 ${escapeHTML(item.icon)}
             </div>
@@ -2487,6 +2611,7 @@ function renderNotifications() {
                 <p>${escapeHTML(item.text)}</p>
                 <small>${formatDate(item.created_at)}</small>
             </div>
+
         </div>
     `).join("");
 }
@@ -2504,7 +2629,7 @@ $("clearNotificationsBtn").addEventListener("click", function() {
 
 
 /* =========================================================
-   41. CHAT FRIENDS
+   45 — MUTUAL FRIENDS FOR CHATS
    ========================================================= */
 
 function getMutualFriends() {
@@ -2521,7 +2646,7 @@ function getMutualFriends() {
         .map(item => String(item.follower_id));
 
     return users.filter(user =>
-        String(user.id) !== String(currentUser.id) &&
+        !isOwnContent(user.id) &&
         followingIds.includes(String(user.id)) &&
         followerIds.includes(String(user.id))
     );
@@ -2533,7 +2658,7 @@ function renderChatFriends() {
     $("chatFriends").innerHTML = friends.length
         ? friends.map(user => `
             <button
-                class="chat-friend"
+                class="chat-friend ${String(currentChatUserId) === String(user.id) ? "active" : ""}"
                 data-chat-user="${escapeHTML(user.id)}">
 
                 <span class="chat-friend-avatar">
@@ -2549,51 +2674,61 @@ function renderChatFriends() {
 
 
 /* =========================================================
-   42. OPEN CHAT
+   46 — OPEN CHAT
    ========================================================= */
 
 async function openChat(userId) {
+    const allowed = getMutualFriends().some(user =>
+        String(user.id) === String(userId)
+    );
+
+    if (!allowed) {
+        showToast("Chats are available to mutual followers.");
+        return;
+    }
+
     currentChatUserId = userId;
 
-    const username = getUsername(userId);
-
-    $("chatTitle").textContent = username;
+    $("chatTitle").textContent = getUsername(userId);
 
     $("messageInput").disabled = false;
     $("sendMessageBtn").disabled = false;
 
-    document.querySelectorAll(".chat-friend")
-        .forEach(button => {
-            button.classList.toggle(
-                "active",
-                button.dataset.chatUser === String(userId)
-            );
-        });
+    renderChatFriends();
 
     await loadMessages();
 }
 
 
 /* =========================================================
-   43. LOAD MESSAGES
+   47 — LOAD CHAT MESSAGES
    ========================================================= */
 
 async function loadMessages() {
     if (!currentChatUserId) return;
 
-    const query = `and(sender_id.eq.${currentUser.id},recipient_id.eq.${currentChatUserId}),and(sender_id.eq.${currentChatUserId},recipient_id.eq.${currentUser.id})`;
+    const first = [
+        "and(sender_id.eq." + currentUser.id,
+        "recipient_id.eq." + currentChatUserId + ")"
+    ].join(",");
+
+    const second = [
+        "and(sender_id.eq." + currentChatUserId,
+        "recipient_id.eq." + currentUser.id + ")"
+    ].join(",");
 
     const result = await db
         .from("messages")
         .select("*")
-        .or(query)
+        .or(first + "," + second)
         .order("created_at", { ascending: true });
 
     if (result.error) {
-        $("chatMessages").innerHTML =
-            "<p class='chat-empty'>Could not load messages. Check your Messages table and permissions.</p>";
-
         console.error(result.error);
+
+        $("chatMessages").innerHTML =
+            "<p class='chat-empty'>Could not load messages. Check your table permissions.</p>";
+
         return;
     }
 
@@ -2619,7 +2754,7 @@ async function loadMessages() {
 
 
 /* =========================================================
-   44. SEND MESSAGE
+   48 — SEND MESSAGE
    ========================================================= */
 
 $("chatForm").addEventListener("submit", async function(event) {
@@ -2634,11 +2769,11 @@ $("chatForm").addEventListener("submit", async function(event) {
         .insert({
             sender_id: currentUser.id,
             recipient_id: currentChatUserId,
-            text: text
+            text
         });
 
     if (result.error) {
-        showToast("Message could not be sent: " + result.error.message);
+        showToast("Message failed: " + result.error.message);
         return;
     }
 
@@ -2649,10 +2784,35 @@ $("chatForm").addEventListener("submit", async function(event) {
 
 
 /* =========================================================
-   45. PAGE NAVIGATION
+   49 — NAVIGATION
    ========================================================= */
 
 function openPage(page) {
+    const validPages = [
+        "home",
+        "reels",
+        "explore",
+        "following",
+        "posts",
+        "chats",
+        "notifications",
+        "profile"
+    ];
+
+    if (!validPages.includes(page)) {
+        return;
+    }
+
+    /*
+       IMPORTANT FIX:
+       When the Profile navigation button is clicked,
+       always show the logged-in user's own profile.
+    */
+
+    if (page === "profile" && !currentProfileUserId) {
+        currentProfileUserId = currentUser.id;
+    }
+
     currentPage = page;
 
     document.querySelectorAll(".page-section")
@@ -2673,28 +2833,75 @@ function openPage(page) {
 
     $("sidebar").classList.remove("open");
 
-    if (page === "home") renderMixedFeed();
-    if (page === "reels") renderReels();
-    if (page === "explore") renderExplore();
-    if (page === "following") renderFollowing();
-    if (page === "posts") renderPosts();
-    if (page === "profile") renderProfile();
-    if (page === "chats") renderChatFriends();
-    if (page === "notifications") renderNotifications();
+    renderCurrentPage();
 
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({
+        top: 0,
+        behavior: "smooth"
+    });
 }
 
-document.querySelectorAll("[data-page]").forEach(button => {
-    button.addEventListener("click", function(event) {
-        event.preventDefault();
-        openPage(this.dataset.page);
-    });
+function renderCurrentPage() {
+    if (currentPage === "home") renderHomeFeed();
+    if (currentPage === "reels") renderReels();
+    if (currentPage === "explore") renderExplore();
+    if (currentPage === "following") renderFollowing();
+    if (currentPage === "posts") renderPosts();
+    if (currentPage === "profile") renderProfile();
+    if (currentPage === "chats") renderChatFriends();
+    if (currentPage === "notifications") renderNotifications();
+}
+
+document.addEventListener("click", function(event) {
+    const button = event.target.closest("[data-page]");
+
+    if (!button) return;
+
+    event.preventDefault();
+
+    const page = button.dataset.page;
+
+    /*
+       This is the second important Profile fix:
+       clicking your Profile icon resets the selected profile
+       to your own account.
+    */
+
+    if (page === "profile") {
+        currentProfileUserId = currentUser.id;
+        profileMode = "home";
+    }
+
+    openPage(page);
 });
 
 
 /* =========================================================
-   46. MOBILE SIDEBAR
+   50 — PROFILE BUTTON
+   ========================================================= */
+
+$("topProfileBtn").addEventListener("click", function() {
+    currentProfileUserId = currentUser.id;
+    profileMode = "home";
+
+    openPage("profile");
+});
+
+
+/* =========================================================
+   51 — VIEW ANOTHER USER'S PROFILE
+   ========================================================= */
+
+function openOtherProfile(userId) {
+    currentProfileUserId = userId;
+    profileMode = "home";
+
+    openPage("profile");
+}
+
+
+/* =========================================================
+   52 — MOBILE MENU
    ========================================================= */
 
 $("mobileMenuBtn").addEventListener("click", function() {
@@ -2703,34 +2910,26 @@ $("mobileMenuBtn").addEventListener("click", function() {
 
 
 /* =========================================================
-   47. TOP PROFILE BUTTON
-   ========================================================= */
-
-$("topProfileBtn").addEventListener("click", function() {
-    currentProfileUserId = currentUser.id;
-    profileMode = "home";
-    openPage("profile");
-});
-
-
-/* =========================================================
-   48. SEARCH
+   53 — SEARCH
    ========================================================= */
 
 $("searchInput").addEventListener("input", function() {
-    const value = this.value.trim();
+    const hasText = this.value.trim().length > 0;
 
     $("clearSearch").classList.toggle(
         "hidden",
-        value.length === 0
+        !hasText
     );
 
-    exploreOffset = 0;
+    homeVisible = PAGE_SIZE;
+    exploreVisible = 6;
+
+    if (currentPage === "home") {
+        renderHomeFeed();
+    }
 
     if (currentPage === "explore") {
         renderExplore();
-    } else if (currentPage === "home") {
-        renderMixedFeed();
     }
 });
 
@@ -2739,33 +2938,13 @@ $("clearSearch").addEventListener("click", function() {
 
     this.classList.add("hidden");
 
+    renderHomeFeed();
     renderExplore();
-    renderMixedFeed();
 });
 
 
 /* =========================================================
-   49. HOME TOPIC FILTERS
-   ========================================================= */
-
-document.querySelectorAll("[data-topic]").forEach(button => {
-    button.addEventListener("click", function() {
-        activeHomeTopic = this.dataset.topic;
-
-        homeOffset = 0;
-
-        document.querySelectorAll("[data-topic]")
-            .forEach(item => item.classList.remove("active"));
-
-        this.classList.add("active");
-
-        renderMixedFeed();
-    });
-});
-
-
-/* =========================================================
-   50. THEME SWITCH
+   54 — THEME BUTTON
    ========================================================= */
 
 function updateTheme() {
@@ -2779,10 +2958,7 @@ function updateTheme() {
         dark ? "Light mode" : "Dark mode";
 }
 
-const savedTheme =
-    localStorage.getItem("gocat_theme");
-
-if (savedTheme === "dark") {
+if (localStorage.getItem("gocat_theme") === "dark") {
     document.body.classList.add("dark");
 }
 
@@ -2804,39 +2980,78 @@ $("themeBtn").addEventListener("click", function() {
 
 
 /* =========================================================
-   51. LOGOUT
+   55 — VIDEO VIEW COUNT
    ========================================================= */
 
-$("logoutBtn").addEventListener("click", async function() {
-    const result = await db.auth.signOut();
+document.addEventListener("play", async function(event) {
+    const videoElement = event.target;
 
-    if (result.error) {
-        showToast(result.error.message);
+    const videoId = videoElement.dataset.playVideo;
+
+    if (!videoId) return;
+
+    const key =
+        "gocat_viewed_" + currentUser.id;
+
+    let viewed = [];
+
+    try {
+        viewed = JSON.parse(
+            localStorage.getItem(key) || "[]"
+        );
+    } catch {
+        viewed = [];
+    }
+
+    if (viewed.includes(String(videoId))) {
         return;
     }
 
-    currentUser = null;
-    currentProfile = null;
+    viewed.push(String(videoId));
 
-    openLoginScreen();
+    localStorage.setItem(
+        key,
+        JSON.stringify(viewed.slice(-300))
+    );
 
-    showToast("Logged out.");
-});
+    const video = videos.find(item =>
+        String(item.id) === String(videoId)
+    );
+
+    if (!video) return;
+
+    const newViews =
+        Number(video.views || 0) + 1;
+
+    video.views = newViews;
+
+    const result = await db
+        .from("videos")
+        .update({ views: newViews })
+        .eq("id", videoId);
+
+    if (result.error) {
+        console.warn("View count update failed:", result.error);
+    }
+
+}, true);
 
 
 /* =========================================================
-   52. MODAL CLOSE BUTTONS
+   56 — OPEN REEL FROM EXPLORE / HOME
    ========================================================= */
 
-document.querySelectorAll("[data-close]").forEach(button => {
-    button.addEventListener("click", function() {
-        hideModal(this.dataset.close);
-    });
+document.addEventListener("click", function(event) {
+    const button = event.target.closest("[data-open-reel-id]");
+
+    if (!button) return;
+
+    openSpecificReel(button.dataset.openReelId);
 });
 
 
 /* =========================================================
-   53. GLOBAL BUTTON ACTIONS
+   57 — GLOBAL BUTTON ACTIONS
    ========================================================= */
 
 document.addEventListener("click", function(event) {
@@ -2865,9 +3080,7 @@ document.addEventListener("click", function(event) {
     }
 
     if (button.dataset.profileUser) {
-        currentProfileUserId = button.dataset.profileUser;
-        profileMode = "home";
-        openPage("profile");
+        openOtherProfile(button.dataset.profileUser);
     }
 
     if (button.dataset.chatUser) {
@@ -2882,43 +3095,69 @@ document.addEventListener("click", function(event) {
         deletePost(button.dataset.deletePost);
     }
 
-    if (button.dataset.openReels !== undefined) {
-        openPage("reels");
-    }
-
     if (button.dataset.reelSound !== undefined) {
-        const item = button.closest(".reel-item");
-        const video = item.querySelector("video");
+        const reel = button.closest(".reel-item");
+        const video = reel?.querySelector(".reel-video");
 
-        video.muted = !video.muted;
+        if (video) {
+            video.muted = !video.muted;
 
-        button.textContent =
-            video.muted ? "🔇" : "🔊";
+            button.textContent =
+                video.muted ? "🔇" : "🔊";
+        }
     }
 
-    if (button.id === "emptyCreateReel") {
+    if (button.dataset.createReel !== undefined) {
         openUpload("reel");
+    }
+
+    if (button.dataset.openUpload) {
+        openUpload(button.dataset.openUpload);
+    }
+
+    if (button.dataset.goPage) {
+        if (button.dataset.goPage === "profile") {
+            currentProfileUserId = currentUser.id;
+        }
+
+        openPage(button.dataset.goPage);
     }
 });
 
 
 /* =========================================================
-   54. AUTH FORM SWITCHES
+   58 — CLOSE MODALS
    ========================================================= */
 
-$("showRegister").addEventListener(
-    "click",
-    openRegisterScreen
-);
-
-$("showLogin").addEventListener(
-    "click",
-    openLoginScreen
-);
+document.querySelectorAll("[data-close]").forEach(button => {
+    button.addEventListener("click", function() {
+        hideModal(this.dataset.close);
+    });
+});
 
 
 /* =========================================================
-   55. SUPABASE AUTH SESSION
+   59 — LOGOUT
+   ========================================================= */
+
+$("logoutBtn").addEventListener("click", async function() {
+    const result = await db.auth.signOut();
+
+    if (result.error) {
+        showToast(result.error.message);
+        return;
+    }
+
+    currentUser = null;
+    currentProfile = null;
+    currentProfileUserId = null;
+
+    openLoginScreen();
+});
+
+
+/* =========================================================
+   60 — AUTH SESSION
    ========================================================= */
 
 async function initializeGoCat() {
@@ -2933,7 +3172,6 @@ async function initializeGoCat() {
 
         if (session?.user) {
             currentUser = session.user;
-
             await startGoCat();
         } else {
             openLoginScreen();
@@ -2945,27 +3183,17 @@ async function initializeGoCat() {
         openLoginScreen();
 
         showAuthMessage(
-            "Could not connect to GoCat. Please refresh."
+            "Could not connect to GoCat. Refresh and try again."
         );
 
     } finally {
-        if (loader) {
-            loader.classList.add("hide");
-        }
+        loader?.classList.add("hide");
     }
 }
 
-db.auth.onAuthStateChange((event, session) => {
-    if (event === "SIGNED_OUT") {
-        currentUser = null;
-        currentProfile = null;
-        openLoginScreen();
-    }
-});
-
 
 /* =========================================================
-   56. START APPLICATION
+   61 — START APPLICATION
    ========================================================= */
 
 initializeGoCat();
