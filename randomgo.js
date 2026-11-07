@@ -31,6 +31,7 @@ const db = window.supabase?.createClient
 
 let currentUser = null;
 let currentProfile = null;
+let isGoCatAdmin = false;
 
 let currentProfileUserId = null;
 let currentCommentVideoId = null;
@@ -145,6 +146,9 @@ function isOwnContent(userId) {
     return String(userId) === String(currentUser?.id);
 }
 
+function canManageContent(ownerId) {
+    return isOwnContent(ownerId) || isGoCatAdmin;
+}
 
 function isFollowing(userId) {
     return follows.some(item =>
@@ -460,6 +464,7 @@ if (loginForm) {
             }
 
             await startGoCat();
+            
 
         } catch (error) {
             showAuthMessage(error.message || "Login failed.");
@@ -517,7 +522,16 @@ listen("registerForm", "submit", async function(event) {
         if (result.data.session) {
             currentUser = result.data.user;
             await startGoCat();
-        } else {
+        } 
+        const adminCheck = await db.rpc("is_gocat_admin");
+
+isGoCatAdmin =
+    !adminCheck.error && adminCheck.data === true;
+
+if (adminCheck.error) {
+    console.warn("Admin check failed:", adminCheck.error);
+}
+        else {
             openLoginScreen();
 
             showAuthMessage(
@@ -836,6 +850,7 @@ function videoCard(video) {
     const username = getUsername(video.owner_id);
 
     const own = isOwnContent(video.owner_id);
+    const canDelete = canManageContent(video.owner_id);
     const following = isFollowing(video.owner_id);
 
     const liked = video.likes?.includes(
@@ -875,7 +890,7 @@ function videoCard(video) {
                 </div>
 
                 ${
-                    !own
+                    !canDelete
                     ? `
                         <button
                             class="follow-btn"
@@ -928,7 +943,7 @@ function videoCard(video) {
                 </button>
 
                 ${
-                    own
+                    canDelete
                     ? `
                         <button
                             class="action-btn delete-btn"
@@ -953,6 +968,7 @@ function videoCard(video) {
 function postCard(post) {
     const username = getUsername(post.user_id);
     const own = isOwnContent(post.user_id);
+    const canDelete = canManageContent(post.user_id);
 
     const liked = post.likes?.includes(
         String(currentUser.id)
@@ -1672,7 +1688,7 @@ async function deleteVideo(videoId) {
         String(item.id) === String(videoId)
     );
 
-    if (!video || !isOwnContent(video.owner_id)) return;
+    if (!video || !canManageContent(video.owner_id)) return;
 
     if (!confirm("Delete this video permanently?")) {
         return;
@@ -1681,8 +1697,7 @@ async function deleteVideo(videoId) {
     const result = await db
         .from("videos")
         .delete()
-        .eq("id", videoId)
-        .eq("owner_id", currentUser.id);
+        .eq("id", videoId);
 
     if (result.error) {
         showToast("Delete failed: " + result.error.message);
@@ -3758,9 +3773,9 @@ async function deletePost(postId) {
         String(item.id) === String(postId)
     );
 
-    if (!post || !isOwnContent(post.user_id)) {
-        return;
-    }
+    if (!post || !canManageContent(post.user_id)) {
+    return;
+}
 
     if (!confirm("Delete this post?")) {
         return;
@@ -3769,8 +3784,7 @@ async function deletePost(postId) {
     const result = await db
         .from("posts")
         .delete()
-        .eq("id", postId)
-        .eq("user_id", currentUser.id);
+        .eq("id", postId);
 
     if (result.error) {
         showToast("Delete failed: " + result.error.message);
@@ -4030,7 +4044,6 @@ listen("editProfileForm", "submit", async function(event) {
     currentProfile = result.data;
 
     await loadAllData();
-
     currentProfileUserId = currentUser.id;
 
     renderEverything();
@@ -4047,7 +4060,9 @@ listen("editProfileForm", "submit", async function(event) {
    ============================================================ */
 
 function renderStudio() {
-    const mine = videos.filter(video =>
+    const mine = isGoCatAdmin
+    ? videos
+    : videos.filter(video =>
         isOwnContent(video.owner_id)
     );
 
@@ -4960,6 +4975,7 @@ async function signOutGoCat() {
 
     currentUser = null;
     currentProfile = null;
+    isGoCatAdmin = false;
     currentProfileUserId = null;
 
     openLoginScreen();
