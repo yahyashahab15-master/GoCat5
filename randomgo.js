@@ -17,10 +17,12 @@ const SUPABASE_KEY =
 const VIDEO_BUCKET = "videos";
 const POST_BUCKET = "post-media";
 
-const db = window.supabase.createClient(
-    SUPABASE_URL,
-    SUPABASE_KEY
-);
+const db = window.supabase?.createClient
+    ? window.supabase.createClient(
+        SUPABASE_URL,
+        SUPABASE_KEY
+      )
+    : null;
 
 
 /* ============================================================
