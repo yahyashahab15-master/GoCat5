@@ -4974,44 +4974,13 @@ listen("settingsLogout", "click", signOutGoCat);
    79 — AUTH SESSION
    ============================================================ */
 
- {
-    const loader = $("loader");
-
-    try {
-        const result = await db.auth.getSession();
-
-        if (result.error) {
-            throw result.error;
-        }
-
-        const session = result.data.session;
-
-        if (session?.user) {
-            currentUser = session.user;
-
-            await startGoCat();
-
-        } else {
-            openLoginScreen();
-        }
-
-    } catch (error) {
-        console.error(error);
-
-        openLoginScreen();
-
-        showAuthMessage(
-            "Could not connect to GoCat: " + error.message
-        );
-
-    } finally {
-        loader?.classList.add("hide");
-    }
-}
-
+/* ============================================================
+   79 — AUTH SESSION
+   ============================================================ */
 
 if (db) {
     db.auth.onAuthStateChange((event, session) => {
+
         if (event === "SIGNED_OUT") {
             currentUser = null;
             currentProfile = null;
@@ -5019,9 +4988,9 @@ if (db) {
 
             openLoginScreen();
         }
+
     });
 }
-
 
 /* ============================================================
    80 — START APPLICATION
