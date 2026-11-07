@@ -1,27 +1,31 @@
 /* ============================================================
-   GOCAT — PROFESSIONAL CREATOR PLATFORM
-   Supabase authentication, content, uploads and creator tools
-   ============================================================ */
+   GOCAT — COMPLETE JAVASCRIPT
+   Supabase auth, creator feed, videos, Shorts, posts, profiles,
+   follows, comments, studio, history, chat, admin tools and uploads.
 
+   IMPORTANT:
+   1. Keep your existing HTML IDs/data-* attributes.
+   2. Load Supabase JS v2 before this file.
+   3. This file uses your existing Supabase tables and bucket names.
+   4. Admin buttons are UI only; secure RLS policies are still required.
+   ============================================================ */
 
 /* ============================================================
    01 — SUPABASE CONFIGURATION
    ============================================================ */
 
-const SUPABASE_URL =
-    "https://rfwgvsijxweyzwvuqslt.supabase.co";
-
-const SUPABASE_KEY =
-    "sb_publishable_LWIaOaxbzp19lV765vbbQg_kF5apL0O";
+const SUPABASE_URL = "https://rfwgvsijxweyzwvuqslt.supabase.co";
+const SUPABASE_KEY = "sb_publishable_LWIaOaxbzp19lV765vbbQg_kF5apL0O";
 
 const VIDEO_BUCKET = "videos";
 const POST_BUCKET = "post-media";
 
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+const MAX_VIDEO_DURATION = 300;
+const PAGE_SIZE = 5;
+
 const db = window.supabase?.createClient
-    ? window.supabase.createClient(
-        SUPABASE_URL,
-        SUPABASE_KEY
-      )
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
     : null;
 
 
@@ -59,16 +63,14 @@ let exportedReelFile = null;
 
 let currentObjectURL = null;
 let reelObserver = null;
+let currentUploadPath = null;
+let tusLibraryPromise = null;
 
 let editorAudioContext = null;
 let editorVideoSource = null;
 let editorVideoGain = null;
 let editorMusicBuffer = null;
 let editorMusicObjectURL = null;
-
-let currentUploadPath = null;
-
-const PAGE_SIZE = 5;
 
 let settings = {
     theme: "dark",
@@ -79,7 +81,7 @@ let settings = {
 
 
 /* ============================================================
-   03 — DOM HELPER
+   03 — DOM AND GENERAL HELPERS
    ============================================================ */
 
 function $(id) {
@@ -94,11 +96,6 @@ function listen(id, event, callback) {
     }
 }
 
-
-/* ============================================================
-   04 — GENERAL HELPERS
-   ============================================================ */
-
 function escapeHTML(value) {
     return String(value ?? "")
         .replaceAll("&", "&amp;")
@@ -108,7 +105,6 @@ function escapeHTML(value) {
         .replaceAll("'", "&#039;");
 }
 
-
 function getInitial(name) {
     return String(name || "?")
         .trim()
@@ -116,13 +112,11 @@ function getInitial(name) {
         .toUpperCase();
 }
 
-
 function getUser(userId) {
     return users.find(user =>
         String(user.id) === String(userId)
     );
 }
-
 
 function getUsername(userId) {
     const user = getUser(userId);
@@ -141,9 +135,9 @@ function getUsername(userId) {
     return "GoCat creator";
 }
 
-
 function isOwnContent(userId) {
-    return String(userId) === String(currentUser?.id);
+    return !!currentUser &&
+        String(userId) === String(currentUser.id);
 }
 
 function canManageContent(ownerId) {
@@ -151,18 +145,18 @@ function canManageContent(ownerId) {
 }
 
 function isFollowing(userId) {
+    if (!currentUser) return false;
+
     return follows.some(item =>
         String(item.follower_id) === String(currentUser.id) &&
         String(item.following_id) === String(userId)
     );
 }
 
-
 function isShort(video) {
-    return video.is_short === true ||
-        video.is_short === "true";
+    return video?.is_short === true ||
+        video?.is_short === "true";
 }
-
 
 function formatDate(value) {
     if (!value) return "Just now";
@@ -200,6 +194,20 @@ function formatDate(value) {
     return date.toLocaleDateString();
 }
 
+function formatTime(seconds) {
+    if (!Number.isFinite(seconds)) {
+        return "00:00";
+    }
+
+    const minutes = Math.floor(seconds / 60);
+    const remaining = Math.floor(seconds % 60);
+
+    return (
+        String(minutes).padStart(2, "0") +
+        ":" +
+        String(remaining).padStart(2, "0")
+    );
+}
 
 function topicEmoji(topic) {
     const icons = {
@@ -218,18 +226,18 @@ function topicEmoji(topic) {
     return icons[topic] || "◈";
 }
 
-
 function safeJSON(key, fallback = []) {
     try {
-        return JSON.parse(
-            localStorage.getItem(key) ||
-            JSON.stringify(fallback)
-        );
+        const saved = localStorage.getItem(key);
+
+        return saved
+            ? JSON.parse(saved)
+            : fallback;
+
     } catch {
         return fallback;
     }
 }
-
 
 function showToast(message) {
     const toast = $("toast");
@@ -246,7 +254,6 @@ function showToast(message) {
     }, 3000);
 }
 
-
 function showAuthMessage(message, success = false) {
     const element = $("authMessage");
 
@@ -259,37 +266,18 @@ function showAuthMessage(message, success = false) {
         : "#ef6272";
 }
 
-
 function showModal(id) {
     $(id)?.classList.remove("hidden");
 }
-
 
 function hideModal(id) {
     $(id)?.classList.add("hidden");
 }
 
-
-function formatTime(seconds) {
-    if (!Number.isFinite(seconds)) {
-        return "00:00";
-    }
-
-    const minutes = Math.floor(seconds / 60);
-    const remaining = Math.floor(seconds % 60);
-
-    return (
-        String(minutes).padStart(2, "0") +
-        ":" +
-        String(remaining).padStart(2, "0")
-    );
-}
-
-
 function getVideoURL(path) {
-    if (!path) return "";
+    if (!path || !db) return "";
 
-    if (String(path).startsWith("http")) {
+    if (/^https?:\/\//i.test(String(path))) {
         return path;
     }
 
@@ -299,11 +287,10 @@ function getVideoURL(path) {
         .data.publicUrl;
 }
 
-
 function getPostImageURL(path) {
-    if (!path) return "";
+    if (!path || !db) return "";
 
-    if (String(path).startsWith("http")) {
+    if (/^https?:\/\//i.test(String(path))) {
         return path;
     }
 
@@ -315,7 +302,7 @@ function getPostImageURL(path) {
 
 
 /* ============================================================
-   05 — SETTINGS STORAGE
+   04 — SETTINGS AND THEME
    ============================================================ */
 
 function loadSettings() {
@@ -332,7 +319,6 @@ function loadSettings() {
     };
 }
 
-
 function saveSettings() {
     localStorage.setItem(
         "gocat_settings_v2",
@@ -340,26 +326,28 @@ function saveSettings() {
     );
 }
 
-
 function applyTheme() {
     document.body.classList.toggle(
         "light",
         settings.theme === "light"
     );
 
-    $("themeIcon").textContent =
-        settings.theme === "dark" ? "☀" : "◐";
+    if ($("themeIcon")) {
+        $("themeIcon").textContent =
+            settings.theme === "dark" ? "☀" : "◐";
+    }
 
-    $("themeLabel").textContent =
-        settings.theme === "dark"
-            ? "Light appearance"
-            : "Dark appearance";
+    if ($("themeLabel")) {
+        $("themeLabel").textContent =
+            settings.theme === "dark"
+                ? "Light appearance"
+                : "Dark appearance";
+    }
 
     if ($("settingTheme")) {
         $("settingTheme").value = settings.theme;
     }
 }
-
 
 function applySettings() {
     loadSettings();
@@ -378,136 +366,118 @@ function applySettings() {
     }
 }
 
-
 applySettings();
-
-
-/* ============================================================
-   06 — AUTHENTICATION
-   ============================================================ */
-
 function openLoginScreen() {
-    $("authScreen").classList.remove("hidden");
-    $("app").classList.add("hidden");
+    $("authScreen")?.classList.remove("hidden");
+    $("app")?.classList.add("hidden");
+    $("loginForm")?.classList.remove("hidden");
+    $("registerForm")?.classList.add("hidden");
 
-    $("loginForm").classList.remove("hidden");
-    $("registerForm").classList.add("hidden");
-
-    $("authTitle").textContent = "Welcome back";
-
-    $("authSubtitle").textContent =
-        "Sign in to continue to your workspace.";
+    if ($("authTitle")) $("authTitle").textContent = "Welcome back";
+    if ($("authSubtitle")) {
+        $("authSubtitle").textContent = "Sign in to continue to your workspace.";
+    }
 
     showAuthMessage("");
 }
-
 
 function openRegisterScreen() {
-    $("authScreen").classList.remove("hidden");
-    $("app").classList.add("hidden");
+    $("authScreen")?.classList.remove("hidden");
+    $("app")?.classList.add("hidden");
+    $("loginForm")?.classList.add("hidden");
+    $("registerForm")?.classList.remove("hidden");
 
-    $("loginForm").classList.add("hidden");
-    $("registerForm").classList.remove("hidden");
-
-    $("authTitle").textContent =
-        "Create your account";
-
-    $("authSubtitle").textContent =
-        "Join the GoCat creator community.";
+    if ($("authTitle")) $("authTitle").textContent = "Create your account";
+    if ($("authSubtitle")) {
+        $("authSubtitle").textContent = "Join the GoCat creator community.";
+    }
 
     showAuthMessage("");
 }
 
-
 function openApp() {
-    $("authScreen").classList.add("hidden");
-    $("app").classList.remove("hidden");
+    $("authScreen")?.classList.add("hidden");
+    $("app")?.classList.remove("hidden");
 }
-
 
 listen("showRegister", "click", openRegisterScreen);
 listen("showLogin", "click", openLoginScreen);
 
+listen("loginForm", "submit", async function(event) {
+    event.preventDefault();
 
-/* ============================================================
-   07 — LOGIN
-   ============================================================ */
+    const email = $("loginEmail")?.value.trim() || "";
+    const password = $("loginPassword")?.value || "";
 
-const loginForm = $("loginForm");
+    const button = this.querySelector('button[type="submit"]');
 
-if (loginForm) {
-    loginForm.addEventListener("submit", async function(event) {
-        event.preventDefault();
-
-        const email = $("loginEmail").value.trim();
-        const password = $("loginPassword").value;
-
-        const button = this.querySelector('button[type="submit"]');
-
-        if (!button) return;
-
+    if (button) {
         button.disabled = true;
         button.textContent = "Signing in...";
+    }
 
-        try {
-            if (!db) {
-                throw new Error("Supabase did not load. Refresh the page.");
-            }
+    try {
+        if (!db) {
+            throw new Error("Supabase did not load. Refresh the page.");
+        }
 
-            const result = await db.auth.signInWithPassword({
-                email,
-                password
-            });
+        const { data, error } = await db.auth.signInWithPassword({
+            email,
+            password
+        });
 
-            if (result.error) {
-                throw result.error;
-            }
+        if (error) throw error;
 
-            await startGoCat();
-            
+        currentUser = data.user;
 
-        } catch (error) {
-            showAuthMessage(error.message || "Login failed.");
-        } finally {
+        await startGoCat();
+
+    } catch (error) {
+        console.error("Login error:", error);
+        showAuthMessage(error.message || "Login failed.");
+
+    } finally {
+        if (button) {
             button.disabled = false;
             button.textContent = "Sign in";
         }
-    });
-}
+    }
+});
 
-
-/* ============================================================
-   08 — REGISTER
-   ============================================================ */
+/* FIXED: no stray else; admin detection runs after login. */
 
 listen("registerForm", "submit", async function(event) {
     event.preventDefault();
 
-    const username = $("registerUsername").value.trim();
-    const email = $("registerEmail").value.trim();
-    const password = $("registerPassword").value;
-    const confirm = $("registerConfirm").value;
+    const username = $("registerUsername")?.value.trim() || "";
+    const email = $("registerEmail")?.value.trim() || "";
+    const password = $("registerPassword")?.value || "";
+    const confirmPassword = $("registerConfirm")?.value || "";
 
-    if (username.length < 3) {
-        showAuthMessage(
-            "Username must have at least 3 characters."
-        );
+    const button = this.querySelector('button[type="submit"]');
+
+    if (!db) {
+        showAuthMessage("Supabase is not connected.");
         return;
     }
 
-    if (password !== confirm) {
+    if (username.length < 3) {
+        showAuthMessage("Username must have at least 3 characters.");
+        return;
+    }
+
+    if (password !== confirmPassword) {
         showAuthMessage("Passwords do not match.");
         return;
     }
 
-    const button =
-        this.querySelector('button[type="submit"]');
-
-    button.disabled = true;
-    button.textContent = "Creating account...";
+    if (button) {
+        button.disabled = true;
+        button.textContent = "Creating account...";
+    }
 
     try {
-        const result = await db.auth.signUp({
+        const { data, error } = await db.auth.signUp({
             email,
             password,
             options: {
@@ -515,23 +485,13 @@ listen("registerForm", "submit", async function(event) {
             }
         });
 
-        if (result.error) {
-            throw result.error;
-        }
+        if (error) throw error;
 
-        if (result.data.session) {
-            currentUser = result.data.user;
+        if (data.session && data.user) {
+            currentUser = data.user;
             await startGoCat();
-        } 
-        const adminCheck = await db.rpc("is_gocat_admin");
 
-isGoCatAdmin =
-    !adminCheck.error && adminCheck.data === true;
-
-if (adminCheck.error) {
-    console.warn("Admin check failed:", adminCheck.error);
-}
-        else {
+        } else {
             openLoginScreen();
 
             showAuthMessage(
@@ -541,22 +501,20 @@ if (adminCheck.error) {
         }
 
     } catch (error) {
-        console.error(error);
-
-        showAuthMessage(
-            error.message || "Registration failed."
-        );
+        console.error("Registration error:", error);
+        showAuthMessage(error.message || "Registration failed.");
 
     } finally {
-        button.disabled = false;
-        button.textContent = "Create account";
+        if (button) {
+            button.disabled = false;
+            button.textContent = "Create account";
+        }
     }
 });
 
 
 /* ============================================================
-   09 — USER PROFILE
-   Existing users table and TEXT IDs are preserved.
+   06 — PROFILE AND ADMIN STATUS
    ============================================================ */
 
 async function ensureProfile() {
@@ -566,9 +524,7 @@ async function ensureProfile() {
         .eq("id", currentUser.id)
         .maybeSingle();
 
-    if (existing.error) {
-        throw existing.error;
-    }
+    if (existing.error) throw existing.error;
 
     if (existing.data) {
         currentProfile = existing.data;
@@ -576,8 +532,7 @@ async function ensureProfile() {
     }
 
     let username =
-        currentUser.user_metadata?.username ||
-        "gocat_user";
+        currentUser.user_metadata?.username || "gocat_user";
 
     username = username
         .trim()
@@ -588,24 +543,38 @@ async function ensureProfile() {
         .from("users")
         .insert({
             id: currentUser.id,
-            username: username,
+            username,
             email: currentUser.email || "",
             bio: "Welcome to my GoCat channel."
         })
         .select("*")
         .single();
 
-    if (insert.error) {
-        throw insert.error;
-    }
+    if (insert.error) throw insert.error;
 
     currentProfile = insert.data;
 }
 
 
-/* ============================================================
-   10 — LOAD USERS
-   ============================================================ */
+async function loadAdminStatus() {
+    isGoCatAdmin = false;
+
+    const result = await db.rpc("is_gocat_admin");
+
+    if (result.error) {
+        console.warn(
+            "Admin check failed:",
+            result.error.message
+        );
+
+        return;
+    }
+
+    isGoCatAdmin = result.data === true;
+
+    console.log("GoCat admin status:", isGoCatAdmin);
+}
+
 
 async function loadUsers() {
     const result = await db
@@ -613,17 +582,16 @@ async function loadUsers() {
         .select("id,username,email,bio,created_at")
         .order("created_at", { ascending: false });
 
-    if (result.error) {
-        throw result.error;
-    }
+    if (result.error) throw result.error;
 
     users = result.data || [];
 
-    const hasCurrent = users.some(user =>
-        String(user.id) === String(currentUser.id)
-    );
-
-    if (!hasCurrent && currentProfile) {
+    if (
+        !users.some(user =>
+            String(user.id) === String(currentUser.id)
+        ) &&
+        currentProfile
+    ) {
         users.unshift(currentProfile);
     }
 
@@ -635,7 +603,7 @@ async function loadUsers() {
 
 
 /* ============================================================
-   11 — LOAD VIDEOS, LIKES AND COMMENTS
+   07 — LOAD DATABASE DATA
    ============================================================ */
 
 async function loadVideos() {
@@ -658,17 +626,9 @@ async function loadVideos() {
 
     ]);
 
-    if (videoResult.error) {
-        throw videoResult.error;
-    }
-
-    if (likeResult.error) {
-        throw likeResult.error;
-    }
-
-    if (commentResult.error) {
-        throw commentResult.error;
-    }
+    if (videoResult.error) throw videoResult.error;
+    if (likeResult.error) throw likeResult.error;
+    if (commentResult.error) throw commentResult.error;
 
     const allLikes = likeResult.data || [];
     const allComments = commentResult.data || [];
@@ -689,26 +649,16 @@ async function loadVideos() {
 }
 
 
-/* ============================================================
-   12 — LOAD FOLLOWS
-   ============================================================ */
-
 async function loadFollows() {
     const result = await db
         .from("follows")
         .select("follower_id,following_id");
 
-    if (result.error) {
-        throw result.error;
-    }
+    if (result.error) throw result.error;
 
     follows = result.data || [];
 }
 
-
-/* ============================================================
-   13 — LOAD POSTS
-   ============================================================ */
 
 async function loadPosts() {
     const result = await db
@@ -727,10 +677,7 @@ async function loadPosts() {
         .select("post_id,user_id");
 
     if (likesResult.error) {
-        console.warn(
-            "Post likes:",
-            likesResult.error.message
-        );
+        console.warn("Post likes:", likesResult.error.message);
     }
 
     const allLikes = likesResult.data || [];
@@ -747,10 +694,6 @@ async function loadPosts() {
 }
 
 
-/* ============================================================
-   14 — LOAD ALL DATABASE DATA
-   ============================================================ */
-
 async function loadAllData() {
     await Promise.all([
         loadUsers(),
@@ -762,12 +705,17 @@ async function loadAllData() {
 
 
 /* ============================================================
-   15 — START APPLICATION
+   08 — START APPLICATION
    ============================================================ */
 
 async function startGoCat() {
     try {
+        if (!currentUser) {
+            throw new Error("No signed-in user was found.");
+        }
+
         await ensureProfile();
+        await loadAdminStatus();
         await loadAllData();
 
         currentProfileUserId = currentUser.id;
@@ -788,7 +736,7 @@ async function startGoCat() {
         checkSharedVideoLink();
 
     } catch (error) {
-        console.error(error);
+        console.error("GoCat startup:", error);
 
         showToast(
             "Could not load GoCat: " + error.message
@@ -798,62 +746,46 @@ async function startGoCat() {
 
 
 function updateUserInterface() {
-    const username =
-        currentProfile?.username || "Creator";
+    const username = currentProfile?.username || "Creator";
 
-    $("welcomeName").textContent = username;
+    if ($("welcomeName")) {
+        $("welcomeName").textContent = username;
+    }
 
-    $("topProfileBtn").textContent =
-        getInitial(username);
+    if ($("topProfileBtn")) {
+        $("topProfileBtn").textContent = getInitial(username);
+    }
 
-    $("sidebarAvatar").textContent =
-        getInitial(username);
+    if ($("sidebarAvatar")) {
+        $("sidebarAvatar").textContent = getInitial(username);
+    }
 
-    $("sidebarUsername").textContent =
-        username;
+    if ($("sidebarUsername")) {
+        $("sidebarUsername").textContent = username;
+    }
 
-    $("settingsAvatar").textContent =
-        getInitial(username);
+    if ($("settingsAvatar")) {
+        $("settingsAvatar").textContent = getInitial(username);
+    }
 
-    $("settingsUsername").textContent =
-        username;
+    if ($("settingsUsername")) {
+        $("settingsUsername").textContent = username;
+    }
 
-    $("settingsEmail").textContent =
-        currentUser.email || "";
+    if ($("settingsEmail")) {
+        $("settingsEmail").textContent = currentUser?.email || "";
+    }
 }
-
-
 /* ============================================================
-   16 — RENDER ALL SECTIONS
-   ============================================================ */
-
-function renderEverything() {
-    renderHomeFeed();
-    renderReels();
-    renderExplore();
-    renderFollowing();
-    renderSuggestedCreators();
-    renderPosts();
-    renderProfile();
-    renderNotifications();
-    renderChatFriends();
-    renderStudio();
-    renderHistory();
-}
-
-
-/* ============================================================
-   17 — VIDEO CARD
+   09 — VIDEO AND POST CARDS
    ============================================================ */
 
 function videoCard(video) {
     const username = getUsername(video.owner_id);
-
-    const own = isOwnContent(video.owner_id);
     const canDelete = canManageContent(video.owner_id);
     const following = isFollowing(video.owner_id);
 
-    const liked = video.likes?.includes(
+    const liked = (video.likes || []).includes(
         String(currentUser.id)
     );
 
@@ -861,7 +793,6 @@ function videoCard(video) {
         <article class="video-card">
 
             <div class="video-player-wrap">
-
                 <video
                     class="video-player"
                     src="${escapeHTML(getVideoURL(video.storage_path))}"
@@ -870,23 +801,19 @@ function videoCard(video) {
                     preload="metadata"
                     data-play-video="${escapeHTML(video.id)}">
                 </video>
-
             </div>
 
             <div class="video-owner">
-
                 <div class="owner-avatar">
                     ${escapeHTML(getInitial(username))}
                 </div>
 
                 <div class="owner-name">
-
                     <button
                         class="profile-user-btn"
                         data-profile-user="${escapeHTML(video.owner_id)}">
                         ${escapeHTML(username)}
                     </button>
-
                 </div>
 
                 ${
@@ -900,20 +827,16 @@ function videoCard(video) {
                     `
                     : ""
                 }
-
             </div>
 
             <div class="video-info">
-
                 <h3>${escapeHTML(video.title)}</h3>
-
                 <p>${escapeHTML(video.description || "")}</p>
 
                 <span class="video-topic">
                     ${topicEmoji(video.topic)}
                     ${escapeHTML(video.topic || "Other")}
                 </span>
-
             </div>
 
             <div class="video-meta">
@@ -955,22 +878,16 @@ function videoCard(video) {
                 }
 
             </div>
-
         </article>
     `;
 }
 
 
-/* ============================================================
-   18 — POST CARD
-   ============================================================ */
-
 function postCard(post) {
     const username = getUsername(post.user_id);
-    const own = isOwnContent(post.user_id);
     const canDelete = canManageContent(post.user_id);
 
-    const liked = post.likes?.includes(
+    const liked = (post.likes || []).includes(
         String(currentUser.id)
     );
 
@@ -991,7 +908,7 @@ function postCard(post) {
                 </div>
 
                 ${
-                    own
+                    canDelete
                     ? `
                         <button
                             class="action-btn delete-btn"
@@ -1021,14 +938,12 @@ function postCard(post) {
             }
 
             <div class="post-actions">
-
                 <button
                     class="post-like-btn ${liked ? "liked" : ""}"
                     data-like-post="${escapeHTML(post.id)}">
                     ${liked ? "♥" : "♡"}
                     ${post.likes?.length || 0} Likes
                 </button>
-
             </div>
 
         </article>
@@ -1036,14 +951,10 @@ function postCard(post) {
 }
 
 
-/* ============================================================
-   19 — HOME SHORT CARD
-   ============================================================ */
-
 function homeShortCard(video) {
     const username = getUsername(video.owner_id);
 
-    const liked = video.likes?.includes(
+    const liked = (video.likes || []).includes(
         String(currentUser.id)
     );
 
@@ -1055,7 +966,6 @@ function homeShortCard(video) {
                 data-open-reel-id="${escapeHTML(video.id)}">
 
                 <div class="home-short-thumbnail">
-
                     <video
                         src="${escapeHTML(getVideoURL(video.storage_path))}"
                         muted
@@ -1064,19 +974,12 @@ function homeShortCard(video) {
                     </video>
 
                     <span class="home-short-play">▶</span>
-
                 </div>
 
                 <div class="home-short-info">
-
                     <strong>${escapeHTML(video.title)}</strong>
-
                     <small>@${escapeHTML(username)}</small>
-
-                    <small>
-                        ${Number(video.views || 0)} views
-                    </small>
-
+                    <small>${Number(video.views || 0)} views</small>
                 </div>
 
             </button>
@@ -1103,15 +1006,14 @@ function homeShortCard(video) {
 
 
 /* ============================================================
-   20 — HOME FEED DATA
+   10 — HOME FEED
    ============================================================ */
 
 function getHomeFeedData() {
-    const query = $("searchInput").value
-        .trim()
-        .toLowerCase();
+    const query =
+        $("searchInput")?.value.trim().toLowerCase() || "";
 
-    function matchesSearch(item, type) {
+    function matches(item, type) {
         if (!query) return true;
 
         const ownerId = type === "post"
@@ -1134,20 +1036,16 @@ function getHomeFeedData() {
             activeHomeTopic === "All" ||
             video.topic === activeHomeTopic
         )
-        .filter(video => matchesSearch(video, "video"))
+        .filter(video => matches(video, "video"))
         .slice()
         .sort((a, b) => {
-            function score(video) {
-                let points = 0;
 
-                if (isFollowing(video.owner_id)) {
-                    points += 4;
-                }
+            const score = video => {
+                let points = isFollowing(video.owner_id) ? 4 : 0;
 
                 const ageHours =
                     (Date.now() -
-                        new Date(video.created_at).getTime()) /
-                    3600000;
+                        new Date(video.created_at).getTime()) / 3600000;
 
                 points += Math.max(0, 4 - ageHours / 24);
 
@@ -1162,25 +1060,25 @@ function getHomeFeedData() {
                 );
 
                 return points;
-            }
+            };
 
             return score(b) - score(a);
         });
 
     const shorts = videos
-        .filter(video => isShort(video))
+        .filter(isShort)
         .filter(video =>
             activeHomeTopic === "All" ||
             video.topic === activeHomeTopic
         )
-        .filter(video => matchesSearch(video, "video"))
+        .filter(video => matches(video, "video"))
         .slice()
         .sort((a, b) =>
             new Date(b.created_at) - new Date(a.created_at)
         );
 
     const communityPosts = posts
-        .filter(post => matchesSearch(post, "post"))
+        .filter(post => matches(post, "post"))
         .slice()
         .sort((a, b) =>
             new Date(b.created_at) - new Date(a.created_at)
@@ -1193,11 +1091,6 @@ function getHomeFeedData() {
     };
 }
 
-
-/* ============================================================
-   21 — BUILD REPEATING HOME FEED
-   4 VIDEOS → 4 SHORTS → 2 POSTS → REPEAT
-   ============================================================ */
 
 function buildHomeFeedCycles() {
     const data = getHomeFeedData();
@@ -1291,7 +1184,6 @@ function buildHomeFeedCycles() {
                 <section class="home-feed-section">
 
                     <div class="home-feed-heading">
-
                         <div>
                             <h2>Community posts</h2>
                             <p>Updates from GoCat creators.</p>
@@ -1302,7 +1194,6 @@ function buildHomeFeedCycles() {
                             data-go-page="posts">
                             View posts →
                         </button>
-
                     </div>
 
                     <div class="home-feed-post-grid">
@@ -1320,11 +1211,11 @@ function buildHomeFeedCycles() {
 }
 
 
-/* ============================================================
-   22 — RENDER HOME FEED
-   ============================================================ */
-
 function renderHomeFeed() {
+    const container = $("homeFeed");
+
+    if (!container) return;
+
     const cycles = buildHomeFeedCycles();
 
     const visible = cycles.slice(
@@ -1332,7 +1223,7 @@ function renderHomeFeed() {
         homeVisibleCycles
     );
 
-    $("homeFeed").innerHTML = visible.join("");
+    container.innerHTML = visible.join("");
 
     const data = getHomeFeedData();
 
@@ -1349,35 +1240,32 @@ function renderHomeFeed() {
         return sum + (matches ? matches.length : 0);
     }, 0);
 
-    $("homeEmpty").classList.toggle(
+    $("homeEmpty")?.classList.toggle(
         "hidden",
         total > 0
     );
 
-    $("homeLoadMoreWrap").classList.toggle(
+    $("homeLoadMoreWrap")?.classList.toggle(
         "hidden",
         homeVisibleCycles >= cycles.length
     );
 
-    $("homeCount").textContent =
-        "Showing " + shown + " of " + total;
+    if ($("homeCount")) {
+        $("homeCount").textContent =
+            "Showing " + shown + " of " + total;
+    }
 }
 
 
-listen("homeLoadMore", "click", function() {
+listen("homeLoadMore", "click", () => {
     homeVisibleCycles += 1;
     renderHomeFeed();
 });
 
 
-/* ============================================================
-   23 — HOME TOPIC FILTER
-   ============================================================ */
-
 document.querySelectorAll("[data-topic]").forEach(button => {
     button.addEventListener("click", function() {
         activeHomeTopic = this.dataset.topic;
-
         homeVisibleCycles = 1;
 
         document.querySelectorAll("[data-topic]")
@@ -1388,48 +1276,47 @@ document.querySelectorAll("[data-topic]").forEach(button => {
         renderHomeFeed();
     });
 });
-
-
 /* ============================================================
-   24 — SUGGESTED CREATORS
+   11 — CREATORS AND FOLLOWS
    ============================================================ */
 
 function renderSuggestedCreators() {
+    const container = $("suggestedCreators");
+
+    if (!container) return;
+
     const suggestions = users
-        .filter(user => !isOwnContent(user.id))
-        .filter(user => !isFollowing(user.id))
+        .filter(user =>
+            !isOwnContent(user.id) &&
+            !isFollowing(user.id)
+        )
         .slice(0, 15);
 
-    $("suggestedCreators").innerHTML =
-        suggestions.map(user => `
-            <div class="creator-card">
+    container.innerHTML = suggestions.map(user => `
+        <div class="creator-card">
 
-                <div class="creator-avatar">
-                    ${escapeHTML(getInitial(user.username))}
-                </div>
-
-                <div class="creator-info">
-                    <strong>${escapeHTML(user.username)}</strong>
-                    <small>GoCat creator</small>
-                </div>
-
-                <button
-                    class="mini-follow"
-                    data-follow-user="${escapeHTML(user.id)}">
-                    Follow
-                </button>
-
+            <div class="creator-avatar">
+                ${escapeHTML(getInitial(user.username))}
             </div>
-        `).join("");
+
+            <div class="creator-info">
+                <strong>${escapeHTML(user.username)}</strong>
+                <small>GoCat creator</small>
+            </div>
+
+            <button
+                class="mini-follow"
+                data-follow-user="${escapeHTML(user.id)}">
+                Follow
+            </button>
+
+        </div>
+    `).join("");
 }
 
 
-/* ============================================================
-   25 — FOLLOW AND UNFOLLOW
-   ============================================================ */
-
 async function toggleFollow(userId) {
-    if (isOwnContent(userId)) return;
+    if (!currentUser || isOwnContent(userId)) return;
 
     const existing = follows.find(item =>
         String(item.follower_id) === String(currentUser.id) &&
@@ -1438,6 +1325,7 @@ async function toggleFollow(userId) {
 
     try {
         if (existing) {
+
             const result = await db
                 .from("follows")
                 .delete()
@@ -1453,6 +1341,7 @@ async function toggleFollow(userId) {
             showToast("Unfollowed " + getUsername(userId));
 
         } else {
+
             const result = await db
                 .from("follows")
                 .insert({
@@ -1480,7 +1369,7 @@ async function toggleFollow(userId) {
 
 
 /* ============================================================
-   26 — VIDEO LIKES
+   12 — LIKES AND COMMENTS
    ============================================================ */
 
 async function toggleVideoLike(videoId) {
@@ -1490,36 +1379,35 @@ async function toggleVideoLike(videoId) {
 
     if (!video) return;
 
+    video.likes = video.likes || [];
+
     const liked = video.likes.includes(
         String(currentUser.id)
     );
 
     try {
-        if (liked) {
-            const result = await db
+        const result = liked
+
+            ? await db
                 .from("likes")
                 .delete()
                 .eq("video_id", videoId)
-                .eq("user_id", currentUser.id);
+                .eq("user_id", currentUser.id)
 
-            if (result.error) throw result.error;
-
-            video.likes = video.likes.filter(
-                id => id !== String(currentUser.id)
-            );
-
-        } else {
-            const result = await db
+            : await db
                 .from("likes")
                 .insert({
                     video_id: videoId,
                     user_id: currentUser.id
                 });
 
-            if (result.error) throw result.error;
+        if (result.error) throw result.error;
 
-            video.likes.push(String(currentUser.id));
-        }
+        video.likes = liked
+            ? video.likes.filter(id =>
+                id !== String(currentUser.id)
+              )
+            : [...video.likes, String(currentUser.id)];
 
         renderEverything();
 
@@ -1530,15 +1418,13 @@ async function toggleVideoLike(videoId) {
 }
 
 
-/* ============================================================
-   27 — COMMENTS
-   ============================================================ */
-
 async function openComments(videoId) {
     currentCommentVideoId = videoId;
 
-    $("commentsList").innerHTML =
-        "<p class='muted-text'>Loading comments...</p>";
+    if ($("commentsList")) {
+        $("commentsList").innerHTML =
+            "<p class='muted-text'>Loading comments...</p>";
+    }
 
     showModal("commentsModal");
 
@@ -1547,6 +1433,8 @@ async function openComments(videoId) {
 
 
 async function renderComments() {
+    if (!currentCommentVideoId || !$("commentsList")) return;
+
     const result = await db
         .from("comments")
         .select("*")
@@ -1554,8 +1442,7 @@ async function renderComments() {
         .order("created_at", { ascending: true });
 
     if (result.error) {
-        $("commentsList").textContent =
-            result.error.message;
+        $("commentsList").textContent = result.error.message;
         return;
     }
 
@@ -1569,7 +1456,9 @@ async function renderComments() {
                     ${escapeHTML(getUsername(comment.user_id))}
                 </strong>
 
-                <p>${escapeHTML(comment.text)}</p>
+                <p>
+                    ${escapeHTML(comment.content ?? comment.text ?? "")}
+                </p>
 
                 <small>${formatDate(comment.created_at)}</small>
 
@@ -1582,7 +1471,7 @@ async function renderComments() {
 listen("commentForm", "submit", async function(event) {
     event.preventDefault();
 
-    const text = $("commentInput").value.trim();
+    const text = $("commentInput")?.value.trim() || "";
 
     if (!text || !currentCommentVideoId) return;
 
@@ -1611,28 +1500,32 @@ listen("commentForm", "submit", async function(event) {
 
 
 /* ============================================================
-   28 — SHARE VIDEO
+   13 — SHARE AND VIDEO DELETION
    ============================================================ */
 
 async function shareVideo(videoId) {
     const url =
         location.origin +
         location.pathname +
-        "?video=" + encodeURIComponent(videoId);
+        "?video=" +
+        encodeURIComponent(videoId);
 
     try {
         if (navigator.share) {
             await navigator.share({
                 title: "GoCat video",
                 text: "Watch this on GoCat.",
-                url: url
+                url
             });
+
         } else if (navigator.clipboard) {
             await navigator.clipboard.writeText(url);
             showToast("Video link copied!");
+
         } else {
             showToast("Sharing is not supported here.");
         }
+
     } catch (error) {
         if (error.name !== "AbortError") {
             showToast("Sharing failed.");
@@ -1641,13 +1534,9 @@ async function shareVideo(videoId) {
 }
 
 
-/* ============================================================
-   29 — SHARED VIDEO LINK
-   ============================================================ */
-
 function checkSharedVideoLink() {
-    const params = new URLSearchParams(location.search);
-    const videoId = params.get("video");
+    const videoId =
+        new URLSearchParams(location.search).get("video");
 
     if (!videoId) return;
 
@@ -1662,15 +1551,14 @@ function checkSharedVideoLink() {
 
     if (isShort(video)) {
         openSpecificReel(video.id);
+
     } else {
         openPage("home");
 
         setTimeout(() => {
-            const card = document.querySelector(
+            document.querySelector(
                 `[data-play-video="${CSS.escape(String(video.id))}"]`
-            );
-
-            card?.scrollIntoView({
+            )?.scrollIntoView({
                 behavior: "smooth",
                 block: "center"
             });
@@ -1679,10 +1567,6 @@ function checkSharedVideoLink() {
 }
 
 
-/* ============================================================
-   30 — DELETE VIDEO
-   ============================================================ */
-
 async function deleteVideo(videoId) {
     const video = videos.find(item =>
         String(item.id) === String(videoId)
@@ -1690,9 +1574,7 @@ async function deleteVideo(videoId) {
 
     if (!video || !canManageContent(video.owner_id)) return;
 
-    if (!confirm("Delete this video permanently?")) {
-        return;
-    }
+    if (!confirm("Delete this video permanently?")) return;
 
     const result = await db
         .from("videos")
@@ -1710,7 +1592,10 @@ async function deleteVideo(videoId) {
             .remove([video.storage_path]);
 
         if (removal.error) {
-            console.warn("Storage cleanup:", removal.error.message);
+            console.warn(
+                "Storage cleanup:",
+                removal.error.message
+            );
         }
     }
 
@@ -1723,15 +1608,15 @@ async function deleteVideo(videoId) {
 
 
 /* ============================================================
-   31 — SHORTS PAGE
+   14 — SHORTS / REELS
    ============================================================ */
 
 function renderReels() {
     const container = $("reelsFeed");
 
-    const allReels = videos.filter(video =>
-        isShort(video)
-    );
+    if (!container) return;
+
+    const allReels = videos.filter(isShort);
 
     const page = allReels.slice(
         0,
@@ -1754,18 +1639,19 @@ function renderReels() {
             </div>
         `;
 
-        $("reelsLoadMoreWrap").classList.add("hidden");
+        $("reelsLoadMoreWrap")?.classList.add("hidden");
         return;
     }
 
     container.innerHTML = page.map(video => {
         const username = getUsername(video.owner_id);
 
-        const liked = video.likes.includes(
+        const liked = (video.likes || []).includes(
             String(currentUser.id)
         );
 
         const following = isFollowing(video.owner_id);
+        const canDelete = canManageContent(video.owner_id);
 
         return `
             <article
@@ -1837,7 +1723,7 @@ function renderReels() {
                     </button>
 
                     <small style="color:white;text-align:center">
-                        ${video.likes.length || 0}
+                        ${video.likes?.length || 0}
                     </small>
 
                     <button
@@ -1852,13 +1738,25 @@ function renderReels() {
                         Share
                     </button>
 
+                    ${
+                        canDelete
+                        ? `
+                            <button
+                                class="reel-action delete-btn"
+                                data-delete-video="${escapeHTML(video.id)}">
+                                Delete
+                            </button>
+                        `
+                        : ""
+                    }
+
                 </div>
 
             </article>
         `;
     }).join("");
 
-    $("reelsLoadMoreWrap").classList.toggle(
+    $("reelsLoadMoreWrap")?.classList.toggle(
         "hidden",
         reelsVisible >= allReels.length
     );
@@ -1874,7 +1772,7 @@ function observeReels() {
 
     const feed = $("reelsFeed");
 
-    if (!("IntersectionObserver" in window)) {
+    if (!feed || !("IntersectionObserver" in window)) {
         return;
     }
 
@@ -1899,14 +1797,14 @@ function observeReels() {
 }
 
 
-listen("reelsLoadMore", "click", function() {
+listen("reelsLoadMore", "click", () => {
     reelsVisible += PAGE_SIZE;
     renderReels();
 });
 
 
 function openSpecificReel(videoId) {
-    const allReels = videos.filter(video => isShort(video));
+    const allReels = videos.filter(isShort);
 
     const index = allReels.findIndex(video =>
         String(video.id) === String(videoId)
@@ -1919,11 +1817,9 @@ function openSpecificReel(videoId) {
     openPage("reels");
 
     setTimeout(() => {
-        const item = document.querySelector(
+        document.querySelector(
             `[data-reel-item="${CSS.escape(String(videoId))}"]`
-        );
-
-        item?.scrollIntoView({
+        )?.scrollIntoView({
             behavior: "smooth",
             block: "start"
         });
@@ -1931,8 +1827,26 @@ function openSpecificReel(videoId) {
 }
 
 
+listen("reelsFeed", "click", function(event) {
+    const soundButton = event.target.closest("[data-reel-sound]");
+
+    if (!soundButton) return;
+
+    const video = soundButton
+        .closest(".reel-item")
+        ?.querySelector(".reel-video");
+
+    if (!video) return;
+
+    video.muted = !video.muted;
+
+    soundButton.textContent =
+        video.muted ? "Muted" : "Sound";
+});
+
+
 /* ============================================================
-   32 — EXPLORE TABS
+   15 — EXPLORE
    ============================================================ */
 
 function setExploreTab(mode) {
@@ -1947,17 +1861,17 @@ function setExploreTab(mode) {
             );
         });
 
-    $("exploreVideos").classList.toggle(
+    $("exploreVideos")?.classList.toggle(
         "hidden",
         mode !== "videos" && mode !== "reels"
     );
 
-    $("explorePeople").classList.toggle(
+    $("explorePeople")?.classList.toggle(
         "hidden",
         mode !== "people"
     );
 
-    $("explorePosts").classList.toggle(
+    $("explorePosts")?.classList.toggle(
         "hidden",
         mode !== "posts"
     );
@@ -1991,7 +1905,6 @@ function exploreReelCard(video) {
             </div>
 
             <div class="reel-thumb">
-
                 <video
                     src="${escapeHTML(getVideoURL(video.storage_path))}"
                     muted
@@ -2000,7 +1913,6 @@ function exploreReelCard(video) {
                 </video>
 
                 <span class="reel-thumb-label">SHORT</span>
-
             </div>
 
             <p class="feed-post-content">
@@ -2018,19 +1930,13 @@ function exploreReelCard(video) {
 }
 
 
-/* ============================================================
-   33 — EXPLORE RENDERER
-   ============================================================ */
-
 function renderExplore() {
-    const query = $("searchInput").value
-        .trim()
-        .toLowerCase();
+    const query =
+        $("searchInput")?.value.trim().toLowerCase() || "";
 
     if (exploreMode === "videos") {
         const found = videos.filter(video =>
-            !isShort(video) &&
-            (
+            !isShort(video) && (
                 !query ||
                 String(video.title || "").toLowerCase().includes(query) ||
                 String(video.description || "").toLowerCase().includes(query) ||
@@ -2049,8 +1955,7 @@ function renderExplore() {
 
     if (exploreMode === "reels") {
         const found = videos.filter(video =>
-            isShort(video) &&
-            (
+            isShort(video) && (
                 !query ||
                 String(video.title || "").toLowerCase().includes(query) ||
                 String(video.description || "").toLowerCase().includes(query) ||
@@ -2069,8 +1974,7 @@ function renderExplore() {
 
     if (exploreMode === "people") {
         const found = users.filter(user =>
-            !isOwnContent(user.id) &&
-            (
+            !isOwnContent(user.id) && (
                 !query ||
                 String(user.username || "").toLowerCase().includes(query) ||
                 String(user.bio || "").toLowerCase().includes(query)
@@ -2126,25 +2030,27 @@ function renderExplore() {
 
 
 function updateExploreMore(total) {
-    $("exploreLoadMoreWrap").classList.toggle(
+    $("exploreLoadMoreWrap")?.classList.toggle(
         "hidden",
         exploreVisible >= total
     );
 
-    $("exploreCount").textContent =
-        "Showing " + Math.min(exploreVisible, total) +
-        " of " + total;
+    if ($("exploreCount")) {
+        $("exploreCount").textContent =
+            "Showing " +
+            Math.min(exploreVisible, total) +
+            " of " +
+            total;
+    }
 }
 
 
-listen("exploreLoadMore", "click", function() {
+listen("exploreLoadMore", "click", () => {
     exploreVisible += 6;
     renderExplore();
 });
-
-
 /* ============================================================
-   34 — FOLLOWING PAGE
+   16 — FOLLOWING PAGE
    ============================================================ */
 
 function renderFollowing() {
@@ -2159,10 +2065,12 @@ function renderFollowing() {
         !isShort(video)
     );
 
-    $("followingFeed").innerHTML =
-        selected.map(videoCard).join("");
+    if ($("followingFeed")) {
+        $("followingFeed").innerHTML =
+            selected.map(videoCard).join("");
+    }
 
-    $("followingEmpty").classList.toggle(
+    $("followingEmpty")?.classList.toggle(
         "hidden",
         selected.length > 0
     );
@@ -2170,19 +2078,27 @@ function renderFollowing() {
 
 
 /* ============================================================
-   35 — UPLOAD MODAL
+   17 — VIDEO UPLOAD MODAL AND FILE PICKER
    ============================================================ */
 
 function resetUploadForm() {
-    $("uploadForm").reset();
+    $("uploadForm")?.reset();
 
-    $("videoFile").value = "";
-    $("selectedVideoName").textContent = "";
+    if ($("videoFile")) $("videoFile").value = "";
 
-    $("uploadProgress").classList.add("hidden");
-    $("uploadProgressBar").style.width = "0%";
+    if ($("selectedVideoName")) {
+        $("selectedVideoName").textContent = "";
+    }
 
-    $("uploadStatus").textContent = "";
+    $("uploadProgress")?.classList.add("hidden");
+
+    if ($("uploadProgressBar")) {
+        $("uploadProgressBar").style.width = "0%";
+    }
+
+    if ($("uploadStatus")) {
+        $("uploadStatus").textContent = "";
+    }
 
     $("reelEditor")?.classList.add("hidden");
 
@@ -2202,20 +2118,26 @@ function setUploadMode(mode) {
             );
         });
 
-    $("uploadTitle").textContent =
-        uploadMode === "short"
-            ? "Create a Short"
-            : "Upload video";
+    if ($("uploadTitle")) {
+        $("uploadTitle").textContent =
+            uploadMode === "short"
+                ? "Create a Short"
+                : "Upload video";
+    }
 
-    $("uploadDescription").textContent =
-        uploadMode === "short"
-            ? "Prepare and publish a vertical video."
-            : "Publish a video to your GoCat channel.";
+    if ($("uploadDescription")) {
+        $("uploadDescription").textContent =
+            uploadMode === "short"
+                ? "Prepare and publish a vertical video."
+                : "Publish a video to your GoCat channel.";
+    }
 
-    $("publishVideoBtn").textContent =
-        uploadMode === "short"
-            ? "Publish Short"
-            : "Publish video";
+    if ($("publishVideoBtn")) {
+        $("publishVideoBtn").textContent =
+            uploadMode === "short"
+                ? "Publish Short"
+                : "Publish video";
+    }
 }
 
 
@@ -2226,49 +2148,82 @@ function openUpload(mode = "video") {
 }
 
 
-listen("uploadTopBtn", "click", function() {
+listen("uploadTopBtn", "click", () => {
     openUpload("video");
 });
 
-
-listen("createReelBtn", "click", function() {
+listen("createReelBtn", "click", () => {
     openUpload("short");
 });
 
 
-document.querySelectorAll("[data-upload-mode]").forEach(button => {
-    button.addEventListener("click", function() {
-        const mode = this.dataset.uploadMode;
-
-        if (mode !== uploadMode) {
-            setUploadMode(mode);
-        }
+document.querySelectorAll("[data-upload-mode]")
+    .forEach(button => {
+        button.addEventListener("click", function() {
+            if (this.dataset.uploadMode !== uploadMode) {
+                setUploadMode(this.dataset.uploadMode);
+            }
+        });
     });
+
+
+document.addEventListener("click", function(event) {
+    const button = event.target.closest("[data-open-upload]");
+
+    if (!button) return;
+
+    openUpload(
+        button.dataset.openUpload === "short"
+            ? "short"
+            : "video"
+    );
 });
 
 
 /* ============================================================
-   36 — VIDEO FILE SELECTION
+   18 — VIDEO FILE SELECTION
    ============================================================ */
 
-   listen("videoFile", "change", function() {
-
+listen("videoFile", "change", function() {
     const input = this;
-    const file = input.files[0];
+    const file = input.files?.[0];
+
+    selectedVideoFile = null;
+    exportedReelFile = null;
+
+    if ($("selectedVideoName")) {
+        $("selectedVideoName").textContent = "";
+    }
 
     if (!file) return;
 
-    const maxSize = 50 * 1024 * 1024;
-    const maxDuration = 300;
+    const allowedExtensions = [
+        "mp4",
+        "mov",
+        "webm",
+        "m4v",
+        "ogv",
+        "ogg",
+        "3gp",
+        "mkv"
+    ];
 
-    if (!file.type.startsWith("video/")) {
-        showToast("Please select a video.");
+    const extension = (
+        file.name.split(".").pop() || ""
+    ).toLowerCase();
+
+    const validType =
+        file.type.startsWith("video/") ||
+        allowedExtensions.includes(extension);
+
+    if (!validType) {
+        showToast("Please select a supported video file.");
         input.value = "";
         return;
     }
 
-    if (file.size > maxSize) {
-        showToast("Maximum file size on GoCat is 50 MB.");
+    if (file.size > MAX_VIDEO_BYTES) {
+        showToast("Maximum video size is 50 MB.");
         input.value = "";
         return;
     }
@@ -2279,70 +2234,77 @@ document.querySelectorAll("[data-upload-mode]").forEach(button => {
     testVideo.preload = "metadata";
 
     testVideo.onloadedmetadata = function() {
-
         const duration = testVideo.duration;
         const width = testVideo.videoWidth;
         const height = testVideo.videoHeight;
 
         URL.revokeObjectURL(tempURL);
 
-        if (!Number.isFinite(duration) || !width || !height) {
+        if (
+            !Number.isFinite(duration) ||
+            !width ||
+            !height
+        ) {
             showToast("Could not read video information.");
             input.value = "";
             return;
         }
 
-        if (duration > maxDuration) {
+        if (duration > MAX_VIDEO_DURATION) {
             showToast("GoCat videos can be up to 5 minutes.");
             input.value = "";
             return;
         }
 
-        if (Math.max(width, height) > 3840 ||
-            Math.min(width, height) > 2160) {
-
+        if (
+            Math.max(width, height) > 3840 ||
+            Math.min(width, height) > 2160
+        ) {
             showToast("Maximum resolution is 4K UHD.");
             input.value = "";
             return;
         }
 
         selectedVideoFile = file;
-        exportedReelFile = null;
 
-        $("selectedVideoName").textContent =
-            file.name + " • " +
-            (file.size / (1024 * 1024)).toFixed(1) +
-            " MB • " +
-            width + "x" + height;
+        if ($("selectedVideoName")) {
+            $("selectedVideoName").textContent =
+                file.name + " • " +
+                (file.size / (1024 * 1024)).toFixed(2) +
+                " MB • " +
+                width + "x" + height;
+        }
 
         if (uploadMode === "short") {
             prepareReelEditor(file);
         }
 
         showToast("Video ready!");
-
     };
 
     testVideo.onerror = function() {
-
         URL.revokeObjectURL(tempURL);
 
-        showToast("This video format could not be read.");
+        showToast(
+            "This video format could not be read by your browser."
+        );
 
         input.value = "";
     };
 
     testVideo.src = tempURL;
-
 });
 
 
 /* ============================================================
-   37 — OPEN SHORTS EDITOR
+   19 — SHORTS EDITOR PREVIEW
+   Keeps original video unless edited export succeeds.
    ============================================================ */
 
 function prepareReelEditor(file) {
     const preview = $("reelPreview");
+
+    if (!preview) return;
 
     if (currentObjectURL) {
         URL.revokeObjectURL(currentObjectURL);
@@ -2355,73 +2317,97 @@ function prepareReelEditor(file) {
     preview.style.transform = "none";
     preview.playbackRate = 1;
 
+    if ($("editorProjectStatus")) {
+        $("editorProjectStatus").textContent = file.name;
+    }
 
-    $("editorProjectStatus").textContent = file.name;
+    if ($("editorStatus")) {
+        $("editorStatus").textContent =
+            "Choose your edits and export your Short.";
+    }
 
-    $("editorStatus").textContent =
-        "Choose your edits and export your Short.";
+    if ($("editorOverlayPreview")) {
+        $("editorOverlayPreview").style.justifyContent = "flex-end";
+    }
 
-    $("editorOverlayPreview").style.justifyContent = "flex-end";
+    if ($("previewTextOne")) {
+        $("previewTextOne").textContent = "";
+    }
 
-    $("previewTextOne").textContent = "";
-    $("previewTextTwo").textContent = "";
-    $("previewSticker").textContent = "";
+    if ($("previewTextTwo")) {
+        $("previewTextTwo").textContent = "";
+    }
+
+    if ($("previewSticker")) {
+        $("previewSticker").textContent = "";
+    }
 
     showModal("editorModal");
 
     preview.onloadedmetadata = function() {
         const duration = preview.duration;
 
-        $("trimStart").value = 0;
-        $("trimEnd").value = duration.toFixed(1);
+        ["trimStart", "trimStartRange"].forEach(id => {
+            if ($(id)) $(id).value = 0;
+        });
 
-        $("trimStart").max = duration;
-        $("trimEnd").max = duration;
+        if ($("trimEnd")) {
+            $("trimEnd").value = duration.toFixed(1);
+            $("trimEnd").max = duration;
+        }
 
-        $("trimStartRange").max = Math.ceil(duration * 10);
-        $("trimEndRange").max = Math.ceil(duration * 10);
+        if ($("trimStart")) {
+            $("trimStart").max = duration;
+        }
 
-        $("trimStartRange").value = 0;
-        $("trimEndRange").value = Math.ceil(duration * 10);
+        if ($("trimStartRange")) {
+            $("trimStartRange").max =
+                Math.ceil(duration * 10);
+        }
 
-        $("timelineDuration").textContent =
-            formatTime(duration);
+        if ($("trimEndRange")) {
+            $("trimEndRange").max =
+                Math.ceil(duration * 10);
 
-        $("editorTimecode").textContent =
-            "00:00 / " + formatTime(duration);
+            $("trimEndRange").value =
+                Math.ceil(duration * 10);
+        }
+
+        if ($("timelineDuration")) {
+            $("timelineDuration").textContent =
+                formatTime(duration);
+        }
+
+        if ($("editorTimecode")) {
+            $("editorTimecode").textContent =
+                "00:00 / " + formatTime(duration);
+        }
 
         updateEditorPreview();
     };
 }
 
 
-/* ============================================================
-   38 — EDITOR PANEL NAVIGATION
-   ============================================================ */
+document.querySelectorAll("[data-editor-tab]")
+    .forEach(button => {
+        button.addEventListener("click", function() {
+            const tab = this.dataset.editorTab;
 
-document.querySelectorAll("[data-editor-tab]").forEach(button => {
-    button.addEventListener("click", function() {
-        const tab = this.dataset.editorTab;
+            document.querySelectorAll("[data-editor-tab]")
+                .forEach(item => item.classList.remove("active"));
 
-        document.querySelectorAll("[data-editor-tab]")
-            .forEach(item => item.classList.remove("active"));
+            this.classList.add("active");
 
-        this.classList.add("active");
-
-        document.querySelectorAll("[data-editor-panel]")
-            .forEach(panel => {
-                panel.classList.toggle(
-                    "hidden",
-                    panel.dataset.editorPanel !== tab
-                );
-            });
+            document.querySelectorAll("[data-editor-panel]")
+                .forEach(panel => {
+                    panel.classList.toggle(
+                        "hidden",
+                        panel.dataset.editorPanel !== tab
+                    );
+                });
+        });
     });
-});
 
-
-/* ============================================================
-   39 — EDITOR PREVIEW FILTERS
-   ============================================================ */
 
 function getEditorFilter() {
     const filters = {
@@ -2434,7 +2420,7 @@ function getEditorFilter() {
         fade: "brightness(1.08) saturate(.75) contrast(.88)"
     };
 
-    return filters[$("reelFilter").value] || "";
+    return filters[$("reelFilter")?.value] || "";
 }
 
 
@@ -2443,79 +2429,78 @@ function updateEditorPreview() {
 
     if (!preview) return;
 
-    const brightness = Number($("reelBrightness").value);
-    const contrast = Number($("reelContrast").value);
-    const saturation = Number($("reelSaturation").value);
-    const blur = Number($("reelBlur").value);
+    const brightness = Number($("reelBrightness")?.value ?? 100);
+    const contrast = Number($("reelContrast")?.value ?? 100);
+    const saturation = Number($("reelSaturation")?.value ?? 100);
+    const blur = Number($("reelBlur")?.value ?? 0);
 
-    const filterParts = [
+    preview.style.filter = [
         getEditorFilter(),
-        "brightness(" + brightness + "%)",
-        "contrast(" + contrast + "%)",
-        "saturate(" + saturation + "%)",
-        "blur(" + blur + "px)"
-    ].filter(Boolean);
-
-    preview.style.filter = filterParts.join(" ");
-
-    const rotation = Number($("reelRotation").value || 0);
+        `brightness(${brightness}%)`,
+        `contrast(${contrast}%)`,
+        `saturate(${saturation}%)`,
+        `blur(${blur}px)`
+    ].filter(Boolean).join(" ");
 
     preview.style.transform =
-        "rotate(" + rotation + "deg)";
+        `rotate(${Number($("reelRotation")?.value || 0)}deg)`;
 
     preview.playbackRate =
-        Number($("reelSpeed").value || 1);
+        Number($("reelSpeed")?.value || 1);
 
-    $("brightnessValue").textContent =
-        brightness + "%";
+    [
+        ["brightnessValue", brightness + "%"],
+        ["contrastValue", contrast + "%"],
+        ["saturationValue", saturation + "%"],
+        ["blurValue", blur + "px"]
+    ].forEach(([id, value]) => {
+        if ($(id)) $(id).textContent = value;
+    });
 
-    $("contrastValue").textContent =
-        contrast + "%";
-
-    $("saturationValue").textContent =
-        saturation + "%";
-
-    $("blurValue").textContent =
-        blur + "px";
-
-    $("previewTextOne").textContent =
-        $("reelOverlayText").value;
-
-    $("previewTextTwo").textContent =
-        $("reelOverlayTextTwo").value;
-
-    $("previewSticker").textContent =
-        $("reelSticker").value;
-
-    $("previewTextOne").style.fontSize =
-        Number($("reelTextSize").value) + "px";
-
-    $("previewTextOne").style.color =
-        $("reelTextColor").value;
-
-    const position = $("reelTextPosition").value;
-
-    const previewOverlay = $("editorOverlayPreview");
-
-    if (position === "top") {
-        previewOverlay.style.justifyContent = "flex-start";
-    } else if (position === "middle") {
-        previewOverlay.style.justifyContent = "center";
-    } else {
-        previewOverlay.style.justifyContent = "flex-end";
+    if ($("previewTextOne")) {
+        $("previewTextOne").textContent =
+            $("reelOverlayText")?.value || "";
     }
 
-    const framing = $("reelFraming").value;
+    if ($("previewTextTwo")) {
+        $("previewTextTwo").textContent =
+            $("reelOverlayTextTwo")?.value || "";
+    }
 
-    if (framing === "contain") {
-        preview.style.objectFit = "contain";
-    } else {
-        preview.style.objectFit = "cover";
+    if ($("previewSticker")) {
+        $("previewSticker").textContent =
+            $("reelSticker")?.value || "";
+    }
+
+    if ($("previewTextOne") && $("reelTextSize")) {
+        $("previewTextOne").style.fontSize =
+            Number($("reelTextSize").value) + "px";
+    }
+
+    if ($("previewTextOne") && $("reelTextColor")) {
+        $("previewTextOne").style.color =
+            $("reelTextColor").value;
+    }
+
+    if ($("editorOverlayPreview")) {
+        const position = $("reelTextPosition")?.value;
+
+        $("editorOverlayPreview").style.justifyContent =
+            position === "top"
+                ? "flex-start"
+                : position === "middle"
+                    ? "center"
+                    : "flex-end";
+    }
+
+    if ($("reelFraming")) {
+        preview.style.objectFit =
+            $("reelFraming").value === "contain"
+                ? "contain"
+                : "cover";
     }
 }
 
-
-/* Bind all editor inputs */
 
 [
     "reelFilter",
@@ -2538,95 +2523,110 @@ function updateEditorPreview() {
 });
 
 
-/* ============================================================
-   40 — TRIM CONTROLS
-   ============================================================ */
-
 function syncTrimInputs(changed) {
     const preview = $("reelPreview");
 
-    if (!preview.duration) return;
+    if (!preview?.duration) return;
 
-    let start = Number($("trimStart").value || 0);
-    let end = Number($("trimEnd").value || preview.duration);
+    let start = Number($("trimStart")?.value || 0);
+    let end = Number($("trimEnd")?.value || preview.duration);
 
     if (changed === "start") {
-        start = Math.max(0, Math.min(start, end - .1));
-        $("trimStart").value = start.toFixed(1);
+        start = Math.max(0, Math.min(start, end - 0.1));
+
+        if ($("trimStart")) {
+            $("trimStart").value = start.toFixed(1);
+        }
     }
 
     if (changed === "end") {
-        end = Math.min(preview.duration, Math.max(end, start + .1));
-        $("trimEnd").value = end.toFixed(1);
+        end = Math.min(
+            preview.duration,
+            Math.max(end, start + 0.1)
+        );
+
+        if ($("trimEnd")) {
+            $("trimEnd").value = end.toFixed(1);
+        }
     }
 
-    $("trimStartRange").value = Math.round(start * 10);
-    $("trimEndRange").value = Math.round(end * 10);
+    if ($("trimStartRange")) {
+        $("trimStartRange").value = Math.round(start * 10);
+    }
 
-    $("timelineDuration").textContent =
-        formatTime(end - start);
+    if ($("trimEndRange")) {
+        $("trimEndRange").value = Math.round(end * 10);
+    }
+
+    if ($("timelineDuration")) {
+        $("timelineDuration").textContent =
+            formatTime(end - start);
+    }
 }
 
 
 listen("trimStart", "input", () => syncTrimInputs("start"));
 listen("trimEnd", "input", () => syncTrimInputs("end"));
 
-
 listen("trimStartRange", "input", function() {
-    $("trimStart").value =
-        (Number(this.value) / 10).toFixed(1);
+    if ($("trimStart")) {
+        $("trimStart").value =
+            (Number(this.value) / 10).toFixed(1);
+    }
 
     syncTrimInputs("start");
 });
 
 
 listen("trimEndRange", "input", function() {
-    $("trimEnd").value =
-        (Number(this.value) / 10).toFixed(1);
+    if ($("trimEnd")) {
+        $("trimEnd").value =
+            (Number(this.value) / 10).toFixed(1);
+    }
 
     syncTrimInputs("end");
 });
 
 
 listen("reelPreview", "timeupdate", function() {
-    const preview = this;
+    if (!this.duration) return;
 
-    if (!preview.duration) return;
+    if ($("editorTimecode")) {
+        $("editorTimecode").textContent =
+            formatTime(this.currentTime) +
+            " / " +
+            formatTime(this.duration);
+    }
 
-    $("editorTimecode").textContent =
-        formatTime(preview.currentTime) +
-        " / " +
-        formatTime(preview.duration);
-
-    const start = Number($("trimStart").value || 0);
-    const end = Number($("trimEnd").value || preview.duration);
+    const start = Number($("trimStart")?.value || 0);
+    const end = Number($("trimEnd")?.value || this.duration);
 
     const position = Math.max(
         0,
         Math.min(
             100,
-            ((preview.currentTime - start) / Math.max(.1, end - start)) * 100
+            ((this.currentTime - start) /
+                Math.max(0.1, end - start)) * 100
         )
     );
 
-    $("timelinePlayhead").style.left =
-        position + "%";
+    if ($("timelinePlayhead")) {
+        $("timelinePlayhead").style.left = position + "%";
+    }
 
-    if (preview.currentTime >= end) {
-        preview.pause();
+    if (this.currentTime >= end) {
+        this.pause();
     }
 });
 
 
-/* ============================================================
-   41 — EDITOR PLAY BUTTON
-   ============================================================ */
-
 listen("editorPreviewPlay", "click", async function() {
     const preview = $("reelPreview");
 
-    const start = Number($("trimStart").value || 0);
-    const end = Number($("trimEnd").value || preview.duration);
+    if (!preview) return;
+
+    const start = Number($("trimStart")?.value || 0);
+    const end = Number($("trimEnd")?.value || preview.duration);
 
     if (preview.paused) {
         if (
@@ -2638,35 +2638,38 @@ listen("editorPreviewPlay", "click", async function() {
 
         try {
             await preview.play();
-
-            this.textContent = "Ⅱ";
-
         } catch {
             showToast("Preview playback was blocked.");
         }
 
     } else {
         preview.pause();
-        this.textContent = "▶";
     }
 });
 
 
 listen("reelPreview", "play", () => {
-    $("editorPreviewPlay").textContent = "Ⅱ";
+    if ($("editorPreviewPlay")) {
+        $("editorPreviewPlay").textContent = "Ⅱ";
+    }
 });
 
 listen("reelPreview", "pause", () => {
-    $("editorPreviewPlay").textContent = "▶";
+    if ($("editorPreviewPlay")) {
+        $("editorPreviewPlay").textContent = "▶";
+    }
 });
+/* ============================================================
+   PART 6 — VIDEO EDITOR, MUSIC AND UPLOAD SYSTEM
+   ============================================================ */
 
 
 /* ============================================================
-   42 — EDITOR MUSIC FILE
+   19 — MUSIC FILE SELECTION
    ============================================================ */
 
-listen("musicFile", "change", async function() {
-    const file = this.files[0];
+listen("musicFile", "change", function() {
+    const file = this.files?.[0];
 
     if (!file) return;
 
@@ -2681,15 +2684,16 @@ listen("musicFile", "change", async function() {
     }
 
     editorMusicObjectURL = URL.createObjectURL(file);
-
     editorMusicBuffer = null;
 
-    $("musicFileName").textContent =
-        file.name + " • " +
-        (file.size / (1024 * 1024)).toFixed(1) +
-        " MB";
+    if ($("musicFileName")) {
+        $("musicFileName").textContent =
+            file.name + " • " +
+            (file.size / (1024 * 1024)).toFixed(2) +
+            " MB";
+    }
 
-    showToast("Music selected. It will be mixed during export.");
+    showToast("Music selected!");
 });
 
 
@@ -2698,22 +2702,22 @@ listen("removeMusicBtn", "click", function() {
 
     if (editorMusicObjectURL) {
         URL.revokeObjectURL(editorMusicObjectURL);
-        editorMusicObjectURL = null;
     }
 
-    $("musicFile").value = "";
-    $("musicFileName").textContent = "";
+    editorMusicObjectURL = null;
+
+    if ($("musicFile")) $("musicFile").value = "";
+
+    if ($("musicFileName")) {
+        $("musicFileName").textContent = "";
+    }
 
     showToast("Background music removed.");
 });
 
 
-/* ============================================================
-   43 — LOAD MUSIC INTO AUDIO BUFFER
-   ============================================================ */
-
 async function loadEditorMusic() {
-    const file = $("musicFile").files[0];
+    const file = $("musicFile")?.files?.[0];
 
     if (!file) return null;
 
@@ -2722,9 +2726,7 @@ async function loadEditorMusic() {
             window.AudioContext ||
             window.webkitAudioContext;
 
-        if (!AudioContextClass) {
-            return null;
-        }
+        if (!AudioContextClass) return null;
 
         editorAudioContext = new AudioContextClass();
     }
@@ -2743,7 +2745,7 @@ async function loadEditorMusic() {
 
 
 /* ============================================================
-   44 — CANVAS TEXT WRAPPING
+   20 — CANVAS TEXT WRAPPING
    ============================================================ */
 
 function drawWrappedText(
@@ -2764,9 +2766,10 @@ function drawWrappedText(
             ? line + " " + word
             : word;
 
-        const width = context.measureText(testLine).width;
+        const textWidth =
+            context.measureText(testLine).width;
 
-        if (width > maxWidth && line) {
+        if (textWidth > maxWidth && line) {
             context.strokeText(line, x, currentY);
             context.fillText(line, x, currentY);
 
@@ -2786,10 +2789,15 @@ function drawWrappedText(
 
 
 /* ============================================================
-   45 — DRAW EDITED VIDEO FRAME
+   21 — DRAW EDITED VIDEO FRAME
    ============================================================ */
 
-function drawEditedFrame(context, preview, width, height) {
+function drawEditedFrame(
+    context,
+    preview,
+    width,
+    height
+) {
     const sourceWidth = preview.videoWidth;
     const sourceHeight = preview.videoHeight;
 
@@ -2798,9 +2806,7 @@ function drawEditedFrame(context, preview, width, height) {
     context.fillStyle = "#000";
     context.fillRect(0, 0, width, height);
 
-    const framing = $("reelFraming").value;
-
-    const ratio = width / height;
+    const framing = $("reelFraming")?.value || "cover";
 
     const scale = framing === "contain"
         ? Math.min(
@@ -2816,20 +2822,19 @@ function drawEditedFrame(context, preview, width, height) {
     const drawHeight = sourceHeight * scale;
 
     const rotation =
-        Number($("reelRotation").value || 0) *
+        Number($("reelRotation")?.value || 0) *
         Math.PI / 180;
-
-    const brightness = Number($("reelBrightness").value) / 100;
-    const contrast = Number($("reelContrast").value) / 100;
-    const saturation = Number($("reelSaturation").value) / 100;
-    const blur = Number($("reelBlur").value);
 
     const cssFilter = [
         getEditorFilter(),
-        "brightness(" + brightness + ")",
-        "contrast(" + contrast + ")",
-        "saturate(" + saturation + ")",
-        "blur(" + blur + "px)"
+
+        `brightness(${Number($("reelBrightness")?.value || 100) / 100})`,
+
+        `contrast(${Number($("reelContrast")?.value || 100) / 100})`,
+
+        `saturate(${Number($("reelSaturation")?.value || 100) / 100})`,
+
+        `blur(${Number($("reelBlur")?.value || 0)}px)`
     ].filter(Boolean).join(" ");
 
     context.save();
@@ -2839,60 +2844,47 @@ function drawEditedFrame(context, preview, width, height) {
 
     context.filter = cssFilter;
 
-    if (
-        Math.abs(Number($("reelRotation").value)) === 90 ||
-        Math.abs(Number($("reelRotation").value)) === 270
-    ) {
-        const rotatedScale = framing === "contain"
-            ? Math.min(
-                width / sourceHeight,
-                height / sourceWidth
-            )
-            : Math.max(
-                width / sourceHeight,
-                height / sourceWidth
-            );
-
-        context.drawImage(
-            preview,
-            -(sourceWidth * rotatedScale) / 2,
-            -(sourceHeight * rotatedScale) / 2,
-            sourceWidth * rotatedScale,
-            sourceHeight * rotatedScale
-        );
-
-    } else {
-        context.drawImage(
-            preview,
-            -drawWidth / 2,
-            -drawHeight / 2,
-            drawWidth,
-            drawHeight
-        );
-    }
+    context.drawImage(
+        preview,
+        -drawWidth / 2,
+        -drawHeight / 2,
+        drawWidth,
+        drawHeight
+    );
 
     context.restore();
 
     context.filter = "none";
 
-    const mainText = $("reelOverlayText").value.trim();
-    const secondText = $("reelOverlayTextTwo").value.trim();
-    const sticker = $("reelSticker").value;
+    const mainText =
+        $("reelOverlayText")?.value.trim() || "";
 
-    const textColor = $("reelTextColor").value;
-    const textSize = Number($("reelTextSize").value);
+    const secondText =
+        $("reelOverlayTextTwo")?.value.trim() || "";
 
-    const position = $("reelTextPosition").value;
+    const sticker =
+        $("reelSticker")?.value || "";
 
-    let textY = height * .82;
+    const textColor =
+        $("reelTextColor")?.value || "#ffffff";
+
+    const textSize =
+        Number($("reelTextSize")?.value || 32);
+
+    const position =
+        $("reelTextPosition")?.value || "bottom";
+
+    let textY = height * 0.82;
 
     if (position === "top") {
-        textY = height * .15;
+        textY = height * 0.15;
     }
 
     if (position === "middle") {
-        textY = height * .5;
+        textY = height * 0.5;
     }
+
+    const ratio = width / 720;
 
     context.save();
 
@@ -2900,19 +2892,19 @@ function drawEditedFrame(context, preview, width, height) {
     context.textBaseline = "middle";
 
     if (sticker) {
-        context.font = "64px Arial";
+        context.font = `${64 * ratio}px Arial`;
+        context.fillStyle = "#fff";
+
         context.fillText(
             sticker,
             width / 2,
-            textY - 90
+            textY - 90 * ratio
         );
     }
 
     if (mainText) {
         context.font =
-            "900 " +
-            Math.round(textSize * (width / 720)) +
-            "px Arial";
+            `900 ${Math.round(textSize * ratio)}px Arial`;
 
         context.fillStyle = textColor;
         context.strokeStyle = "rgba(0,0,0,.85)";
@@ -2923,21 +2915,15 @@ function drawEditedFrame(context, preview, width, height) {
             mainText,
             width / 2,
             textY,
-            width * .82,
-            textSize * 1.25
+            width * 0.82,
+            textSize * 1.25 * ratio
         );
     }
 
     if (secondText) {
-        const secondaryY =
-            textY + textSize * 1.8;
+        context.font = `600 ${19 * ratio}px Arial`;
 
-        context.font =
-            "600 " +
-            Math.round(19 * (width / 720)) +
-            "px Arial";
-
-        context.fillStyle = "#ffffff";
+        context.fillStyle = "#fff";
         context.strokeStyle = "rgba(0,0,0,.85)";
         context.lineWidth = Math.max(2, width / 260);
 
@@ -2945,9 +2931,9 @@ function drawEditedFrame(context, preview, width, height) {
             context,
             secondText,
             width / 2,
-            secondaryY,
-            width * .82,
-            25 * (width / 720)
+            textY + textSize * 1.8 * ratio,
+            width * 0.82,
+            25 * ratio
         );
     }
 
@@ -2956,10 +2942,13 @@ function drawEditedFrame(context, preview, width, height) {
 
 
 /* ============================================================
-   46 — BUILD EDITOR AUDIO MIX
+   22 — BUILD EDITOR AUDIO MIX
    ============================================================ */
 
-async function buildEditorAudioMix(preview, canvasStream) {
+async function buildEditorAudioMix(
+    preview,
+    canvasStream
+) {
     const AudioContextClass =
         window.AudioContext ||
         window.webkitAudioContext;
@@ -2973,7 +2962,9 @@ async function buildEditorAudioMix(preview, canvasStream) {
 
         return {
             cleanup: () => {
-                fallback.getTracks().forEach(track => track.stop());
+                fallback.getTracks().forEach(track => {
+                    track.stop();
+                });
             }
         };
     }
@@ -2989,12 +2980,6 @@ async function buildEditorAudioMix(preview, canvasStream) {
     const destination =
         editorAudioContext.createMediaStreamDestination();
 
-    /*
-       Create the video media source only once.
-       Browsers do not allow creating multiple sources
-       from the same video element.
-    */
-
     if (!editorVideoSource) {
         editorVideoSource =
             editorAudioContext.createMediaElementSource(preview);
@@ -3009,39 +2994,36 @@ async function buildEditorAudioMix(preview, canvasStream) {
         );
     }
 
-    const videoVolume =
-        Number($("reelVolume").value) / 100;
-
-    editorVideoGain.gain.value = videoVolume;
+    editorVideoGain.gain.value =
+        Number($("reelVolume")?.value ?? 100) / 100;
 
     editorVideoGain.connect(destination);
 
     let musicSource = null;
-    let musicGain = null;
 
-    const musicFile = $("musicFile").files[0];
+    const musicFile = $("musicFile")?.files?.[0];
 
     if (musicFile) {
         const buffer = await loadEditorMusic();
 
         if (buffer) {
+            const musicGain =
+                editorAudioContext.createGain();
+
             musicSource =
                 editorAudioContext.createBufferSource();
-
-            musicGain =
-                editorAudioContext.createGain();
 
             musicSource.buffer = buffer;
             musicSource.loop = true;
 
             musicGain.gain.value =
-                Number($("musicVolume").value) / 100;
+                Number($("musicVolume")?.value ?? 30) / 100;
 
             musicSource.connect(musicGain);
             musicGain.connect(destination);
 
             const fadeIn =
-                Number($("musicFadeIn").value);
+                Number($("musicFadeIn")?.value || 0);
 
             if (fadeIn > 0) {
                 musicGain.gain.setValueAtTime(
@@ -3050,7 +3032,7 @@ async function buildEditorAudioMix(preview, canvasStream) {
                 );
 
                 musicGain.gain.linearRampToValueAtTime(
-                    Number($("musicVolume").value) / 100,
+                    Number($("musicVolume")?.value ?? 30) / 100,
                     editorAudioContext.currentTime + fadeIn
                 );
             }
@@ -3066,9 +3048,7 @@ async function buildEditorAudioMix(preview, canvasStream) {
     return {
         cleanup: () => {
             try {
-                if (musicSource) {
-                    musicSource.stop();
-                }
+                musicSource?.stop();
             } catch {}
 
             try {
@@ -3084,14 +3064,14 @@ async function buildEditorAudioMix(preview, canvasStream) {
 
 
 /* ============================================================
-   47 — EXPORT EDITED SHORT
+   23 — EXPORT EDITED SHORT
    ============================================================ */
 
 listen("exportReelBtn", "click", async function() {
     const button = this;
     const preview = $("reelPreview");
 
-    if (!selectedVideoFile) {
+    if (!selectedVideoFile || !preview) {
         showToast("Choose a video first.");
         return;
     }
@@ -3101,23 +3081,20 @@ listen("exportReelBtn", "click", async function() {
         !HTMLCanvasElement.prototype.captureStream
     ) {
         showToast(
-            "This browser does not support video export. The original file can still be uploaded."
+            "Your browser does not support video export. You can still upload the original."
         );
-
-        $("editorStatus").textContent =
-            "Export is not supported by this browser. Use the original clip or try a supported desktop browser.";
 
         return;
     }
 
     const start = Math.max(
         0,
-        Number($("trimStart").value || 0)
+        Number($("trimStart")?.value || 0)
     );
 
     const end = Math.min(
         preview.duration,
-        Number($("trimEnd").value || preview.duration)
+        Number($("trimEnd")?.value || preview.duration)
     );
 
     if (!Number.isFinite(end) || end <= start) {
@@ -3126,16 +3103,19 @@ listen("exportReelBtn", "click", async function() {
     }
 
     const resolution =
-        Number($("reelResolution").value || 720);
+        Number($("reelResolution")?.value || 720);
 
     const square =
-        $("reelFraming").value === "square";
+        $("reelFraming")?.value === "square";
 
     const width = resolution;
-    const height = square ? resolution : Math.round(resolution * 16 / 9);
+
+    const height = square
+        ? resolution
+        : Math.round(resolution * 16 / 9);
 
     const fps =
-        Number($("reelFrameRate").value || 30);
+        Number($("reelFrameRate")?.value || 30);
 
     const canvas = document.createElement("canvas");
 
@@ -3147,18 +3127,11 @@ listen("exportReelBtn", "click", async function() {
     });
 
     if (!context) {
-        showToast("Could not create the video canvas.");
+        showToast("Could not create video canvas.");
         return;
     }
 
     const canvasStream = canvas.captureStream(fps);
-
-    let recorder = null;
-    let audioMix = null;
-    let animationId = null;
-    let finished = false;
-
-    const chunks = [];
 
     const mimeTypes = [
         "video/webm;codecs=vp9",
@@ -3171,35 +3144,63 @@ listen("exportReelBtn", "click", async function() {
     );
 
     if (!mimeType) {
-        showToast("No supported export format was found.");
-        canvasStream.getTracks().forEach(track => track.stop());
+        showToast("No supported export format found.");
+
+        canvasStream.getTracks().forEach(track => {
+            track.stop();
+        });
+
         return;
     }
 
     button.disabled = true;
     button.textContent = "Exporting...";
 
-    $("editorStatus").textContent =
-        "Preparing video and audio tracks...";
+    if ($("editorStatus")) {
+        $("editorStatus").textContent =
+            "Preparing video and audio...";
+    }
+
+    let audioMix = null;
+    let animationId = null;
+    let finished = false;
+    let recorder = null;
+
+    const chunks = [];
 
     try {
         preview.pause();
 
-        preview.currentTime = start;
-
         await new Promise((resolve, reject) => {
-            if (Math.abs(preview.currentTime - start) < .05) {
+            const onSeeked = () => {
+                cleanup();
+                resolve();
+            };
+
+            const onError = () => {
+                cleanup();
+                reject(new Error("Could not seek to trim start."));
+            };
+
+            const cleanup = () => {
+                preview.removeEventListener("seeked", onSeeked);
+                preview.removeEventListener("error", onError);
+            };
+
+            if (Math.abs(preview.currentTime - start) < 0.05) {
                 resolve();
                 return;
             }
 
-            preview.onseeked = resolve;
+            preview.addEventListener("seeked", onSeeked, {
+                once: true
+            });
 
-            setTimeout(() => {
-                if (preview.currentTime < start - .1) {
-                    reject(new Error("Could not seek to the trim start."));
-                }
-            }, 10000);
+            preview.addEventListener("error", onError, {
+                once: true
+            });
+
+            preview.currentTime = start;
         });
 
         audioMix = await buildEditorAudioMix(
@@ -3212,29 +3213,29 @@ listen("exportReelBtn", "click", async function() {
         });
 
         recorder.ondataavailable = event => {
-            if (event.data && event.data.size > 0) {
+            if (event.data?.size) {
                 chunks.push(event.data);
             }
         };
 
         const exportFinished = new Promise((resolve, reject) => {
             recorder.onstop = resolve;
-            recorder.onerror = reject;
+
+            recorder.onerror = event => {
+                reject(event.error || new Error("Export failed."));
+            };
         });
 
-        const speed =
-            Number($("reelSpeed").value || 1);
-
-        preview.playbackRate = speed;
+        preview.playbackRate =
+            Number($("reelSpeed")?.value || 1);
 
         function stopExport() {
             if (finished) return;
 
             finished = true;
-
             preview.pause();
 
-            if (recorder && recorder.state !== "inactive") {
+            if (recorder?.state !== "inactive") {
                 recorder.stop();
             }
         }
@@ -3264,15 +3265,17 @@ listen("exportReelBtn", "click", async function() {
 
         await preview.play();
 
-        $("editorStatus").textContent =
-            "Exporting " + resolution + "p at " + fps + " FPS...";
+        if ($("editorStatus")) {
+            $("editorStatus").textContent =
+                `Exporting ${resolution}p at ${fps} FPS...`;
+        }
 
         drawLoop();
 
         await exportFinished;
 
         if (!chunks.length) {
-            throw new Error("The browser produced an empty video.");
+            throw new Error("The exported video is empty.");
         }
 
         const blob = new Blob(chunks, {
@@ -3292,27 +3295,35 @@ listen("exportReelBtn", "click", async function() {
             }
         );
 
-        $("editorStatus").textContent =
-            "Export completed. Your edited Short is ready to publish.";
+        if ($("selectedVideoName")) {
+            $("selectedVideoName").textContent =
+                exportedReelFile.name + " • " +
+                (blob.size / (1024 * 1024)).toFixed(2) +
+                " MB";
+        }
 
-        $("selectedVideoName").textContent =
-            exportedReelFile.name +
-            " • " +
-            (exportedReelFile.size / (1024 * 1024)).toFixed(1) +
-            " MB";
+        if ($("editorStatus")) {
+            $("editorStatus").textContent =
+                blob.size > MAX_VIDEO_BYTES
+                    ? "Export finished, but it exceeds the 50 MB upload limit. Choose a lower resolution or frame rate."
+                    : "Your edited Short is ready!";
+        }
 
         hideModal("editorModal");
 
-        $("uploadStatus").textContent =
-            "Edited Short ready. Add your title and publish.";
-
-        showToast("Short exported successfully!");
+        if (blob.size > MAX_VIDEO_BYTES) {
+            showToast("Export exceeds 50 MB. Reduce export quality.");
+        } else {
+            showToast("Short exported successfully!");
+        }
 
     } catch (error) {
         console.error("Export error:", error);
 
-        $("editorStatus").textContent =
-            "Export failed: " + error.message;
+        if ($("editorStatus")) {
+            $("editorStatus").textContent =
+                "Export failed: " + error.message;
+        }
 
         showToast("Export failed: " + error.message);
 
@@ -3325,9 +3336,7 @@ listen("exportReelBtn", "click", async function() {
 
         preview.pause();
 
-        if (audioMix) {
-            audioMix.cleanup();
-        }
+        audioMix?.cleanup();
 
         canvasStream.getTracks().forEach(track => {
             track.stop();
@@ -3340,112 +3349,193 @@ listen("exportReelBtn", "click", async function() {
 
 
 /* ============================================================
-   48 — CLOSE EDITOR
+   24 — CLOSE EDITOR
    ============================================================ */
 
 function closeEditor() {
-    $("reelPreview").pause();
-
+    $("reelPreview")?.pause();
     hideModal("editorModal");
 }
-
 
 listen("editorCloseBtn", "click", closeEditor);
 
 
 /* ============================================================
-   49 — SHORTS PLAYBACK SETTINGS
+   25 — LOAD TUS RESUMABLE UPLOAD LIBRARY
    ============================================================ */
 
-listen("reelsFeed", "click", function(event) {
-    const soundButton = event.target.closest("[data-reel-sound]");
-
-    if (!soundButton) return;
-
-    const item = soundButton.closest(".reel-item");
-    const video = item?.querySelector(".reel-video");
-
-    if (!video) return;
-
-    video.muted = !video.muted;
-
-    soundButton.textContent =
-        video.muted ? "Muted" : "Sound";
-});
-
-
-/* ============================================================
-   50 — TUS RESUMABLE UPLOAD SUPPORT
-   Large video files use resumable upload when available.
-   ============================================================ */
 function loadTusLibrary() {
-
     if (window.tus?.Upload) {
         return Promise.resolve(true);
     }
 
+    if (!tusLibraryPromise) {
+        tusLibraryPromise = new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+
+            script.src =
+                "https://unpkg.com/tus-js-client@4.3.1/dist/tus.min.js";
+
+            script.onload = () => {
+                if (window.tus?.Upload) {
+                    resolve(true);
+                } else {
+                    reject(
+                        new Error("TUS library is unavailable.")
+                    );
+                }
+            };
+
+            script.onerror = () => {
+                reject(
+                    new Error("Could not load upload library. Check internet.")
+                );
+            };
+
+            document.head.appendChild(script);
+        }).catch(error => {
+            tusLibraryPromise = null;
+            throw error;
+        });
+    }
+
+    return tusLibraryPromise;
+}
+
+
+/* ============================================================
+   26 — ACTUAL SUPABASE VIDEO UPLOAD
+   TUS RESUMABLE UPLOAD WITH PROGRESS
+   ============================================================ */
+
+async function uploadVideoFile(
+    file,
+    path,
+    progressCallback
+) {
+    if (!db) {
+        throw new Error("Supabase is not connected.");
+    }
+
+    if (!file || !file.size) {
+        throw new Error("Invalid video file.");
+    }
+
+    if (file.size > MAX_VIDEO_BYTES) {
+        throw new Error("Maximum video size is 50 MB.");
+    }
+
+    const sessionResult = await db.auth.getSession();
+
+    if (sessionResult.error) {
+        throw sessionResult.error;
+    }
+
+    const session = sessionResult.data.session;
+
+    if (!session?.access_token) {
+        throw new Error("Your session expired. Sign in again.");
+    }
+
+    progressCallback(0);
+
+    try {
+        await loadTusLibrary();
+    } catch (error) {
+        console.warn(
+            "TUS library unavailable; trying normal upload:",
+            error.message
+        );
+
+        const fallback = await db.storage
+            .from(VIDEO_BUCKET)
+            .upload(path, file, {
+                cacheControl: "3600",
+                upsert: false,
+                contentType: file.type || "video/mp4"
+            });
+
+        if (fallback.error) {
+            throw fallback.error;
+        }
+
+        progressCallback(100);
+
+        return fallback.data;
+    }
+
+    const projectId = new URL(SUPABASE_URL)
+        .hostname.split(".")[0];
+
+    const endpoint =
+        `https://${projectId}.storage.supabase.co/storage/v1/upload/resumable`;
+
     return new Promise((resolve, reject) => {
+        const upload = new window.tus.Upload(file, {
 
-        const script = document.createElement("script");
+            endpoint: endpoint,
 
-        script.src =
-            "https://unpkg.com/tus-js-client@4.3.1/dist/tus.min.js";
+            retryDelays: [
+                0,
+                3000,
+                5000,
+                10000,
+                20000
+            ],
 
-        script.onload = () => {
-            if (window.tus?.Upload) {
-                resolve(true);
-            } else {
-                reject(new Error("TUS library loaded but is unavailable."));
+            headers: {
+                authorization: "Bearer " + session.access_token,
+                apikey: SUPABASE_KEY
+            },
+
+            uploadDataDuringCreation: true,
+
+            removeFingerprintOnSuccess: true,
+
+            chunkSize: 6 * 1024 * 1024,
+
+            metadata: {
+                bucketName: VIDEO_BUCKET,
+                objectName: path,
+                contentType: file.type || "video/mp4",
+                cacheControl: "3600"
+            },
+
+            onError: function(error) {
+                console.error("TUS upload error:", error);
+                reject(error);
+            },
+
+            onProgress: function(bytesUploaded, bytesTotal) {
+                const percent = Math.round(
+                    (bytesUploaded / bytesTotal) * 100
+                );
+
+                progressCallback(
+                    Math.max(0, Math.min(99, percent))
+                );
+            },
+
+            onSuccess: function() {
+                progressCallback(100);
+
+                resolve({
+                    path,
+                    uploadURL: upload.url
+                });
             }
-        };
+        });
 
-        script.onerror = () => {
-            reject(new Error("Could not load TUS library. Check your internet."));
-        };
-
-        document.head.appendChild(script);
+        upload.start();
     });
 }
 
 
 /* ============================================================
-   51 — STORAGE UPLOAD
-   ============================================================ */
-
-async function uploadVideoFile(file, path, progressCallback) {
-
-    if (!db) {
-        throw new Error("Supabase is not connected.");
-    }
-
-    const maxSize = 50 * 1024 * 1024;
-
-    if (file.size > maxSize) {
-        throw new Error("Maximum upload size is 50 MB.");
-    }
-
-    progressCallback(10);
-
-    const result = await db.storage
-        .from(VIDEO_BUCKET)
-        .upload(path, file, {
-            cacheControl: "3600",
-            upsert: false,
-            contentType: file.type || "video/mp4"
-        });
-
-    if (result.error) {
-        throw result.error;
-    }
-
-    progressCallback(100);
-}
-/* ============================================================
-   52 — PUBLISH VIDEO OR SHORT
+   27 — PUBLISH VIDEO OR SHORT
    ============================================================ */
 
 listen("uploadForm", "submit", async function(event) {
-
     event.preventDefault();
 
     const file = exportedReelFile || selectedVideoFile;
@@ -3455,83 +3545,109 @@ listen("uploadForm", "submit", async function(event) {
         return;
     }
 
-    const title = $("videoTitle").value.trim();
-    const description = $("videoDescription").value.trim();
-    const topic = $("videoTopic").value;
-
-    if (!title) {
-        showToast("Add a title.");
+    if (file.size > MAX_VIDEO_BYTES) {
+        showToast("Your video must be smaller than 50 MB.");
         return;
     }
 
-    if (file.size > 50 * 1024 * 1024) {
-        showToast("Maximum upload size is 50 MB.");
+    if (!currentUser) {
+        showToast("Please sign in before uploading.");
+        return;
+    }
+
+    const title = $("videoTitle")?.value.trim() || "";
+    const description =
+        $("videoDescription")?.value.trim() || "";
+
+    const topic = $("videoTopic")?.value || "Other";
+
+    if (!title) {
+        showToast("Add a video title.");
         return;
     }
 
     const button = $("publishVideoBtn");
 
+    if (!button) {
+        showToast("Publish button was not found.");
+        return;
+    }
+
     button.disabled = true;
     button.textContent = "Uploading...";
 
-    $("uploadProgress").classList.remove("hidden");
-    $("uploadProgressBar").style.width = "0%";
+    $("uploadProgress")?.classList.remove("hidden");
+
+    if ($("uploadProgressBar")) {
+        $("uploadProgressBar").style.width = "0%";
+    }
+
+    if ($("uploadStatus")) {
+        $("uploadStatus").textContent = "Preparing upload...";
+    }
 
     let uploaded = false;
 
-    const extension =
-        file.name.split(".").pop().toLowerCase() || "mp4";
+    const extension = (
+        file.name.split(".").pop() || "mp4"
+    )
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "") || "mp4";
 
     const path =
         currentUser.id + "/" +
         Date.now() + "-" +
-        Math.random().toString(36).slice(2, 8) +
+        Math.random().toString(36).slice(2, 10) +
         "." + extension;
 
     currentUploadPath = path;
 
     try {
+        // STEP 1 — UPLOAD ACTUAL VIDEO
 
-        // STEP 1 — Upload the actual video
+        await uploadVideoFile(
+            file,
+            path,
+            function(percent) {
+                if ($("uploadProgressBar")) {
+                    $("uploadProgressBar").style.width =
+                        percent + "%";
+                }
 
-        await uploadVideoFile(file, path, function(percent) {
-
-            $("uploadProgressBar").style.width =
-                percent + "%";
-
-            $("uploadStatus").textContent =
-                "Uploading: " + percent + "%";
-
-        });
+                if ($("uploadStatus")) {
+                    $("uploadStatus").textContent =
+                        "Uploading video: " + percent + "%";
+                }
+            }
+        );
 
         uploaded = true;
 
-        // STEP 2 — Save video information
+        // STEP 2 — INSERT VIDEO DATABASE RECORD
 
-        $("uploadStatus").textContent =
-            "Saving video information...";
+        if ($("uploadStatus")) {
+            $("uploadStatus").textContent =
+                "Saving video information...";
+        }
 
         const insert = await db
-    .from("videos")
-    .insert({
-        id: crypto.randomUUID(),
+            .from("videos")
+            .insert({
+                id: crypto.randomUUID(),
+                owner_id: currentUser.id,
+                title,
+                description,
+                topic,
+                storage_path: path,
+                views: 0,
+                is_short: uploadMode === "short"
+            });
 
-        owner_id: currentUser.id,
-        title: title,
-        description: description,
-        topic: topic,
-        storage_path: path,
-        views: 0,
-        is_short: uploadMode === "short"
-    });
+        if (insert.error) {
+            throw insert.error;
+        }
 
-if (insert.error) {
-    throw insert.error;
-}
-
-
-
-        // STEP 3 — Refresh GoCat
+        // STEP 3 — REFRESH GO CAT
 
         await loadVideos();
 
@@ -3540,10 +3656,14 @@ if (insert.error) {
 
         renderEverything();
 
-        $("uploadProgressBar").style.width = "100%";
+        if ($("uploadProgressBar")) {
+            $("uploadProgressBar").style.width = "100%";
+        }
 
-        $("uploadStatus").textContent =
-            "Published successfully!";
+        if ($("uploadStatus")) {
+            $("uploadStatus").textContent =
+                "Published successfully!";
+        }
 
         const publishedMode = uploadMode;
 
@@ -3560,24 +3680,33 @@ if (insert.error) {
         );
 
     } catch (error) {
-
-        console.error("Upload error:", error);
+        console.error("VIDEO UPLOAD ERROR:", error);
 
         if (uploaded && currentUploadPath) {
-
-            await db.storage
+            const removal = await db.storage
                 .from(VIDEO_BUCKET)
                 .remove([currentUploadPath]);
 
+            if (removal.error) {
+                console.error(
+                    "Could not remove failed upload:",
+                    removal.error
+                );
+            }
         }
 
-        $("uploadStatus").textContent =
-            error.message || "Upload failed.";
+        const message =
+            error?.message ||
+            error?.error_description ||
+            "Unknown upload error.";
 
-        showToast("Upload failed: " + error.message);
+        if ($("uploadStatus")) {
+            $("uploadStatus").textContent = message;
+        }
+
+        showToast("Upload failed: " + message);
 
     } finally {
-
         currentUploadPath = null;
 
         button.disabled = false;
@@ -3586,69 +3715,63 @@ if (insert.error) {
             uploadMode === "short"
                 ? "Publish Short"
                 : "Publish video";
-
     }
-
 });
-
-
 /* ============================================================
-   53 — OPEN UPLOAD BUTTONS
+   PART 7 — POSTS, PROFILES AND CREATOR STUDIO
    ============================================================ */
 
-document.addEventListener("click", function(event) {
-    const button = event.target.closest("[data-open-upload]");
-
-    if (!button) return;
-
-    openUpload(
-        button.dataset.openUpload === "short"
-            ? "short"
-            : "video"
-    );
-});
-
 
 /* ============================================================
-   54 — CREATE POSTS
+   28 — CREATE COMMUNITY POSTS
    ============================================================ */
 
 listen("postImage", "change", function() {
-    $("postImageName").textContent =
-        this.files[0]?.name || "";
+    if ($("postImageName")) {
+        $("postImageName").textContent =
+            this.files?.[0]?.name || "";
+    }
 });
 
 
 listen("createPostForm", "submit", async function(event) {
     event.preventDefault();
 
-    const content = $("postContent").value.trim();
-    const imageFile = $("postImage").files[0];
+    const content = $("postContent")?.value.trim() || "";
+    const imageFile = $("postImage")?.files?.[0];
 
     if (!content && !imageFile) {
         showToast("Write something or select an image.");
         return;
     }
 
-    if (imageFile && !imageFile.type.startsWith("image/")) {
+    if (
+        imageFile &&
+        !imageFile.type.startsWith("image/")
+    ) {
         showToast("Please select an image.");
         return;
     }
 
-    const button =
-        this.querySelector('button[type="submit"]');
+    const button = this.querySelector('button[type="submit"]');
 
-    button.disabled = true;
-    button.textContent = "Publishing...";
+    if (button) {
+        button.disabled = true;
+        button.textContent = "Publishing...";
+    }
 
     let storagePath = null;
 
     try {
         if (imageFile) {
+            const safeName = imageFile.name.replace(
+                /[^a-zA-Z0-9._-]/g,
+                "_"
+            );
+
             storagePath =
                 currentUser.id + "/" +
-                Date.now() + "-" +
-                imageFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+                Date.now() + "-" + safeName;
 
             const upload = await db.storage
                 .from(POST_BUCKET)
@@ -3676,11 +3799,12 @@ listen("createPostForm", "submit", async function(event) {
 
         $("postContent").value = "";
         $("postImage").value = "";
-        $("postImageName").textContent = "";
+
+        if ($("postImageName")) {
+            $("postImageName").textContent = "";
+        }
 
         await loadPosts();
-
-        postsVisible = Math.max(postsVisible, PAGE_SIZE);
 
         renderPosts();
         renderHomeFeed();
@@ -3690,25 +3814,31 @@ listen("createPostForm", "submit", async function(event) {
         showToast("Post published!");
 
     } catch (error) {
-        console.error(error);
+        console.error("Post error:", error);
 
         if (storagePath) {
-            await db.storage
+            const removal = await db.storage
                 .from(POST_BUCKET)
                 .remove([storagePath]);
+
+            if (removal.error) {
+                console.warn("Post cleanup:", removal.error);
+            }
         }
 
         showToast("Post failed: " + error.message);
 
     } finally {
-        button.disabled = false;
-        button.textContent = "Publish post";
+        if (button) {
+            button.disabled = false;
+            button.textContent = "Publish post";
+        }
     }
 });
 
 
 /* ============================================================
-   55 — POST LIKES
+   29 — POST LIKES
    ============================================================ */
 
 async function togglePostLike(postId) {
@@ -3718,40 +3848,36 @@ async function togglePostLike(postId) {
 
     if (!post) return;
 
+    post.likes = post.likes || [];
+
     const liked = post.likes.includes(
         String(currentUser.id)
     );
 
     try {
-        if (liked) {
-            const result = await db
+        const result = liked
+            ? await db
                 .from("post_likes")
                 .delete()
                 .eq("post_id", postId)
-                .eq("user_id", currentUser.id);
+                .eq("user_id", currentUser.id)
 
-            if (result.error) {
-                throw result.error;
-            }
-
-            post.likes = post.likes.filter(
-                id => id !== String(currentUser.id)
-            );
-
-        } else {
-            const result = await db
+            : await db
                 .from("post_likes")
                 .insert({
                     post_id: postId,
                     user_id: currentUser.id
                 });
 
-            if (result.error) {
-                throw result.error;
-            }
-
-            post.likes.push(String(currentUser.id));
+        if (result.error) {
+            throw result.error;
         }
+
+        post.likes = liked
+            ? post.likes.filter(id =>
+                id !== String(currentUser.id)
+              )
+            : [...post.likes, String(currentUser.id)];
 
         renderPosts();
         renderHomeFeed();
@@ -3765,7 +3891,8 @@ async function togglePostLike(postId) {
 
 
 /* ============================================================
-   56 — DELETE POST
+   30 — DELETE POSTS
+   Owner and admin UI permission.
    ============================================================ */
 
 async function deletePost(postId) {
@@ -3774,48 +3901,60 @@ async function deletePost(postId) {
     );
 
     if (!post || !canManageContent(post.user_id)) {
-    return;
-}
-
-    if (!confirm("Delete this post?")) {
         return;
     }
 
-    const result = await db
-        .from("posts")
-        .delete()
-        .eq("id", postId);
-
-    if (result.error) {
-        showToast("Delete failed: " + result.error.message);
+    if (!confirm("Delete this post permanently?")) {
         return;
     }
 
-    if (post.media_path) {
-        await db.storage
-            .from(POST_BUCKET)
-            .remove([post.media_path]);
+    try {
+        const result = await db
+            .from("posts")
+            .delete()
+            .eq("id", postId);
+
+        if (result.error) {
+            throw result.error;
+        }
+
+        if (post.media_path) {
+            const removal = await db.storage
+                .from(POST_BUCKET)
+                .remove([post.media_path]);
+
+            if (removal.error) {
+                console.warn("Media cleanup:", removal.error);
+            }
+        }
+
+        await loadPosts();
+
+        renderEverything();
+
+        showToast("Post deleted.");
+
+    } catch (error) {
+        showToast("Delete failed: " + error.message);
     }
-
-    await loadPosts();
-
-    renderEverything();
-
-    showToast("Post deleted.");
 }
 
 
 /* ============================================================
-   57 — POSTS PAGE
+   31 — POSTS PAGE
    ============================================================ */
 
 function renderPosts() {
+    const container = $("postsFeed");
+
+    if (!container) return;
+
     const page = posts.slice(0, postsVisible);
 
-    $("postsFeed").innerHTML =
+    container.innerHTML =
         page.map(postCard).join("");
 
-    $("postsLoadMoreWrap").classList.toggle(
+    $("postsLoadMoreWrap")?.classList.toggle(
         "hidden",
         postsVisible >= posts.length
     );
@@ -3829,7 +3968,7 @@ listen("postsLoadMore", "click", function() {
 
 
 /* ============================================================
-   58 — PROFILE PAGE
+   32 — PROFILE PAGE
    ============================================================ */
 
 function openOtherProfile(userId) {
@@ -3856,38 +3995,50 @@ function renderProfile() {
 
     const own = isOwnContent(profileId);
 
-    $("profileUsername").textContent =
-        profile.username || "Creator";
+    if ($("profileUsername")) {
+        $("profileUsername").textContent =
+            profile.username || "Creator";
+    }
 
-    $("profileEmail").textContent =
-        own ? currentUser.email : "";
+    if ($("profileEmail")) {
+        $("profileEmail").textContent =
+            own ? currentUser.email : "";
+    }
 
-    $("profileBio").textContent =
-        profile.bio || "Welcome to GoCat.";
+    if ($("profileBio")) {
+        $("profileBio").textContent =
+            profile.bio || "Welcome to GoCat.";
+    }
 
-    $("profileAvatar").textContent =
-        getInitial(profile.username);
+    if ($("profileAvatar")) {
+        $("profileAvatar").textContent =
+            getInitial(profile.username);
+    }
 
-    $("profileActionBtn").textContent =
-        own
-            ? "Edit channel"
-            : isFollowing(profileId)
-                ? "Following"
-                : "+ Follow";
+    if ($("profileActionBtn")) {
+        $("profileActionBtn").textContent =
+            own
+                ? "Edit channel"
+                : isFollowing(profileId)
+                    ? "Following"
+                    : "+ Follow";
 
-    $("profileActionBtn").onclick = function() {
-        if (own) {
-            $("editUsername").value =
-                profile.username || "";
+        $("profileActionBtn").onclick = function() {
 
-            $("editBio").value =
-                profile.bio || "";
+            if (own) {
+                $("editUsername").value =
+                    profile.username || "";
 
-            showModal("editProfileModal");
-        } else {
-            toggleFollow(profileId);
-        }
-    };
+                $("editBio").value =
+                    profile.bio || "";
+
+                showModal("editProfileModal");
+
+            } else {
+                toggleFollow(profileId);
+            }
+        };
+    }
 
     const myVideos = videos.filter(video =>
         String(video.owner_id) === String(profileId)
@@ -3913,68 +4064,87 @@ function renderProfile() {
         String(item.follower_id) === String(profileId)
     ).length;
 
-    $("profileVideoCount").textContent =
-        regularVideos.length;
+    if ($("profileVideoCount")) {
+        $("profileVideoCount").textContent =
+            regularVideos.length;
+    }
 
-    $("profileShortCount").textContent =
-        myReels.length;
+    if ($("profileShortCount")) {
+        $("profileShortCount").textContent =
+            myReels.length;
+    }
 
-    $("profileFollowerCount").textContent =
-        followers;
+    if ($("profileFollowerCount")) {
+        $("profileFollowerCount").textContent =
+            followers;
+    }
 
-    $("profileFollowingCount").textContent =
-        following;
+    if ($("profileFollowingCount")) {
+        $("profileFollowingCount").textContent =
+            following;
+    }
 
-    $("profilePostCount").textContent =
-        myPosts.length;
+    if ($("profilePostCount")) {
+        $("profilePostCount").textContent =
+            myPosts.length;
+    }
 
-    $("profileHome").innerHTML = `
-        <div class="section-heading">
-            <div>
-                <h2>Latest videos</h2>
+    if ($("profileHome")) {
+        $("profileHome").innerHTML = `
+
+            <div class="section-heading">
+                <div>
+                    <h2>Latest videos</h2>
+                </div>
             </div>
-        </div>
 
-        <div class="video-grid">
-            ${regularVideos.slice(0, 3).map(videoCard).join("")}
-        </div>
-
-        <div class="section-heading">
-            <div>
-                <h2>Latest Shorts</h2>
+            <div class="video-grid">
+                ${regularVideos.slice(0, 3).map(videoCard).join("")}
             </div>
-        </div>
 
-        <div class="video-grid">
-            ${myReels.slice(0, 3).map(videoCard).join("")}
-        </div>
-
-        <div class="section-heading">
-            <div>
-                <h2>Community posts</h2>
+            <div class="section-heading">
+                <div>
+                    <h2>Latest Shorts</h2>
+                </div>
             </div>
-        </div>
 
-        <div class="posts-feed">
-            ${myPosts.slice(0, 3).map(postCard).join("")}
-        </div>
-    `;
+            <div class="video-grid">
+                ${myReels.slice(0, 3).map(videoCard).join("")}
+            </div>
 
-    $("profileReels").innerHTML =
-        myReels.map(videoCard).join("");
+            <div class="section-heading">
+                <div>
+                    <h2>Community posts</h2>
+                </div>
+            </div>
 
-    $("profileVideos").innerHTML =
-        regularVideos.map(videoCard).join("");
+            <div class="posts-feed">
+                ${myPosts.slice(0, 3).map(postCard).join("")}
+            </div>
+        `;
+    }
 
-    $("profilePosts").innerHTML =
-        myPosts.map(postCard).join("");
+    if ($("profileReels")) {
+        $("profileReels").innerHTML =
+            myReels.map(videoCard).join("");
+    }
+
+    if ($("profileVideos")) {
+        $("profileVideos").innerHTML =
+            regularVideos.map(videoCard).join("");
+    }
+
+    if ($("profilePosts")) {
+        $("profilePosts").innerHTML =
+            myPosts.map(postCard).join("");
+    }
 
     renderProfileTab(profileMode);
 }
 
 
 /* ============================================================
-   59 — PROFILE TABS
+   33 — PROFILE TABS
    ============================================================ */
 
 function renderProfileTab(tab) {
@@ -3996,7 +4166,7 @@ function renderProfileTab(tab) {
     };
 
     Object.entries(panels).forEach(([name, id]) => {
-        $(id).classList.toggle(
+        $(id)?.classList.toggle(
             "hidden",
             name !== tab
         );
@@ -4004,67 +4174,76 @@ function renderProfileTab(tab) {
 }
 
 
-document.querySelectorAll("[data-profile-tab]").forEach(button => {
-    button.addEventListener("click", function() {
-        renderProfileTab(this.dataset.profileTab);
+document.querySelectorAll("[data-profile-tab]")
+    .forEach(button => {
+        button.addEventListener("click", function() {
+            renderProfileTab(this.dataset.profileTab);
+        });
     });
-});
 
 
 /* ============================================================
-   60 — EDIT PROFILE
+   34 — EDIT PROFILE
    ============================================================ */
 
 listen("editProfileForm", "submit", async function(event) {
     event.preventDefault();
 
-    const username = $("editUsername").value.trim();
-    const bio = $("editBio").value.trim();
+    const username =
+        $("editUsername")?.value.trim() || "";
+
+    const bio =
+        $("editBio")?.value.trim() || "";
 
     if (username.length < 3) {
         showToast("Username must have at least 3 characters.");
         return;
     }
 
-    const result = await db
-        .from("users")
-        .update({
-            username,
-            bio
-        })
-        .eq("id", currentUser.id)
-        .select("*")
-        .single();
+    try {
+        const result = await db
+            .from("users")
+            .update({
+                username,
+                bio
+            })
+            .eq("id", currentUser.id)
+            .select("*")
+            .single();
 
-    if (result.error) {
-        showToast("Profile update failed: " + result.error.message);
-        return;
+        if (result.error) {
+            throw result.error;
+        }
+
+        currentProfile = result.data;
+
+        await loadAllData();
+
+        currentProfileUserId = currentUser.id;
+
+        renderEverything();
+        updateUserInterface();
+
+        hideModal("editProfileModal");
+
+        showToast("Channel updated!");
+
+    } catch (error) {
+        showToast("Profile update failed: " + error.message);
     }
-
-    currentProfile = result.data;
-
-    await loadAllData();
-    currentProfileUserId = currentUser.id;
-
-    renderEverything();
-    updateUserInterface();
-
-    hideModal("editProfileModal");
-
-    showToast("Channel updated.");
 });
 
 
 /* ============================================================
-   61 — CREATOR STUDIO
+   35 — CREATOR STUDIO
    ============================================================ */
 
 function renderStudio() {
     const mine = isGoCatAdmin
-    ? videos
-    : videos.filter(video =>
-        isOwnContent(video.owner_id)
-    );
+        ? videos
+        : videos.filter(video =>
+            isOwnContent(video.owner_id)
+        );
 
     const totalViews = mine.reduce(
         (sum, video) =>
@@ -4082,18 +4261,30 @@ function renderStudio() {
         String(item.following_id) === String(currentUser.id)
     ).length;
 
-    $("studioVideos").textContent = mine.length;
+    if ($("studioVideos")) {
+        $("studioVideos").textContent = mine.length;
+    }
 
-    $("studioViews").textContent =
-        totalViews.toLocaleString();
+    if ($("studioViews")) {
+        $("studioViews").textContent =
+            totalViews.toLocaleString();
+    }
 
-    $("studioLikes").textContent =
-        totalLikes.toLocaleString();
+    if ($("studioLikes")) {
+        $("studioLikes").textContent =
+            totalLikes.toLocaleString();
+    }
 
-    $("studioFollowers").textContent =
-        followers.toLocaleString();
+    if ($("studioFollowers")) {
+        $("studioFollowers").textContent =
+            followers.toLocaleString();
+    }
 
-    $("studioContent").innerHTML = mine.length
+    const container = $("studioContent");
+
+    if (!container) return;
+
+    container.innerHTML = mine.length
         ? mine.map(video => `
             <div class="studio-content-item">
 
@@ -4113,6 +4304,10 @@ function renderStudio() {
                         ${isShort(video) ? "Short" : "Video"}
                         · ${Number(video.views || 0)} views
                         · ${video.likes?.length || 0} likes
+                    </small>
+
+                    <small>
+                        Uploaded by ${escapeHTML(getUsername(video.owner_id))}
                     </small>
 
                     <small>
@@ -4152,11 +4347,8 @@ function renderStudio() {
             </div>
         `;
 }
-
-
 /* ============================================================
-   62 — WATCH HISTORY
-   Stored locally in this browser.
+   36 — WATCH HISTORY
    ============================================================ */
 
 function getHistoryKey() {
@@ -4167,11 +4359,7 @@ function getHistoryKey() {
 function getWatchHistory() {
     const saved = safeJSON(getHistoryKey(), []);
 
-    if (!Array.isArray(saved)) {
-        return [];
-    }
-
-    return saved;
+    return Array.isArray(saved) ? saved : [];
 }
 
 
@@ -4221,41 +4409,40 @@ function renderHistory() {
         })
         .filter(Boolean);
 
-    $("historyEmpty").classList.toggle(
+    $("historyEmpty")?.classList.toggle(
         "hidden",
         items.length > 0
     );
 
-    $("historyFeed").innerHTML = items.map(item => {
-        const video = item.video;
+    const container = $("historyFeed");
 
-        const username = getUsername(video.owner_id);
+    if (!container) return;
+
+    container.innerHTML = items.map(item => {
+        const video = item.video;
 
         return `
             <article class="history-item">
 
                 <div class="history-thumb">
-
                     <video
                         src="${escapeHTML(getVideoURL(video.storage_path))}"
                         muted
                         preload="metadata">
                     </video>
-
                 </div>
 
                 <div class="history-details">
-
                     <h3>${escapeHTML(video.title)}</h3>
 
-                    <p>${escapeHTML(username)}</p>
+                    <p>
+                        ${escapeHTML(getUsername(video.owner_id))}
+                    </p>
 
                     <p>
                         ${formatDate(item.watched_at)}
-                        ·
-                        ${isShort(video) ? "Short" : "Video"}
+                        · ${isShort(video) ? "Short" : "Video"}
                     </p>
-
                 </div>
 
                 <button
@@ -4298,10 +4485,12 @@ listen("settingsClearHistory", "click", clearHistory);
 
 
 /* ============================================================
-   63 — VIDEO VIEW TRACKING
+   37 — VIDEO VIEW TRACKING
    ============================================================ */
 
 async function registerVideoView(videoId) {
+    if (!currentUser) return;
+
     const key =
         "gocat_viewed_v2_" + currentUser.id;
 
@@ -4337,13 +4526,15 @@ async function registerVideoView(videoId) {
         .eq("id", videoId);
 
     if (result.error) {
-        console.warn("View count update:", result.error);
+        console.warn("View tracking:", result.error);
     }
 }
 
 
 document.addEventListener("play", function(event) {
     const element = event.target;
+
+    if (!(element instanceof HTMLVideoElement)) return;
 
     const videoId = element.dataset.playVideo;
 
@@ -4357,7 +4548,7 @@ document.addEventListener("play", function(event) {
 
 
 /* ============================================================
-   64 — MUTUAL FRIENDS FOR MESSAGES
+   38 — MUTUAL FRIENDS
    ============================================================ */
 
 function getMutualFriends() {
@@ -4383,8 +4574,11 @@ function getMutualFriends() {
 
 function renderChatFriends() {
     const friends = getMutualFriends();
+    const container = $("chatFriends");
 
-    $("chatFriends").innerHTML = friends.length
+    if (!container) return;
+
+    container.innerHTML = friends.length
         ? friends.map(user => `
             <button
                 class="chat-friend ${
@@ -4407,7 +4601,7 @@ function renderChatFriends() {
 
 
 /* ============================================================
-   65 — OPEN CHAT
+   39 — OPEN CHAT
    ============================================================ */
 
 async function openChat(userId) {
@@ -4422,11 +4616,18 @@ async function openChat(userId) {
 
     currentChatUserId = userId;
 
-    $("chatTitle").textContent =
-        getUsername(userId);
+    if ($("chatTitle")) {
+        $("chatTitle").textContent =
+            getUsername(userId);
+    }
 
-    $("messageInput").disabled = false;
-    $("sendMessageBtn").disabled = false;
+    if ($("messageInput")) {
+        $("messageInput").disabled = false;
+    }
+
+    if ($("sendMessageBtn")) {
+        $("sendMessageBtn").disabled = false;
+    }
 
     renderChatFriends();
 
@@ -4435,7 +4636,7 @@ async function openChat(userId) {
 
 
 /* ============================================================
-   66 — LOAD MESSAGES
+   40 — LOAD MESSAGES
    ============================================================ */
 
 async function loadMessages() {
@@ -4456,15 +4657,20 @@ async function loadMessages() {
     if (result.error) {
         console.error(result.error);
 
-        $("chatMessages").innerHTML =
-            "<p class='chat-empty'>Could not load messages. Check your Messages table and permissions.</p>";
+        if ($("chatMessages")) {
+            $("chatMessages").innerHTML =
+                "<p class='chat-empty'>Could not load messages. Check your Messages table and permissions.</p>";
+        }
 
         return;
     }
 
     const messages = result.data || [];
+    const container = $("chatMessages");
 
-    $("chatMessages").innerHTML = messages.length
+    if (!container) return;
+
+    container.innerHTML = messages.length
         ? messages.map(message => {
             const mine =
                 String(message.sender_id) === String(currentUser.id);
@@ -4472,7 +4678,7 @@ async function loadMessages() {
             return `
                 <div class="chat-bubble ${mine ? "mine" : ""}">
 
-                    ${escapeHTML(message.content)}
+                    ${escapeHTML(message.content ?? message.text ?? "")}
 
                     <time>
                         ${formatDate(message.created_at)}
@@ -4483,43 +4689,53 @@ async function loadMessages() {
         }).join("")
         : "<p class='chat-empty'>No messages yet. Say hello!</p>";
 
-    $("chatMessages").scrollTop =
-        $("chatMessages").scrollHeight;
+    container.scrollTop = container.scrollHeight;
 }
 
 
 /* ============================================================
-   67 — SEND MESSAGE
+   41 — SEND MESSAGE
    ============================================================ */
 
 listen("chatForm", "submit", async function(event) {
     event.preventDefault();
 
-    const text = $("messageInput").value.trim();
+    const text = $("messageInput")?.value.trim() || "";
 
     if (!text || !currentChatUserId) return;
 
-    const result = await db
-        .from("messages")
-        .insert({
-            sender_id: currentUser.id,
-            recipient_id: currentChatUserId,
-            text: text
-        });
+    const button = $("sendMessageBtn");
 
-    if (result.error) {
-        showToast("Message failed: " + result.error.message);
-        return;
+    if (button) button.disabled = true;
+
+    try {
+        const result = await db
+            .from("messages")
+            .insert({
+                sender_id: currentUser.id,
+                recipient_id: currentChatUserId,
+                text
+            });
+
+        if (result.error) {
+            throw result.error;
+        }
+
+        $("messageInput").value = "";
+
+        await loadMessages();
+
+    } catch (error) {
+        showToast("Message failed: " + error.message);
+
+    } finally {
+        if (button) button.disabled = false;
     }
-
-    $("messageInput").value = "";
-
-    await loadMessages();
 });
 
 
 /* ============================================================
-   68 — NOTIFICATIONS
+   42 — NOTIFICATIONS
    ============================================================ */
 
 function addLocalNotification(icon, text) {
@@ -4527,7 +4743,7 @@ function addLocalNotification(icon, text) {
         id: crypto.randomUUID(),
         icon,
         text,
-        created_at: new Date().toISOString(),
+        created_at: new Date().toISOString()
     });
 
     notifications = notifications.slice(0, 100);
@@ -4544,6 +4760,8 @@ function addLocalNotification(icon, text) {
 function renderNotifications() {
     const container = $("notificationList");
 
+    if (!container) return;
+
     if (!notifications.length) {
         container.innerHTML = `
             <div class="empty-card">
@@ -4551,6 +4769,7 @@ function renderNotifications() {
                 <p>Your GoCat activity will appear here.</p>
             </div>
         `;
+
         return;
     }
 
@@ -4584,10 +4803,27 @@ listen("clearNotificationsBtn", "click", function() {
 
     renderNotifications();
 });
+/* ============================================================
+   43 — RENDER EVERYTHING
+   ============================================================ */
+
+function renderEverything() {
+    renderHomeFeed();
+    renderReels();
+    renderExplore();
+    renderFollowing();
+    renderSuggestedCreators();
+    renderPosts();
+    renderProfile();
+    renderNotifications();
+    renderChatFriends();
+    renderStudio();
+    renderHistory();
+}
 
 
 /* ============================================================
-   69 — NAVIGATION
+   44 — NAVIGATION
    ============================================================ */
 
 const allowedPages = [
@@ -4606,9 +4842,8 @@ const allowedPages = [
 
 
 function openPage(page) {
-    if (!allowedPages.includes(page)) {
-        return;
-    }
+    if (!allowedPages.includes(page)) return;
+    if (!currentUser) return;
 
     currentPage = page;
 
@@ -4632,7 +4867,7 @@ function openPage(page) {
             );
         });
 
-    $("sidebar").classList.remove("open");
+    $("sidebar")?.classList.remove("open");
 
     renderCurrentPage();
 
@@ -4661,7 +4896,7 @@ function renderCurrentPage() {
 document.addEventListener("click", function(event) {
     const navigation = event.target.closest("[data-page]");
 
-    if (!navigation) return;
+    if (!navigation || !currentUser) return;
 
     event.preventDefault();
 
@@ -4677,10 +4912,12 @@ document.addEventListener("click", function(event) {
 
 
 /* ============================================================
-   70 — PROFILE BUTTON
+   45 — PROFILE BUTTON
    ============================================================ */
 
 listen("topProfileBtn", "click", function() {
+    if (!currentUser) return;
+
     currentProfileUserId = currentUser.id;
     profileMode = "home";
 
@@ -4689,22 +4926,22 @@ listen("topProfileBtn", "click", function() {
 
 
 /* ============================================================
-   71 — MOBILE MENU
+   46 — MOBILE MENU
    ============================================================ */
 
 listen("mobileMenuBtn", "click", function() {
-    $("sidebar").classList.toggle("open");
+    $("sidebar")?.classList.toggle("open");
 });
 
 
 /* ============================================================
-   72 — SEARCH
+   47 — SEARCH
    ============================================================ */
 
 listen("searchInput", "input", function() {
     const query = this.value.trim();
 
-    $("clearSearch").classList.toggle(
+    $("clearSearch")?.classList.toggle(
         "hidden",
         !query
     );
@@ -4723,7 +4960,9 @@ listen("searchInput", "input", function() {
 
 
 listen("clearSearch", "click", function() {
-    $("searchInput").value = "";
+    if ($("searchInput")) {
+        $("searchInput").value = "";
+    }
 
     this.classList.add("hidden");
 
@@ -4736,7 +4975,7 @@ listen("clearSearch", "click", function() {
 
 
 /* ============================================================
-   73 — THEME
+   48 — THEME
    ============================================================ */
 
 listen("themeBtn", "click", function() {
@@ -4751,23 +4990,40 @@ listen("themeBtn", "click", function() {
 
 
 /* ============================================================
-   74 — SETTINGS PAGE
+   49 — SETTINGS
    ============================================================ */
 
 function renderSettings() {
-    $("settingTheme").value = settings.theme;
-    $("settingAutoplay").checked = settings.autoplay;
-    $("settingMuted").checked = settings.muted;
-    $("settingHistory").checked = settings.history;
+    if ($("settingTheme")) {
+        $("settingTheme").value = settings.theme;
+    }
 
-    $("settingsUsername").textContent =
-        currentProfile.username || "Creator";
+    if ($("settingAutoplay")) {
+        $("settingAutoplay").checked = settings.autoplay;
+    }
 
-    $("settingsEmail").textContent =
-        currentUser.email || "";
+    if ($("settingMuted")) {
+        $("settingMuted").checked = settings.muted;
+    }
 
-    $("settingsAvatar").textContent =
-        getInitial(currentProfile.username);
+    if ($("settingHistory")) {
+        $("settingHistory").checked = settings.history;
+    }
+
+    if ($("settingsUsername")) {
+        $("settingsUsername").textContent =
+            currentProfile?.username || "Creator";
+    }
+
+    if ($("settingsEmail")) {
+        $("settingsEmail").textContent =
+            currentUser?.email || "";
+    }
+
+    if ($("settingsAvatar")) {
+        $("settingsAvatar").textContent =
+            getInitial(currentProfile?.username);
+    }
 }
 
 
@@ -4783,7 +5039,6 @@ listen("settingAutoplay", "change", function() {
     settings.autoplay = this.checked;
 
     saveSettings();
-
     renderReels();
 });
 
@@ -4792,7 +5047,6 @@ listen("settingMuted", "change", function() {
     settings.muted = this.checked;
 
     saveSettings();
-
     renderReels();
 });
 
@@ -4802,11 +5056,11 @@ listen("settingHistory", "change", function() {
 
     saveSettings();
 
-    if (!settings.history) {
-        showToast("New watch history entries are paused.");
-    } else {
-        showToast("Watch history enabled.");
-    }
+    showToast(
+        settings.history
+            ? "Watch history enabled."
+            : "Watch history paused."
+    );
 });
 
 
@@ -4828,7 +5082,7 @@ listen("resetSettingsBtn", "click", function() {
 
 
 /* ============================================================
-   75 — REFRESH HOME
+   50 — REFRESH FEED
    ============================================================ */
 
 listen("refreshFeedBtn", "click", async function() {
@@ -4846,9 +5100,7 @@ listen("refreshFeedBtn", "click", async function() {
     } catch (error) {
         console.error(error);
 
-        showToast(
-            "Refresh failed: " + error.message
-        );
+        showToast("Refresh failed: " + error.message);
 
     } finally {
         this.disabled = false;
@@ -4857,24 +5109,25 @@ listen("refreshFeedBtn", "click", async function() {
 
 
 /* ============================================================
-   76 — MODAL CLOSE BUTTONS
+   51 — MODAL CLOSE BUTTONS
    ============================================================ */
 
-document.querySelectorAll("[data-close]").forEach(button => {
-    button.addEventListener("click", function() {
-        hideModal(this.dataset.close);
+document.querySelectorAll("[data-close]")
+    .forEach(button => {
+        button.addEventListener("click", function() {
+            hideModal(this.dataset.close);
+        });
     });
-});
 
 
 /* ============================================================
-   77 — GLOBAL BUTTON ACTIONS
+   52 — GLOBAL BUTTON ACTIONS
    ============================================================ */
 
 document.addEventListener("click", function(event) {
     const button = event.target.closest("button");
 
-    if (!button) return;
+    if (!button || !currentUser) return;
 
     if (button.dataset.followUser) {
         toggleFollow(button.dataset.followUser);
@@ -4916,10 +5169,9 @@ document.addEventListener("click", function(event) {
         openSpecificReel(button.dataset.openReelId);
     }
 
-    if (button.dataset.createShort !== undefined) {
+    if (button.hasAttribute("data-create-short")) {
         openUpload("short");
     }
-
 
     if (button.dataset.goPage) {
         if (button.dataset.goPage === "profile") {
@@ -4936,49 +5188,63 @@ document.addEventListener("click", function(event) {
 
     if (button.dataset.studioWatch) {
         const videoId = button.dataset.studioWatch;
+
         const video = videos.find(item =>
             String(item.id) === String(videoId)
         );
 
         if (video && isShort(video)) {
             openSpecificReel(videoId);
+
         } else {
             openPage("home");
 
             setTimeout(() => {
-                const element = document.querySelector(
+                document.querySelector(
                     `[data-play-video="${CSS.escape(String(videoId))}"]`
-                );
-
-                element?.scrollIntoView({
+                )?.scrollIntoView({
                     behavior: "smooth",
                     block: "center"
                 });
             }, 200);
         }
     }
-
 });
 
 
 /* ============================================================
-   78 — SIGN OUT
+   53 — SIGN OUT
    ============================================================ */
 
 async function signOutGoCat() {
-    const result = await db.auth.signOut();
+    if (!db) return;
 
-    if (result.error) {
-        showToast(result.error.message);
-        return;
+    try {
+        const result = await db.auth.signOut();
+
+        if (result.error) {
+            throw result.error;
+        }
+
+        currentUser = null;
+        currentProfile = null;
+        currentProfileUserId = null;
+        currentChatUserId = null;
+        currentCommentVideoId = null;
+
+        isGoCatAdmin = false;
+
+        users = [];
+        videos = [];
+        posts = [];
+        follows = [];
+        notifications = [];
+
+        openLoginScreen();
+
+    } catch (error) {
+        showToast("Sign out failed: " + error.message);
     }
-
-    currentUser = null;
-    currentProfile = null;
-    isGoCatAdmin = false;
-    currentProfileUserId = null;
-
-    openLoginScreen();
 }
 
 
@@ -4987,11 +5253,7 @@ listen("settingsLogout", "click", signOutGoCat);
 
 
 /* ============================================================
-   79 — AUTH SESSION
-   ============================================================ */
-
-/* ============================================================
-   79 — AUTH SESSION
+   54 — AUTHENTICATION SESSION
    ============================================================ */
 
 if (db) {
@@ -5001,6 +5263,9 @@ if (db) {
             currentUser = null;
             currentProfile = null;
             currentProfileUserId = null;
+            currentChatUserId = null;
+
+            isGoCatAdmin = false;
 
             openLoginScreen();
         }
@@ -5008,8 +5273,9 @@ if (db) {
     });
 }
 
+
 /* ============================================================
-   80 — START APPLICATION
+   55 — INITIALIZE APPLICATION
    ============================================================ */
 
 async function initializeGoCat() {
@@ -5022,15 +5288,14 @@ async function initializeGoCat() {
             );
         }
 
-        // Check the login session.
         const sessionResult = await Promise.race([
             db.auth.getSession(),
 
             new Promise((_, reject) => {
                 setTimeout(() => {
-                    reject(new Error(
-                        "Supabase connection timed out."
-                    ));
+                    reject(
+                        new Error("Supabase connection timed out.")
+                    );
                 }, 15000);
             })
         ]);
@@ -5044,15 +5309,16 @@ async function initializeGoCat() {
         if (session?.user) {
             currentUser = session.user;
 
-            // Load the account and application data.
             await Promise.race([
                 startGoCat(),
 
                 new Promise((_, reject) => {
                     setTimeout(() => {
-                        reject(new Error(
-                            "GoCat data loading timed out. Check Supabase permissions and connection."
-                        ));
+                        reject(
+                            new Error(
+                                "GoCat data loading timed out. Check Supabase permissions."
+                            )
+                        );
                     }, 25000);
                 })
             ]);
@@ -5075,4 +5341,29 @@ async function initializeGoCat() {
     }
 }
 
+
+/* ============================================================
+   56 — CLEANUP TEMPORARY OBJECT URLS
+   ============================================================ */
+
+window.addEventListener("beforeunload", function() {
+    if (currentObjectURL) {
+        URL.revokeObjectURL(currentObjectURL);
+    }
+
+    if (editorMusicObjectURL) {
+        URL.revokeObjectURL(editorMusicObjectURL);
+    }
+});
+
+
+/* ============================================================
+   57 — START GOCAT
+   ============================================================ */
+
 initializeGoCat();
+
+console.log(
+    "%cGOCAT LOADED SUCCESSFULLY",
+    "color:#16d28a;font-size:18px;font-weight:bold;"
+);
