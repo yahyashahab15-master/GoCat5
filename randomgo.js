@@ -3396,7 +3396,32 @@ function loadTusLibrary() {
 /* ============================================================
    51 — STORAGE UPLOAD WITH FALLBACK
    ============================================================ */
+  async function uploadVideoFile(file, path, progressCallback) {
 
+    if (!db) {
+        throw new Error("Supabase is not connected.");
+    }
+
+    if (file.size > 50 * 1024 * 1024) {
+        throw new Error("Maximum upload size is 50 MB.");
+    }
+
+    progressCallback(10);
+
+    const result = await db.storage
+        .from(VIDEO_BUCKET)
+        .upload(path, file, {
+            cacheControl: "3600",
+            upsert: false,
+            contentType: file.type || "video/mp4"
+        });
+
+    if (result.error) {
+        throw result.error;
+    }
+
+    progressCallback(100);
+}
 /* ============================================================
    52 — PUBLISH VIDEO OR SHORT
    ============================================================ */
