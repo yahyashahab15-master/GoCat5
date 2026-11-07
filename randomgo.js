@@ -3394,15 +3394,18 @@ function loadTusLibrary() {
 
 
 /* ============================================================
-   51 — STORAGE UPLOAD WITH FALLBACK
+   51 — STORAGE UPLOAD
    ============================================================ */
-  async function uploadVideoFile(file, path, progressCallback) {
+
+async function uploadVideoFile(file, path, progressCallback) {
 
     if (!db) {
         throw new Error("Supabase is not connected.");
     }
 
-    if (file.size > 50 * 1024 * 1024) {
+    const maxSize = 50 * 1024 * 1024;
+
+    if (file.size > maxSize) {
         throw new Error("Maximum upload size is 50 MB.");
     }
 
