@@ -1575,7 +1575,7 @@ listen("commentForm", "submit", async function(event) {
         .insert({
             video_id: currentCommentVideoId,
             user_id: currentUser.id,
-            text: text
+            content: text
         });
 
     if (result.error) {
@@ -2169,7 +2169,7 @@ function resetUploadForm() {
 
     $("uploadStatus").textContent = "";
 
-    $("reelEditor").classList.add("hidden");
+    $("reelEditor")?.classList.add("hidden");
 
     selectedVideoFile = null;
     exportedReelFile = null;
@@ -4457,7 +4457,7 @@ async function loadMessages() {
             return `
                 <div class="chat-bubble ${mine ? "mine" : ""}">
 
-                    ${escapeHTML(message.text)}
+                    ${escapeHTML(message.content)}
 
                     <time>
                         ${formatDate(message.created_at)}
