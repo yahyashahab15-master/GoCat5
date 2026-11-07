@@ -429,44 +429,46 @@ listen("showLogin", "click", openLoginScreen);
    07 — LOGIN
    ============================================================ */
 
-listen("loginForm", "submit", async function(event) {
-    event.preventDefault();
+const loginForm = $("loginForm");
 
-    const email = $("loginEmail").value.trim();
-    const password = $("loginPassword").value;
+if (loginForm) {
+    loginForm.addEventListener("submit", async function(event) {
+        event.preventDefault();
 
-    const button =
-        this.querySelector('button[type="submit"]');
+        const email = $("loginEmail").value.trim();
+        const password = $("loginPassword").value;
 
-    button.disabled = true;
-    button.textContent = "Signing in...";
+        const button = this.querySelector('button[type="submit"]');
 
-    try {
-        const result = await db.auth.signInWithPassword({
-            email,
-            password
-        });
+        if (!button) return;
 
-        if (result.error) {
-            throw result.error;
+        button.disabled = true;
+        button.textContent = "Signing in...";
+
+        try {
+            if (!db) {
+                throw new Error("Supabase did not load. Refresh the page.");
+            }
+
+            const result = await db.auth.signInWithPassword({
+                email,
+                password
+            });
+
+            if (result.error) {
+                throw result.error;
+            }
+
+            await startGoCat();
+
+        } catch (error) {
+            showAuthMessage(error.message || "Login failed.");
+        } finally {
+            button.disabled = false;
+            button.textContent = "Sign in";
         }
-
-        currentUser = result.data.user;
-
-        await startGoCat();
-
-    } catch (error) {
-        console.error(error);
-
-        showAuthMessage(
-            error.message || "Login failed."
-        );
-
-    } finally {
-        button.disabled = false;
-        button.textContent = "Sign in";
-    }
-});
+    });
+}
 
 
 /* ============================================================
@@ -5063,5 +5065,68 @@ db.auth.onAuthStateChange((event, session) => {
 /* ============================================================
    80 — START APPLICATION
    ============================================================ */
+
+async function initializeGoCat() {
+    const loader = $("loader");
+
+    try {
+        if (!db) {
+            throw new Error(
+                "Supabase library failed to load. Check your internet connection."
+            );
+        }
+
+        // Check the login session.
+        const sessionResult = await Promise.race([
+            db.auth.getSession(),
+
+            new Promise((_, reject) => {
+                setTimeout(() => {
+                    reject(new Error(
+                        "Supabase connection timed out."
+                    ));
+                }, 15000);
+            })
+        ]);
+
+        if (sessionResult.error) {
+            throw sessionResult.error;
+        }
+
+        const session = sessionResult.data.session;
+
+        if (session?.user) {
+            currentUser = session.user;
+
+            // Load the account and application data.
+            await Promise.race([
+                startGoCat(),
+
+                new Promise((_, reject) => {
+                    setTimeout(() => {
+                        reject(new Error(
+                            "GoCat data loading timed out. Check Supabase permissions and connection."
+                        ));
+                    }, 25000);
+                })
+            ]);
+
+        } else {
+            openLoginScreen();
+        }
+
+    } catch (error) {
+        console.error("GOCAT STARTUP ERROR:", error);
+
+        openLoginScreen();
+
+        showAuthMessage(
+            "GoCat could not load: " + error.message
+        );
+
+    } finally {
+        loader?.classList.add("hide");
+    }
+}
 
 initializeGoCat();
