@@ -1,7 +1,6 @@
 /* ============================================================
-   GOCAT — COMPLETE APPLICATION
-   YouTube-style Home Feed + Reels + Explore + Profiles
-   Supabase Auth + Database + Storage
+   GOCAT — PROFESSIONAL CREATOR PLATFORM
+   Supabase authentication, content, uploads and creator tools
    ============================================================ */
 
 
@@ -25,7 +24,7 @@ const db = window.supabase.createClient(
 
 
 /* ============================================================
-   02 — GLOBAL DATA
+   02 — GLOBAL STATE
    ============================================================ */
 
 let currentUser = null;
@@ -54,11 +53,26 @@ let reelsVisible = 5;
 let uploadMode = "video";
 let selectedVideoFile = null;
 let exportedReelFile = null;
-let currentObjectURL = null;
 
+let currentObjectURL = null;
 let reelObserver = null;
 
+let editorAudioContext = null;
+let editorVideoSource = null;
+let editorVideoGain = null;
+let editorMusicBuffer = null;
+let editorMusicObjectURL = null;
+
+let currentUploadPath = null;
+
 const PAGE_SIZE = 5;
+
+let settings = {
+    theme: "dark",
+    autoplay: true,
+    muted: true,
+    history: true
+};
 
 
 /* ============================================================
@@ -69,9 +83,17 @@ function $(id) {
     return document.getElementById(id);
 }
 
+function listen(id, event, callback) {
+    const element = $(id);
+
+    if (element) {
+        element.addEventListener(event, callback);
+    }
+}
+
 
 /* ============================================================
-   04 — BASIC HELPERS
+   04 — GENERAL HELPERS
    ============================================================ */
 
 function escapeHTML(value) {
@@ -100,6 +122,12 @@ function getUser(userId) {
 
 
 function getUsername(userId) {
+    const user = getUser(userId);
+
+    if (user) {
+        return user.username || "Creator";
+    }
+
     if (
         currentProfile &&
         String(currentProfile.id) === String(userId)
@@ -107,7 +135,7 @@ function getUsername(userId) {
         return currentProfile.username || "Creator";
     }
 
-    return getUser(userId)?.username || "GoCat creator";
+    return "GoCat creator";
 }
 
 
@@ -170,16 +198,30 @@ function formatDate(value) {
 function topicEmoji(topic) {
     const icons = {
         Gaming: "🎮",
-        Cooking: "🍳",
-        School: "📚",
         Technology: "💻",
+        Education: "📚",
+        School: "📚",
+        Cooking: "🍳",
         Sports: "⚽",
+        Music: "♫",
         Art: "🎨",
-        Entertainment: "😂",
-        Other: "🌍"
+        Entertainment: "▣",
+        Other: "◈"
     };
 
-    return icons[topic] || "🌍";
+    return icons[topic] || "◈";
+}
+
+
+function safeJSON(key, fallback = []) {
+    try {
+        return JSON.parse(
+            localStorage.getItem(key) ||
+            JSON.stringify(fallback)
+        );
+    } catch {
+        return fallback;
+    }
 }
 
 
@@ -195,7 +237,7 @@ function showToast(message) {
 
     showToast.timer = setTimeout(() => {
         toast.classList.remove("show");
-    }, 2800);
+    }, 3000);
 }
 
 
@@ -207,8 +249,8 @@ function showAuthMessage(message, success = false) {
     element.textContent = message;
 
     element.style.color = success
-        ? "#078c5d"
-        : "#e34e68";
+        ? "#20ce8b"
+        : "#ef6272";
 }
 
 
@@ -222,6 +264,22 @@ function hideModal(id) {
 }
 
 
+function formatTime(seconds) {
+    if (!Number.isFinite(seconds)) {
+        return "00:00";
+    }
+
+    const minutes = Math.floor(seconds / 60);
+    const remaining = Math.floor(seconds % 60);
+
+    return (
+        String(minutes).padStart(2, "0") +
+        ":" +
+        String(remaining).padStart(2, "0")
+    );
+}
+
+
 function getVideoURL(path) {
     if (!path) return "";
 
@@ -231,7 +289,8 @@ function getVideoURL(path) {
 
     return db.storage
         .from(VIDEO_BUCKET)
-        .getPublicUrl(path).data.publicUrl;
+        .getPublicUrl(path)
+        .data.publicUrl;
 }
 
 
@@ -244,23 +303,81 @@ function getPostImageURL(path) {
 
     return db.storage
         .from(POST_BUCKET)
-        .getPublicUrl(path).data.publicUrl;
-}
-
-
-function safeLocalJSON(key, fallback = []) {
-    try {
-        return JSON.parse(
-            localStorage.getItem(key) || JSON.stringify(fallback)
-        );
-    } catch {
-        return fallback;
-    }
+        .getPublicUrl(path)
+        .data.publicUrl;
 }
 
 
 /* ============================================================
-   05 — AUTHENTICATION SCREENS
+   05 — SETTINGS STORAGE
+   ============================================================ */
+
+function loadSettings() {
+    const saved = safeJSON(
+        "gocat_settings_v2",
+        {}
+    );
+
+    settings = {
+        theme: saved.theme || "dark",
+        autoplay: saved.autoplay !== false,
+        muted: saved.muted !== false,
+        history: saved.history !== false
+    };
+}
+
+
+function saveSettings() {
+    localStorage.setItem(
+        "gocat_settings_v2",
+        JSON.stringify(settings)
+    );
+}
+
+
+function applyTheme() {
+    document.body.classList.toggle(
+        "light",
+        settings.theme === "light"
+    );
+
+    $("themeIcon").textContent =
+        settings.theme === "dark" ? "☀" : "◐";
+
+    $("themeLabel").textContent =
+        settings.theme === "dark"
+            ? "Light appearance"
+            : "Dark appearance";
+
+    if ($("settingTheme")) {
+        $("settingTheme").value = settings.theme;
+    }
+}
+
+
+function applySettings() {
+    loadSettings();
+    applyTheme();
+
+    if ($("settingAutoplay")) {
+        $("settingAutoplay").checked = settings.autoplay;
+    }
+
+    if ($("settingMuted")) {
+        $("settingMuted").checked = settings.muted;
+    }
+
+    if ($("settingHistory")) {
+        $("settingHistory").checked = settings.history;
+    }
+}
+
+
+applySettings();
+
+
+/* ============================================================
+   06 — AUTHENTICATION
    ============================================================ */
 
 function openLoginScreen() {
@@ -273,7 +390,7 @@ function openLoginScreen() {
     $("authTitle").textContent = "Welcome back";
 
     $("authSubtitle").textContent =
-        "Sign in to continue to GoCat.";
+        "Sign in to continue to your workspace.";
 
     showAuthMessage("");
 }
@@ -287,10 +404,10 @@ function openRegisterScreen() {
     $("registerForm").classList.remove("hidden");
 
     $("authTitle").textContent =
-        "Create your GoCat account";
+        "Create your account";
 
     $("authSubtitle").textContent =
-        "Join the GoCat community.";
+        "Join the GoCat creator community.";
 
     showAuthMessage("");
 }
@@ -302,23 +419,15 @@ function openApp() {
 }
 
 
-$("showRegister").addEventListener(
-    "click",
-    openRegisterScreen
-);
-
-
-$("showLogin").addEventListener(
-    "click",
-    openLoginScreen
-);
+listen("showRegister", "click", openRegisterScreen);
+listen("showLogin", "click", openLoginScreen);
 
 
 /* ============================================================
-   06 — LOGIN
+   07 — LOGIN
    ============================================================ */
 
-$("loginForm").addEventListener("submit", async function(event) {
+listen("loginForm", "submit", async function(event) {
     event.preventDefault();
 
     const email = $("loginEmail").value.trim();
@@ -336,7 +445,9 @@ $("loginForm").addEventListener("submit", async function(event) {
             password
         });
 
-        if (result.error) throw result.error;
+        if (result.error) {
+            throw result.error;
+        }
 
         currentUser = result.data.user;
 
@@ -344,19 +455,23 @@ $("loginForm").addEventListener("submit", async function(event) {
 
     } catch (error) {
         console.error(error);
-        showAuthMessage(error.message || "Login failed.");
-    }
 
-    button.disabled = false;
-    button.textContent = "Log in";
+        showAuthMessage(
+            error.message || "Login failed."
+        );
+
+    } finally {
+        button.disabled = false;
+        button.textContent = "Sign in";
+    }
 });
 
 
 /* ============================================================
-   07 — REGISTER
+   08 — REGISTER
    ============================================================ */
 
-$("registerForm").addEventListener("submit", async function(event) {
+listen("registerForm", "submit", async function(event) {
     event.preventDefault();
 
     const username = $("registerUsername").value.trim();
@@ -387,13 +502,13 @@ $("registerForm").addEventListener("submit", async function(event) {
             email,
             password,
             options: {
-                data: {
-                    username: username
-                }
+                data: { username }
             }
         });
 
-        if (result.error) throw result.error;
+        if (result.error) {
+            throw result.error;
+        }
 
         if (result.data.session) {
             currentUser = result.data.user;
@@ -402,24 +517,28 @@ $("registerForm").addEventListener("submit", async function(event) {
             openLoginScreen();
 
             showAuthMessage(
-                "Account created. Log in after any required email confirmation.",
+                "Account created. Sign in after any required email confirmation.",
                 true
             );
         }
 
     } catch (error) {
         console.error(error);
-        showAuthMessage(error.message || "Registration failed.");
-    }
 
-    button.disabled = false;
-    button.textContent = "Create account";
+        showAuthMessage(
+            error.message || "Registration failed."
+        );
+
+    } finally {
+        button.disabled = false;
+        button.textContent = "Create account";
+    }
 });
 
 
 /* ============================================================
-   08 — ENSURE USER PROFILE
-   users.id IS TEXT — KEEP IT THAT WAY
+   09 — USER PROFILE
+   Existing users table and TEXT IDs are preserved.
    ============================================================ */
 
 async function ensureProfile() {
@@ -453,7 +572,7 @@ async function ensureProfile() {
             id: currentUser.id,
             username: username,
             email: currentUser.email || "",
-            bio: "Welcome to my GoCat profile."
+            bio: "Welcome to my GoCat channel."
         })
         .select("*")
         .single();
@@ -467,7 +586,7 @@ async function ensureProfile() {
 
 
 /* ============================================================
-   09 — LOAD USERS
+   10 — LOAD USERS
    ============================================================ */
 
 async function loadUsers() {
@@ -482,11 +601,11 @@ async function loadUsers() {
 
     users = result.data || [];
 
-    if (
-        !users.some(user =>
-            String(user.id) === String(currentUser.id)
-        )
-    ) {
+    const hasCurrent = users.some(user =>
+        String(user.id) === String(currentUser.id)
+    );
+
+    if (!hasCurrent && currentProfile) {
         users.unshift(currentProfile);
     }
 
@@ -498,7 +617,7 @@ async function loadUsers() {
 
 
 /* ============================================================
-   10 — LOAD VIDEOS, LIKES AND COMMENTS
+   11 — LOAD VIDEOS, LIKES AND COMMENTS
    ============================================================ */
 
 async function loadVideos() {
@@ -521,9 +640,17 @@ async function loadVideos() {
 
     ]);
 
-    if (videoResult.error) throw videoResult.error;
-    if (likeResult.error) throw likeResult.error;
-    if (commentResult.error) throw commentResult.error;
+    if (videoResult.error) {
+        throw videoResult.error;
+    }
+
+    if (likeResult.error) {
+        throw likeResult.error;
+    }
+
+    if (commentResult.error) {
+        throw commentResult.error;
+    }
 
     const allLikes = likeResult.data || [];
     const allComments = commentResult.data || [];
@@ -545,7 +672,7 @@ async function loadVideos() {
 
 
 /* ============================================================
-   11 — LOAD FOLLOWS
+   12 — LOAD FOLLOWS
    ============================================================ */
 
 async function loadFollows() {
@@ -562,7 +689,7 @@ async function loadFollows() {
 
 
 /* ============================================================
-   12 — LOAD POSTS AND POST LIKES
+   13 — LOAD POSTS
    ============================================================ */
 
 async function loadPosts() {
@@ -572,7 +699,7 @@ async function loadPosts() {
         .order("created_at", { ascending: false });
 
     if (result.error) {
-        console.warn("Posts could not load:", result.error.message);
+        console.warn("Posts table:", result.error.message);
         posts = [];
         return;
     }
@@ -583,7 +710,7 @@ async function loadPosts() {
 
     if (likesResult.error) {
         console.warn(
-            "Post likes could not load:",
+            "Post likes:",
             likesResult.error.message
         );
     }
@@ -603,7 +730,7 @@ async function loadPosts() {
 
 
 /* ============================================================
-   13 — LOAD ALL DATA
+   14 — LOAD ALL DATABASE DATA
    ============================================================ */
 
 async function loadAllData() {
@@ -617,7 +744,7 @@ async function loadAllData() {
 
 
 /* ============================================================
-   14 — START GOCAT
+   15 — START APPLICATION
    ============================================================ */
 
 async function startGoCat() {
@@ -627,16 +754,12 @@ async function startGoCat() {
 
         currentProfileUserId = currentUser.id;
 
-        notifications = safeLocalJSON(
+        notifications = safeJSON(
             "gocat_notifications_" + currentUser.id,
             []
         );
 
-        $("welcomeName").textContent =
-            currentProfile.username || "Creator";
-
-        $("topProfileBtn").textContent =
-            getInitial(currentProfile.username);
+        updateUserInterface();
 
         openApp();
 
@@ -644,18 +767,46 @@ async function startGoCat() {
 
         openPage("home");
 
+        checkSharedVideoLink();
+
     } catch (error) {
         console.error(error);
 
         showToast(
-            "GoCat loading error: " + error.message
+            "Could not load GoCat: " + error.message
         );
     }
 }
 
 
+function updateUserInterface() {
+    const username =
+        currentProfile?.username || "Creator";
+
+    $("welcomeName").textContent = username;
+
+    $("topProfileBtn").textContent =
+        getInitial(username);
+
+    $("sidebarAvatar").textContent =
+        getInitial(username);
+
+    $("sidebarUsername").textContent =
+        username;
+
+    $("settingsAvatar").textContent =
+        getInitial(username);
+
+    $("settingsUsername").textContent =
+        username;
+
+    $("settingsEmail").textContent =
+        currentUser.email || "";
+}
+
+
 /* ============================================================
-   15 — RENDER ALL PAGES
+   16 — RENDER ALL SECTIONS
    ============================================================ */
 
 function renderEverything() {
@@ -668,11 +819,13 @@ function renderEverything() {
     renderProfile();
     renderNotifications();
     renderChatFriends();
+    renderStudio();
+    renderHistory();
 }
 
 
 /* ============================================================
-   16 — VIDEO CARD
+   17 — VIDEO CARD
    ============================================================ */
 
 function videoCard(video) {
@@ -723,7 +876,7 @@ function videoCard(video) {
                         <button
                             class="follow-btn"
                             data-follow-user="${escapeHTML(video.owner_id)}">
-                            ${following ? "Following" : "＋ Follow"}
+                            ${following ? "Following" : "+ Follow"}
                         </button>
                     `
                     : ""
@@ -745,7 +898,7 @@ function videoCard(video) {
             </div>
 
             <div class="video-meta">
-                <span>▶ ${Number(video.views || 0)} views</span>
+                <span>${Number(video.views || 0)} views</span>
                 <span>${formatDate(video.created_at)}</span>
             </div>
 
@@ -754,19 +907,20 @@ function videoCard(video) {
                 <button
                     class="action-btn ${liked ? "liked" : ""}"
                     data-like-video="${escapeHTML(video.id)}">
-                    ${liked ? "♥" : "♡"} ${video.likes?.length || 0}
+                    ${liked ? "♥" : "♡"}
+                    ${video.likes?.length || 0}
                 </button>
 
                 <button
                     class="action-btn"
                     data-comments-video="${escapeHTML(video.id)}">
-                    💬 ${video.comments?.length || 0}
+                    Comments ${video.comments?.length || 0}
                 </button>
 
                 <button
                     class="action-btn"
                     data-share-video="${escapeHTML(video.id)}">
-                    ↗ Share
+                    Share
                 </button>
 
                 ${
@@ -789,12 +943,11 @@ function videoCard(video) {
 
 
 /* ============================================================
-   17 — POST CARD
+   18 — POST CARD
    ============================================================ */
 
 function postCard(post) {
     const username = getUsername(post.user_id);
-
     const own = isOwnContent(post.user_id);
 
     const liked = post.likes?.includes(
@@ -864,7 +1017,7 @@ function postCard(post) {
 
 
 /* ============================================================
-   18 — HOME SHORTS CARD
+   19 — HOME SHORT CARD
    ============================================================ */
 
 function homeShortCard(video) {
@@ -901,7 +1054,7 @@ function homeShortCard(video) {
                     <small>@${escapeHTML(username)}</small>
 
                     <small>
-                        ▶ ${Number(video.views || 0)} views
+                        ${Number(video.views || 0)} views
                     </small>
 
                 </div>
@@ -919,7 +1072,7 @@ function homeShortCard(video) {
 
                 <button
                     data-comments-video="${escapeHTML(video.id)}">
-                    💬
+                    Comments
                 </button>
 
             </div>
@@ -930,7 +1083,7 @@ function homeShortCard(video) {
 
 
 /* ============================================================
-   19 — HOME FEED DATA
+   20 — HOME FEED DATA
    ============================================================ */
 
 function getHomeFeedData() {
@@ -964,11 +1117,11 @@ function getHomeFeedData() {
         .filter(video => matchesSearch(video, "video"))
         .slice()
         .sort((a, b) => {
-            const score = video => {
+            function score(video) {
                 let points = 0;
 
                 if (isFollowing(video.owner_id)) {
-                    points += 5;
+                    points += 4;
                 }
 
                 const ageHours =
@@ -989,7 +1142,7 @@ function getHomeFeedData() {
                 );
 
                 return points;
-            };
+            }
 
             return score(b) - score(a);
         });
@@ -1022,15 +1175,12 @@ function getHomeFeedData() {
 
 
 /* ============================================================
-   20 — BUILD REPEATING YOUTUBE-STYLE SECTIONS
+   21 — BUILD REPEATING HOME FEED
+   4 VIDEOS → 4 SHORTS → 2 POSTS → REPEAT
    ============================================================ */
 
 function buildHomeFeedCycles() {
     const data = getHomeFeedData();
-
-    const regularVideos = data.regularVideos;
-    const shorts = data.shorts;
-    const communityPosts = data.communityPosts;
 
     let videoIndex = 0;
     let shortsIndex = 0;
@@ -1039,16 +1189,14 @@ function buildHomeFeedCycles() {
     const cycles = [];
 
     while (
-        videoIndex < regularVideos.length ||
-        shortsIndex < shorts.length ||
-        postIndex < communityPosts.length
+        videoIndex < data.regularVideos.length ||
+        shortsIndex < data.shorts.length ||
+        postIndex < data.communityPosts.length
     ) {
         const sections = [];
 
-        /* FOUR REGULAR VIDEOS */
-
-        if (videoIndex < regularVideos.length) {
-            const group = regularVideos.slice(
+        if (videoIndex < data.regularVideos.length) {
+            const group = data.regularVideos.slice(
                 videoIndex,
                 videoIndex + 4
             );
@@ -1059,12 +1207,10 @@ function buildHomeFeedCycles() {
                 <section class="home-feed-section">
 
                     <div class="home-feed-heading">
-
                         <div>
                             <h2>Videos for you</h2>
                             <p>Recommended videos from GoCat creators.</p>
                         </div>
-
                     </div>
 
                     <div class="home-feed-video-grid">
@@ -1075,10 +1221,8 @@ function buildHomeFeedCycles() {
             `);
         }
 
-        /* FOUR SHORTS */
-
-        if (shortsIndex < shorts.length) {
-            const group = shorts.slice(
+        if (shortsIndex < data.shorts.length) {
+            const group = data.shorts.slice(
                 shortsIndex,
                 shortsIndex + 4
             );
@@ -1091,14 +1235,12 @@ function buildHomeFeedCycles() {
                     <div class="home-feed-heading">
 
                         <div class="home-shelf-title">
-
                             <span class="shorts-logo">▶</span>
 
                             <div>
                                 <h2>Shorts</h2>
-                                <p>Quick videos to discover.</p>
+                                <p>Quick videos from GoCat.</p>
                             </div>
-
                         </div>
 
                         <button
@@ -1117,10 +1259,8 @@ function buildHomeFeedCycles() {
             `);
         }
 
-        /* ONE OR TWO POSTS */
-
-        if (postIndex < communityPosts.length) {
-            const group = communityPosts.slice(
+        if (postIndex < data.communityPosts.length) {
+            const group = data.communityPosts.slice(
                 postIndex,
                 postIndex + 2
             );
@@ -1161,41 +1301,37 @@ function buildHomeFeedCycles() {
 
 
 /* ============================================================
-   21 — RENDER HOME FEED
+   22 — RENDER HOME FEED
    ============================================================ */
 
 function renderHomeFeed() {
     const cycles = buildHomeFeedCycles();
 
-    const visibleCycles = cycles.slice(
+    const visible = cycles.slice(
         0,
         homeVisibleCycles
     );
 
-    $("homeFeed").innerHTML =
-        visibleCycles.join("");
+    $("homeFeed").innerHTML = visible.join("");
 
     const data = getHomeFeedData();
 
-    const totalItems =
+    const total =
         data.regularVideos.length +
         data.shorts.length +
         data.communityPosts.length;
 
-    const shownItems = Math.min(
-        totalItems,
-        visibleCycles.reduce((total, html) => {
-            const matches = html.match(
-                /class="video-card"|class="post-card"|class="home-short-card"/g
-            );
+    const shown = visible.reduce((sum, html) => {
+        const matches = html.match(
+            /class="video-card"|class="post-card"|class="home-short-card"/g
+        );
 
-            return total + (matches ? matches.length : 0);
-        }, 0)
-    );
+        return sum + (matches ? matches.length : 0);
+    }, 0);
 
     $("homeEmpty").classList.toggle(
         "hidden",
-        totalItems > 0
+        total > 0
     );
 
     $("homeLoadMoreWrap").classList.toggle(
@@ -1204,23 +1340,18 @@ function renderHomeFeed() {
     );
 
     $("homeCount").textContent =
-        "Showing " + shownItems +
-        " of " + totalItems + " items";
+        "Showing " + shown + " of " + total;
 }
 
 
-/* ============================================================
-   22 — HOME LOAD MORE
-   ============================================================ */
-
-$("homeLoadMore").addEventListener("click", function() {
+listen("homeLoadMore", "click", function() {
     homeVisibleCycles += 1;
     renderHomeFeed();
 });
 
 
 /* ============================================================
-   23 — HOME TOPIC FILTERS
+   23 — HOME TOPIC FILTER
    ============================================================ */
 
 document.querySelectorAll("[data-topic]").forEach(button => {
@@ -1247,7 +1378,7 @@ function renderSuggestedCreators() {
     const suggestions = users
         .filter(user => !isOwnContent(user.id))
         .filter(user => !isFollowing(user.id))
-        .slice(0, 12);
+        .slice(0, 15);
 
     $("suggestedCreators").innerHTML =
         suggestions.map(user => `
@@ -1274,7 +1405,7 @@ function renderSuggestedCreators() {
 
 
 /* ============================================================
-   25 — FOLLOW / UNFOLLOW
+   25 — FOLLOW AND UNFOLLOW
    ============================================================ */
 
 async function toggleFollow(userId) {
@@ -1295,7 +1426,9 @@ async function toggleFollow(userId) {
 
             if (result.error) throw result.error;
 
-            follows = follows.filter(item => item !== existing);
+            follows = follows.filter(
+                item => item !== existing
+            );
 
             showToast("Unfollowed " + getUsername(userId));
 
@@ -1378,7 +1511,7 @@ async function toggleVideoLike(videoId) {
 
 
 /* ============================================================
-   27 — VIDEO COMMENTS
+   27 — COMMENTS
    ============================================================ */
 
 async function openComments(videoId) {
@@ -1401,7 +1534,8 @@ async function renderComments() {
         .order("created_at", { ascending: true });
 
     if (result.error) {
-        $("commentsList").textContent = result.error.message;
+        $("commentsList").textContent =
+            result.error.message;
         return;
     }
 
@@ -1410,6 +1544,7 @@ async function renderComments() {
     $("commentsList").innerHTML = comments.length
         ? comments.map(comment => `
             <div class="comment-item">
+
                 <strong>
                     ${escapeHTML(getUsername(comment.user_id))}
                 </strong>
@@ -1417,13 +1552,14 @@ async function renderComments() {
                 <p>${escapeHTML(comment.text)}</p>
 
                 <small>${formatDate(comment.created_at)}</small>
+
             </div>
         `).join("")
-        : "<p class='muted-text'>No comments yet. Start the conversation!</p>";
+        : "<p class='muted-text'>No comments yet.</p>";
 }
 
 
-$("commentForm").addEventListener("submit", async function(event) {
+listen("commentForm", "submit", async function(event) {
     event.preventDefault();
 
     const text = $("commentInput").value.trim();
@@ -1460,30 +1596,71 @@ $("commentForm").addEventListener("submit", async function(event) {
 
 async function shareVideo(videoId) {
     const url =
-        location.href.split("?")[0] +
+        location.origin +
+        location.pathname +
         "?video=" + encodeURIComponent(videoId);
 
     try {
         if (navigator.share) {
             await navigator.share({
                 title: "GoCat video",
-                text: "Check out this video on GoCat!",
+                text: "Watch this on GoCat.",
                 url: url
             });
-        } else {
+        } else if (navigator.clipboard) {
             await navigator.clipboard.writeText(url);
             showToast("Video link copied!");
+        } else {
+            showToast("Sharing is not supported here.");
         }
     } catch (error) {
         if (error.name !== "AbortError") {
-            showToast("Sharing is unavailable.");
+            showToast("Sharing failed.");
         }
     }
 }
 
 
 /* ============================================================
-   29 — DELETE VIDEO
+   29 — SHARED VIDEO LINK
+   ============================================================ */
+
+function checkSharedVideoLink() {
+    const params = new URLSearchParams(location.search);
+    const videoId = params.get("video");
+
+    if (!videoId) return;
+
+    const video = videos.find(item =>
+        String(item.id) === String(videoId)
+    );
+
+    if (!video) {
+        showToast("That video could not be found.");
+        return;
+    }
+
+    if (isShort(video)) {
+        openSpecificReel(video.id);
+    } else {
+        openPage("home");
+
+        setTimeout(() => {
+            const card = document.querySelector(
+                `[data-play-video="${CSS.escape(String(video.id))}"]`
+            );
+
+            card?.scrollIntoView({
+                behavior: "smooth",
+                block: "center"
+            });
+        }, 300);
+    }
+}
+
+
+/* ============================================================
+   30 — DELETE VIDEO
    ============================================================ */
 
 async function deleteVideo(videoId) {
@@ -1493,7 +1670,9 @@ async function deleteVideo(videoId) {
 
     if (!video || !isOwnContent(video.owner_id)) return;
 
-    if (!confirm("Delete this video permanently?")) return;
+    if (!confirm("Delete this video permanently?")) {
+        return;
+    }
 
     const result = await db
         .from("videos")
@@ -1502,14 +1681,18 @@ async function deleteVideo(videoId) {
         .eq("owner_id", currentUser.id);
 
     if (result.error) {
-        showToast("Delete error: " + result.error.message);
+        showToast("Delete failed: " + result.error.message);
         return;
     }
 
     if (video.storage_path) {
-        await db.storage
+        const removal = await db.storage
             .from(VIDEO_BUCKET)
             .remove([video.storage_path]);
+
+        if (removal.error) {
+            console.warn("Storage cleanup:", removal.error.message);
+        }
     }
 
     await loadVideos();
@@ -1521,7 +1704,7 @@ async function deleteVideo(videoId) {
 
 
 /* ============================================================
-   30 — REELS PAGE
+   31 — SHORTS PAGE
    ============================================================ */
 
 function renderReels() {
@@ -1540,13 +1723,13 @@ function renderReels() {
         container.innerHTML = `
             <div class="reel-empty">
                 <div>
-                    <h2>No Reels yet 🐱</h2>
-                    <p>Be the first to create a GoCat Reel.</p>
+                    <h2>No Shorts yet</h2>
+                    <p>Create the first GoCat Short.</p>
 
                     <button
                         class="primary-btn"
-                        data-create-reel>
-                        Create Reel
+                        data-create-short>
+                        Create Short
                     </button>
                 </div>
             </div>
@@ -1575,7 +1758,7 @@ function renderReels() {
                     src="${escapeHTML(getVideoURL(video.storage_path))}"
                     playsinline
                     loop
-                    muted
+                    ${settings.muted ? "muted" : ""}
                     preload="metadata"
                     data-play-video="${escapeHTML(video.id)}">
                 </video>
@@ -1583,7 +1766,7 @@ function renderReels() {
                 <button
                     class="reel-sound-btn"
                     data-reel-sound>
-                    🔇
+                    ${settings.muted ? "Muted" : "Sound"}
                 </button>
 
                 <div class="reel-shade"></div>
@@ -1641,13 +1824,13 @@ function renderReels() {
                     <button
                         class="reel-action"
                         data-comments-video="${escapeHTML(video.id)}">
-                        💬
+                        Comments
                     </button>
 
                     <button
                         class="reel-action"
                         data-share-video="${escapeHTML(video.id)}">
-                        ↗
+                        Share
                     </button>
 
                 </div>
@@ -1672,11 +1855,15 @@ function observeReels() {
 
     const feed = $("reelsFeed");
 
+    if (!("IntersectionObserver" in window)) {
+        return;
+    }
+
     reelObserver = new IntersectionObserver(entries => {
         entries.forEach(entry => {
             const video = entry.target;
 
-            if (entry.isIntersecting) {
+            if (entry.isIntersecting && settings.autoplay) {
                 video.play().catch(() => {});
             } else {
                 video.pause();
@@ -1684,7 +1871,7 @@ function observeReels() {
         });
     }, {
         root: feed,
-        threshold: 0.65
+        threshold: 0.7
     });
 
     feed.querySelectorAll(".reel-video").forEach(video => {
@@ -1693,7 +1880,7 @@ function observeReels() {
 }
 
 
-$("reelsLoadMore").addEventListener("click", function() {
+listen("reelsLoadMore", "click", function() {
     reelsVisible += PAGE_SIZE;
     renderReels();
 });
@@ -1713,23 +1900,20 @@ function openSpecificReel(videoId) {
     openPage("reels");
 
     setTimeout(() => {
-        const items =
-            Array.from(document.querySelectorAll("[data-reel-item]"));
-
-        const target = items.find(item =>
-            item.dataset.reelItem === String(videoId)
+        const item = document.querySelector(
+            `[data-reel-item="${CSS.escape(String(videoId))}"]`
         );
 
-        target?.scrollIntoView({
+        item?.scrollIntoView({
             behavior: "smooth",
             block: "start"
         });
-    }, 180);
+    }, 200);
 }
 
 
 /* ============================================================
-   31 — EXPLORE TABS
+   32 — EXPLORE TABS
    ============================================================ */
 
 function setExploreTab(mode) {
@@ -1770,10 +1954,6 @@ document.querySelectorAll("[data-explore-tab]").forEach(button => {
 });
 
 
-/* ============================================================
-   32 — EXPLORE REEL CARD
-   ============================================================ */
-
 function exploreReelCard(video) {
     const username = getUsername(video.owner_id);
 
@@ -1781,16 +1961,14 @@ function exploreReelCard(video) {
         <article class="feed-post-card feed-reel-card">
 
             <div class="feed-post-top">
-
                 <div class="feed-post-avatar">
                     ${escapeHTML(getInitial(username))}
                 </div>
 
                 <div class="feed-post-user">
                     <strong>${escapeHTML(username)}</strong>
-                    <small>GoCat Reel</small>
+                    <small>GoCat Short</small>
                 </div>
-
             </div>
 
             <div class="reel-thumb">
@@ -1802,9 +1980,7 @@ function exploreReelCard(video) {
                     preload="metadata">
                 </video>
 
-                <span class="reel-thumb-label">
-                    ▶ REEL
-                </span>
+                <span class="reel-thumb-label">SHORT</span>
 
             </div>
 
@@ -1815,7 +1991,7 @@ function exploreReelCard(video) {
             <button
                 class="feed-reel-open"
                 data-open-reel-id="${escapeHTML(video.id)}">
-                Watch this Reel
+                Watch Short
             </button>
 
         </article>
@@ -1849,9 +2025,10 @@ function renderExplore() {
                 .join("");
 
         updateExploreMore(found.length);
+        return;
     }
 
-    else if (exploreMode === "reels") {
+    if (exploreMode === "reels") {
         const found = videos.filter(video =>
             isShort(video) &&
             (
@@ -1868,9 +2045,10 @@ function renderExplore() {
                 .join("");
 
         updateExploreMore(found.length);
+        return;
     }
 
-    else if (exploreMode === "people") {
+    if (exploreMode === "people") {
         const found = users.filter(user =>
             !isOwnContent(user.id) &&
             (
@@ -1895,22 +2073,23 @@ function renderExplore() {
                     <button
                         class="primary-btn"
                         data-profile-user="${escapeHTML(user.id)}">
-                        View profile
+                        View channel
                     </button>
 
                     <button
                         class="soft-btn"
                         data-follow-user="${escapeHTML(user.id)}">
-                        ${isFollowing(user.id) ? "Following" : "＋ Follow"}
+                        ${isFollowing(user.id) ? "Following" : "Follow"}
                     </button>
 
                 </div>
             `).join("");
 
         updateExploreMore(found.length);
+        return;
     }
 
-    else if (exploreMode === "posts") {
+    if (exploreMode === "posts") {
         const found = posts.filter(post =>
             !query ||
             String(post.content || "").toLowerCase().includes(query) ||
@@ -1939,7 +2118,7 @@ function updateExploreMore(total) {
 }
 
 
-$("exploreLoadMore").addEventListener("click", function() {
+listen("exploreLoadMore", "click", function() {
     exploreVisible += 6;
     renderExplore();
 });
@@ -1972,45 +2151,80 @@ function renderFollowing() {
 
 
 /* ============================================================
-   35 — OPEN UPLOAD MODAL
+   35 — UPLOAD MODAL
    ============================================================ */
 
-function openUpload(mode = "video") {
-    uploadMode = mode;
-
-    selectedVideoFile = null;
-    exportedReelFile = null;
+function resetUploadForm() {
+    $("uploadForm").reset();
 
     $("videoFile").value = "";
     $("selectedVideoName").textContent = "";
 
-    $("videoTitle").value = "";
-    $("videoDescription").value = "";
+    $("uploadProgress").classList.add("hidden");
+    $("uploadProgressBar").style.width = "0%";
+
+    $("uploadStatus").textContent = "";
 
     $("reelEditor").classList.add("hidden");
 
+    selectedVideoFile = null;
+    exportedReelFile = null;
+}
+
+
+function setUploadMode(mode) {
+    uploadMode = mode === "short" ? "short" : "video";
+
+    document.querySelectorAll("[data-upload-mode]")
+        .forEach(button => {
+            button.classList.toggle(
+                "active",
+                button.dataset.uploadMode === uploadMode
+            );
+        });
+
     $("uploadTitle").textContent =
-        mode === "reel" ? "Create a Reel" : "Upload video";
+        uploadMode === "short"
+            ? "Create a Short"
+            : "Upload video";
 
     $("uploadDescription").textContent =
-        mode === "reel"
-            ? "Create a vertical video for GoCat."
-            : "Share a video with the GoCat community.";
+        uploadMode === "short"
+            ? "Prepare and publish a vertical video."
+            : "Publish a video to your GoCat channel.";
 
     $("publishVideoBtn").textContent =
-        mode === "reel" ? "Publish Reel" : "Publish video";
+        uploadMode === "short"
+            ? "Publish Short"
+            : "Publish video";
+}
 
+
+function openUpload(mode = "video") {
+    resetUploadForm();
+    setUploadMode(mode);
     showModal("uploadModal");
 }
 
 
-$("uploadTopBtn").addEventListener("click", function() {
+listen("uploadTopBtn", "click", function() {
     openUpload("video");
 });
 
 
-$("createReelBtn").addEventListener("click", function() {
-    openUpload("reel");
+listen("createReelBtn", "click", function() {
+    openUpload("short");
+});
+
+
+document.querySelectorAll("[data-upload-mode]").forEach(button => {
+    button.addEventListener("click", function() {
+        const mode = this.dataset.uploadMode;
+
+        if (mode !== uploadMode) {
+            setUploadMode(mode);
+        }
+    });
 });
 
 
@@ -2018,32 +2232,44 @@ $("createReelBtn").addEventListener("click", function() {
    36 — VIDEO FILE SELECTION
    ============================================================ */
 
-$("videoFile").addEventListener("change", function() {
+listen("videoFile", "change", function() {
     const file = this.files[0];
 
     if (!file) return;
 
     if (!file.type.startsWith("video/")) {
-        showToast("Please select a video.");
+        showToast("Please select a video file.");
+        this.value = "";
+        return;
+    }
+
+    const maxSize = 1024 * 1024 * 1024;
+
+    if (file.size > maxSize) {
+        showToast("This file is larger than 1 GB.");
+        this.value = "";
         return;
     }
 
     selectedVideoFile = file;
     exportedReelFile = null;
 
-    $("selectedVideoName").textContent = file.name;
+    $("selectedVideoName").textContent =
+        file.name + " • " +
+        (file.size / (1024 * 1024)).toFixed(1) +
+        " MB";
 
-    if (uploadMode === "reel") {
-        prepareReelPreview(file);
+    if (uploadMode === "short") {
+        prepareReelEditor(file);
     }
 });
 
 
 /* ============================================================
-   37 — REEL PREVIEW
+   37 — OPEN SHORTS EDITOR
    ============================================================ */
 
-function prepareReelPreview(file) {
+function prepareReelEditor(file) {
     const preview = $("reelPreview");
 
     if (currentObjectURL) {
@@ -2053,51 +2279,745 @@ function prepareReelPreview(file) {
     currentObjectURL = URL.createObjectURL(file);
 
     preview.src = currentObjectURL;
+    preview.style.filter = "none";
+    preview.style.transform = "none";
+    preview.playbackRate = 1;
 
     $("reelEditor").classList.remove("hidden");
 
+    $("editorProjectStatus").textContent = file.name;
+
     $("editorStatus").textContent =
-        "Choose your trim, filter, framing and text.";
+        "Choose your edits and export your Short.";
+
+    $("editorOverlayPreview").style.justifyContent = "flex-end";
+
+    $("previewTextOne").textContent = "";
+    $("previewTextTwo").textContent = "";
+    $("previewSticker").textContent = "";
+
+    showModal("editorModal");
 
     preview.onloadedmetadata = function() {
-        $("trimStart").value = "0";
+        const duration = preview.duration;
 
-        $("trimEnd").value =
-            preview.duration.toFixed(1);
+        $("trimStart").value = 0;
+        $("trimEnd").value = duration.toFixed(1);
+
+        $("trimStart").max = duration;
+        $("trimEnd").max = duration;
+
+        $("trimStartRange").max = Math.ceil(duration * 10);
+        $("trimEndRange").max = Math.ceil(duration * 10);
+
+        $("trimStartRange").value = 0;
+        $("trimEndRange").value = Math.ceil(duration * 10);
+
+        $("timelineDuration").textContent =
+            formatTime(duration);
+
+        $("editorTimecode").textContent =
+            "00:00 / " + formatTime(duration);
+
+        updateEditorPreview();
     };
 }
 
 
-$("reelOverlayText").addEventListener("input", function() {
-    $("reelOverlayPreview").textContent = this.value;
-});
+/* ============================================================
+   38 — EDITOR PANEL NAVIGATION
+   ============================================================ */
 
+document.querySelectorAll("[data-editor-tab]").forEach(button => {
+    button.addEventListener("click", function() {
+        const tab = this.dataset.editorTab;
 
-$("reelFilter").addEventListener("change", function() {
-    const filters = {
-        none: "none",
-        warm: "sepia(.4) saturate(1.3)",
-        cool: "hue-rotate(15deg) saturate(.9)",
-        mono: "grayscale(1)",
-        vivid: "saturate(1.8) contrast(1.1)"
-    };
+        document.querySelectorAll("[data-editor-tab]")
+            .forEach(item => item.classList.remove("active"));
 
-    $("reelPreview").style.filter =
-        filters[this.value] || "none";
-});
+        this.classList.add("active");
 
-
-$("reelFraming").addEventListener("change", function() {
-    $("reelPreview").style.objectFit =
-        this.value === "contain" ? "contain" : "cover";
+        document.querySelectorAll("[data-editor-panel]")
+            .forEach(panel => {
+                panel.classList.toggle(
+                    "hidden",
+                    panel.dataset.editorPanel !== tab
+                );
+            });
+    });
 });
 
 
 /* ============================================================
-   38 — APPLY REEL EDITS
+   39 — EDITOR PREVIEW FILTERS
    ============================================================ */
 
-$("exportReelBtn").addEventListener("click", async function() {
+function getEditorFilter() {
+    const filters = {
+        none: "",
+        warm: "sepia(.35) saturate(1.25)",
+        cool: "hue-rotate(14deg) saturate(.95)",
+        mono: "grayscale(1)",
+        vivid: "saturate(1.6) contrast(1.08)",
+        cinema: "contrast(1.18) saturate(1.12)",
+        fade: "brightness(1.08) saturate(.75) contrast(.88)"
+    };
+
+    return filters[$("reelFilter").value] || "";
+}
+
+
+function updateEditorPreview() {
+    const preview = $("reelPreview");
+
+    if (!preview) return;
+
+    const brightness = Number($("reelBrightness").value);
+    const contrast = Number($("reelContrast").value);
+    const saturation = Number($("reelSaturation").value);
+    const blur = Number($("reelBlur").value);
+
+    const filterParts = [
+        getEditorFilter(),
+        "brightness(" + brightness + "%)",
+        "contrast(" + contrast + "%)",
+        "saturate(" + saturation + "%)",
+        "blur(" + blur + "px)"
+    ].filter(Boolean);
+
+    preview.style.filter = filterParts.join(" ");
+
+    const rotation = Number($("reelRotation").value || 0);
+
+    preview.style.transform =
+        "rotate(" + rotation + "deg)";
+
+    preview.playbackRate =
+        Number($("reelSpeed").value || 1);
+
+    $("brightnessValue").textContent =
+        brightness + "%";
+
+    $("contrastValue").textContent =
+        contrast + "%";
+
+    $("saturationValue").textContent =
+        saturation + "%";
+
+    $("blurValue").textContent =
+        blur + "px";
+
+    $("previewTextOne").textContent =
+        $("reelOverlayText").value;
+
+    $("previewTextTwo").textContent =
+        $("reelOverlayTextTwo").value;
+
+    $("previewSticker").textContent =
+        $("reelSticker").value;
+
+    $("previewTextOne").style.fontSize =
+        Number($("reelTextSize").value) + "px";
+
+    $("previewTextOne").style.color =
+        $("reelTextColor").value;
+
+    const position = $("reelTextPosition").value;
+
+    const previewOverlay = $("editorOverlayPreview");
+
+    if (position === "top") {
+        previewOverlay.style.justifyContent = "flex-start";
+    } else if (position === "middle") {
+        previewOverlay.style.justifyContent = "center";
+    } else {
+        previewOverlay.style.justifyContent = "flex-end";
+    }
+
+    const framing = $("reelFraming").value;
+
+    if (framing === "contain") {
+        preview.style.objectFit = "contain";
+    } else {
+        preview.style.objectFit = "cover";
+    }
+}
+
+
+/* Bind all editor inputs */
+
+[
+    "reelFilter",
+    "reelBrightness",
+    "reelContrast",
+    "reelSaturation",
+    "reelBlur",
+    "reelSpeed",
+    "reelTextPosition",
+    "reelTextSize",
+    "reelTextColor",
+    "reelOverlayText",
+    "reelOverlayTextTwo",
+    "reelSticker",
+    "reelFraming",
+    "reelRotation"
+].forEach(id => {
+    listen(id, "input", updateEditorPreview);
+    listen(id, "change", updateEditorPreview);
+});
+
+
+/* ============================================================
+   40 — TRIM CONTROLS
+   ============================================================ */
+
+function syncTrimInputs(changed) {
+    const preview = $("reelPreview");
+
+    if (!preview.duration) return;
+
+    let start = Number($("trimStart").value || 0);
+    let end = Number($("trimEnd").value || preview.duration);
+
+    if (changed === "start") {
+        start = Math.max(0, Math.min(start, end - .1));
+        $("trimStart").value = start.toFixed(1);
+    }
+
+    if (changed === "end") {
+        end = Math.min(preview.duration, Math.max(end, start + .1));
+        $("trimEnd").value = end.toFixed(1);
+    }
+
+    $("trimStartRange").value = Math.round(start * 10);
+    $("trimEndRange").value = Math.round(end * 10);
+
+    $("timelineDuration").textContent =
+        formatTime(end - start);
+}
+
+
+listen("trimStart", "input", () => syncTrimInputs("start"));
+listen("trimEnd", "input", () => syncTrimInputs("end"));
+
+
+listen("trimStartRange", "input", function() {
+    $("trimStart").value =
+        (Number(this.value) / 10).toFixed(1);
+
+    syncTrimInputs("start");
+});
+
+
+listen("trimEndRange", "input", function() {
+    $("trimEnd").value =
+        (Number(this.value) / 10).toFixed(1);
+
+    syncTrimInputs("end");
+});
+
+
+listen("reelPreview", "timeupdate", function() {
+    const preview = this;
+
+    if (!preview.duration) return;
+
+    $("editorTimecode").textContent =
+        formatTime(preview.currentTime) +
+        " / " +
+        formatTime(preview.duration);
+
+    const start = Number($("trimStart").value || 0);
+    const end = Number($("trimEnd").value || preview.duration);
+
+    const position = Math.max(
+        0,
+        Math.min(
+            100,
+            ((preview.currentTime - start) / Math.max(.1, end - start)) * 100
+        )
+    );
+
+    $("timelinePlayhead").style.left =
+        position + "%";
+
+    if (preview.currentTime >= end) {
+        preview.pause();
+    }
+});
+
+
+/* ============================================================
+   41 — EDITOR PLAY BUTTON
+   ============================================================ */
+
+listen("editorPreviewPlay", "click", async function() {
+    const preview = $("reelPreview");
+
+    const start = Number($("trimStart").value || 0);
+    const end = Number($("trimEnd").value || preview.duration);
+
+    if (preview.paused) {
+        if (
+            preview.currentTime < start ||
+            preview.currentTime >= end
+        ) {
+            preview.currentTime = start;
+        }
+
+        try {
+            await preview.play();
+
+            this.textContent = "Ⅱ";
+
+        } catch {
+            showToast("Preview playback was blocked.");
+        }
+
+    } else {
+        preview.pause();
+        this.textContent = "▶";
+    }
+});
+
+
+listen("reelPreview", "play", () => {
+    $("editorPreviewPlay").textContent = "Ⅱ";
+});
+
+listen("reelPreview", "pause", () => {
+    $("editorPreviewPlay").textContent = "▶";
+});
+
+
+/* ============================================================
+   42 — EDITOR MUSIC FILE
+   ============================================================ */
+
+listen("musicFile", "change", async function() {
+    const file = this.files[0];
+
+    if (!file) return;
+
+    if (!file.type.startsWith("audio/")) {
+        showToast("Choose an audio file.");
+        this.value = "";
+        return;
+    }
+
+    if (editorMusicObjectURL) {
+        URL.revokeObjectURL(editorMusicObjectURL);
+    }
+
+    editorMusicObjectURL = URL.createObjectURL(file);
+
+    editorMusicBuffer = null;
+
+    $("musicFileName").textContent =
+        file.name + " • " +
+        (file.size / (1024 * 1024)).toFixed(1) +
+        " MB";
+
+    showToast("Music selected. It will be mixed during export.");
+});
+
+
+listen("removeMusicBtn", "click", function() {
+    editorMusicBuffer = null;
+
+    if (editorMusicObjectURL) {
+        URL.revokeObjectURL(editorMusicObjectURL);
+        editorMusicObjectURL = null;
+    }
+
+    $("musicFile").value = "";
+    $("musicFileName").textContent = "";
+
+    showToast("Background music removed.");
+});
+
+
+/* ============================================================
+   43 — LOAD MUSIC INTO AUDIO BUFFER
+   ============================================================ */
+
+async function loadEditorMusic() {
+    const file = $("musicFile").files[0];
+
+    if (!file) return null;
+
+    if (!editorAudioContext) {
+        const AudioContextClass =
+            window.AudioContext ||
+            window.webkitAudioContext;
+
+        if (!AudioContextClass) {
+            return null;
+        }
+
+        editorAudioContext = new AudioContextClass();
+    }
+
+    if (editorAudioContext.state === "suspended") {
+        await editorAudioContext.resume();
+    }
+
+    const bytes = await file.arrayBuffer();
+
+    editorMusicBuffer =
+        await editorAudioContext.decodeAudioData(bytes);
+
+    return editorMusicBuffer;
+}
+
+
+/* ============================================================
+   44 — CANVAS TEXT WRAPPING
+   ============================================================ */
+
+function drawWrappedText(
+    context,
+    text,
+    x,
+    y,
+    maxWidth,
+    lineHeight
+) {
+    const words = String(text || "").split(/\s+/);
+
+    let line = "";
+    let currentY = y;
+
+    words.forEach(word => {
+        const testLine = line
+            ? line + " " + word
+            : word;
+
+        const width = context.measureText(testLine).width;
+
+        if (width > maxWidth && line) {
+            context.strokeText(line, x, currentY);
+            context.fillText(line, x, currentY);
+
+            line = word;
+            currentY += lineHeight;
+
+        } else {
+            line = testLine;
+        }
+    });
+
+    if (line) {
+        context.strokeText(line, x, currentY);
+        context.fillText(line, x, currentY);
+    }
+}
+
+
+/* ============================================================
+   45 — DRAW EDITED VIDEO FRAME
+   ============================================================ */
+
+function drawEditedFrame(context, preview, width, height) {
+    const sourceWidth = preview.videoWidth;
+    const sourceHeight = preview.videoHeight;
+
+    if (!sourceWidth || !sourceHeight) return;
+
+    context.fillStyle = "#000";
+    context.fillRect(0, 0, width, height);
+
+    const framing = $("reelFraming").value;
+
+    const ratio = width / height;
+
+    const scale = framing === "contain"
+        ? Math.min(
+            width / sourceWidth,
+            height / sourceHeight
+        )
+        : Math.max(
+            width / sourceWidth,
+            height / sourceHeight
+        );
+
+    const drawWidth = sourceWidth * scale;
+    const drawHeight = sourceHeight * scale;
+
+    const rotation =
+        Number($("reelRotation").value || 0) *
+        Math.PI / 180;
+
+    const brightness = Number($("reelBrightness").value) / 100;
+    const contrast = Number($("reelContrast").value) / 100;
+    const saturation = Number($("reelSaturation").value) / 100;
+    const blur = Number($("reelBlur").value);
+
+    const cssFilter = [
+        getEditorFilter(),
+        "brightness(" + brightness + ")",
+        "contrast(" + contrast + ")",
+        "saturate(" + saturation + ")",
+        "blur(" + blur + "px)"
+    ].filter(Boolean).join(" ");
+
+    context.save();
+
+    context.translate(width / 2, height / 2);
+    context.rotate(rotation);
+
+    context.filter = cssFilter;
+
+    if (
+        Math.abs(Number($("reelRotation").value)) === 90 ||
+        Math.abs(Number($("reelRotation").value)) === 270
+    ) {
+        const rotatedScale = framing === "contain"
+            ? Math.min(
+                width / sourceHeight,
+                height / sourceWidth
+            )
+            : Math.max(
+                width / sourceHeight,
+                height / sourceWidth
+            );
+
+        context.drawImage(
+            preview,
+            -(sourceWidth * rotatedScale) / 2,
+            -(sourceHeight * rotatedScale) / 2,
+            sourceWidth * rotatedScale,
+            sourceHeight * rotatedScale
+        );
+
+    } else {
+        context.drawImage(
+            preview,
+            -drawWidth / 2,
+            -drawHeight / 2,
+            drawWidth,
+            drawHeight
+        );
+    }
+
+    context.restore();
+
+    context.filter = "none";
+
+    const mainText = $("reelOverlayText").value.trim();
+    const secondText = $("reelOverlayTextTwo").value.trim();
+    const sticker = $("reelSticker").value;
+
+    const textColor = $("reelTextColor").value;
+    const textSize = Number($("reelTextSize").value);
+
+    const position = $("reelTextPosition").value;
+
+    let textY = height * .82;
+
+    if (position === "top") {
+        textY = height * .15;
+    }
+
+    if (position === "middle") {
+        textY = height * .5;
+    }
+
+    context.save();
+
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+
+    if (sticker) {
+        context.font = "64px Arial";
+        context.fillText(
+            sticker,
+            width / 2,
+            textY - 90
+        );
+    }
+
+    if (mainText) {
+        context.font =
+            "900 " +
+            Math.round(textSize * (width / 720)) +
+            "px Arial";
+
+        context.fillStyle = textColor;
+        context.strokeStyle = "rgba(0,0,0,.85)";
+        context.lineWidth = Math.max(3, width / 180);
+
+        drawWrappedText(
+            context,
+            mainText,
+            width / 2,
+            textY,
+            width * .82,
+            textSize * 1.25
+        );
+    }
+
+    if (secondText) {
+        const secondaryY =
+            textY + textSize * 1.8;
+
+        context.font =
+            "600 " +
+            Math.round(19 * (width / 720)) +
+            "px Arial";
+
+        context.fillStyle = "#ffffff";
+        context.strokeStyle = "rgba(0,0,0,.85)";
+        context.lineWidth = Math.max(2, width / 260);
+
+        drawWrappedText(
+            context,
+            secondText,
+            width / 2,
+            secondaryY,
+            width * .82,
+            25 * (width / 720)
+        );
+    }
+
+    context.restore();
+}
+
+
+/* ============================================================
+   46 — BUILD EDITOR AUDIO MIX
+   ============================================================ */
+
+async function buildEditorAudioMix(preview, canvasStream) {
+    const AudioContextClass =
+        window.AudioContext ||
+        window.webkitAudioContext;
+
+    if (!AudioContextClass) {
+        const fallback = preview.captureStream();
+
+        fallback.getAudioTracks().forEach(track => {
+            canvasStream.addTrack(track);
+        });
+
+        return {
+            cleanup: () => {
+                fallback.getTracks().forEach(track => track.stop());
+            }
+        };
+    }
+
+    if (!editorAudioContext) {
+        editorAudioContext = new AudioContextClass();
+    }
+
+    if (editorAudioContext.state === "suspended") {
+        await editorAudioContext.resume();
+    }
+
+    const destination =
+        editorAudioContext.createMediaStreamDestination();
+
+    /*
+       Create the video media source only once.
+       Browsers do not allow creating multiple sources
+       from the same video element.
+    */
+
+    if (!editorVideoSource) {
+        editorVideoSource =
+            editorAudioContext.createMediaElementSource(preview);
+
+        editorVideoGain =
+            editorAudioContext.createGain();
+
+        editorVideoSource.connect(editorVideoGain);
+
+        editorVideoGain.connect(
+            editorAudioContext.destination
+        );
+    }
+
+    const videoVolume =
+        Number($("reelVolume").value) / 100;
+
+    editorVideoGain.gain.value = videoVolume;
+
+    editorVideoGain.connect(destination);
+
+    let musicSource = null;
+    let musicGain = null;
+
+    const musicFile = $("musicFile").files[0];
+
+    if (musicFile) {
+        const buffer = await loadEditorMusic();
+
+        if (buffer) {
+            musicSource =
+                editorAudioContext.createBufferSource();
+
+            musicGain =
+                editorAudioContext.createGain();
+
+            musicSource.buffer = buffer;
+            musicSource.loop = true;
+
+            musicGain.gain.value =
+                Number($("musicVolume").value) / 100;
+
+            musicSource.connect(musicGain);
+            musicGain.connect(destination);
+
+            const fadeIn =
+                Number($("musicFadeIn").value);
+
+            if (fadeIn > 0) {
+                musicGain.gain.setValueAtTime(
+                    0,
+                    editorAudioContext.currentTime
+                );
+
+                musicGain.gain.linearRampToValueAtTime(
+                    Number($("musicVolume").value) / 100,
+                    editorAudioContext.currentTime + fadeIn
+                );
+            }
+
+            musicSource.start(0);
+        }
+    }
+
+    destination.stream.getAudioTracks().forEach(track => {
+        canvasStream.addTrack(track);
+    });
+
+    return {
+        cleanup: () => {
+            try {
+                if (musicSource) {
+                    musicSource.stop();
+                }
+            } catch {}
+
+            try {
+                editorVideoGain.disconnect(destination);
+            } catch {}
+
+            destination.stream.getTracks().forEach(track => {
+                track.stop();
+            });
+        }
+    };
+}
+
+
+/* ============================================================
+   47 — EXPORT EDITED SHORT
+   ============================================================ */
+
+listen("exportReelBtn", "click", async function() {
+    const button = this;
     const preview = $("reelPreview");
 
     if (!selectedVideoFile) {
@@ -2107,12 +3027,15 @@ $("exportReelBtn").addEventListener("click", async function() {
 
     if (
         !window.MediaRecorder ||
-        !preview.captureStream
+        !HTMLCanvasElement.prototype.captureStream
     ) {
-        $("editorStatus").textContent =
-            "This browser cannot export edits. You can still upload the original video.";
+        showToast(
+            "This browser does not support video export. The original file can still be uploaded."
+        );
 
-        showToast("Video export is not supported here.");
+        $("editorStatus").textContent =
+            "Export is not supported by this browser. Use the original clip or try a supported desktop browser.";
+
         return;
     }
 
@@ -2126,209 +3049,441 @@ $("exportReelBtn").addEventListener("click", async function() {
         Number($("trimEnd").value || preview.duration)
     );
 
-    if (end <= start) {
-        showToast("Trim end must be after trim start.");
+    if (!Number.isFinite(end) || end <= start) {
+        showToast("Choose a valid trim range.");
         return;
     }
 
+    const resolution =
+        Number($("reelResolution").value || 720);
+
+    const square =
+        $("reelFraming").value === "square";
+
+    const width = resolution;
+    const height = square ? resolution : Math.round(resolution * 16 / 9);
+
+    const fps =
+        Number($("reelFrameRate").value || 30);
+
     const canvas = document.createElement("canvas");
 
-    canvas.width = 720;
-    canvas.height = 1280;
+    canvas.width = width;
+    canvas.height = height;
 
-    const ctx = canvas.getContext("2d");
+    const context = canvas.getContext("2d", {
+        alpha: false
+    });
 
-    const filterMap = {
-        none: "none",
-        warm: "sepia(.4) saturate(1.3)",
-        cool: "hue-rotate(15deg) saturate(.9)",
-        mono: "grayscale(1)",
-        vivid: "saturate(1.8) contrast(1.1)"
-    };
+    if (!context) {
+        showToast("Could not create the video canvas.");
+        return;
+    }
 
-    const filter =
-        filterMap[$("reelFilter").value] || "none";
+    const canvasStream = canvas.captureStream(fps);
 
-    const framing = $("reelFraming").value;
-    const overlay = $("reelOverlayText").value.trim();
-
-    const canvasStream = canvas.captureStream(30);
-
-    let sourceStream = null;
     let recorder = null;
+    let audioMix = null;
     let animationId = null;
+    let finished = false;
 
     const chunks = [];
 
-    const mimeType =
-        MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-            ? "video/webm;codecs=vp9"
-            : "video/webm";
+    const mimeTypes = [
+        "video/webm;codecs=vp9",
+        "video/webm;codecs=vp8",
+        "video/webm"
+    ];
 
-    const button = this;
+    const mimeType = mimeTypes.find(type =>
+        MediaRecorder.isTypeSupported(type)
+    );
+
+    if (!mimeType) {
+        showToast("No supported export format was found.");
+        canvasStream.getTracks().forEach(track => track.stop());
+        return;
+    }
 
     button.disabled = true;
-    button.textContent = "Rendering...";
+    button.textContent = "Exporting...";
 
     $("editorStatus").textContent =
-        "Rendering edits. Keep this window open.";
+        "Preparing video and audio tracks...";
 
     try {
-        sourceStream = preview.captureStream();
+        preview.pause();
 
-        sourceStream.getAudioTracks().forEach(track => {
-            canvasStream.addTrack(track);
+        preview.currentTime = start;
+
+        await new Promise((resolve, reject) => {
+            if (Math.abs(preview.currentTime - start) < .05) {
+                resolve();
+                return;
+            }
+
+            preview.onseeked = resolve;
+
+            setTimeout(() => {
+                if (preview.currentTime < start - .1) {
+                    reject(new Error("Could not seek to the trim start."));
+                }
+            }, 10000);
         });
+
+        audioMix = await buildEditorAudioMix(
+            preview,
+            canvasStream
+        );
 
         recorder = new MediaRecorder(canvasStream, {
             mimeType
         });
 
         recorder.ondataavailable = event => {
-            if (event.data.size > 0) {
+            if (event.data && event.data.size > 0) {
                 chunks.push(event.data);
             }
         };
 
-        const finished = new Promise((resolve, reject) => {
+        const exportFinished = new Promise((resolve, reject) => {
             recorder.onstop = resolve;
             recorder.onerror = reject;
         });
 
-        let stopped = false;
+        const speed =
+            Number($("reelSpeed").value || 1);
 
-        function stopRecording() {
-            if (stopped) return;
+        preview.playbackRate = speed;
 
-            stopped = true;
+        function stopExport() {
+            if (finished) return;
+
+            finished = true;
 
             preview.pause();
 
-            if (recorder.state !== "inactive") {
+            if (recorder && recorder.state !== "inactive") {
                 recorder.stop();
             }
         }
 
-        function drawFrame() {
-            if (stopped) return;
+        function drawLoop() {
+            if (finished) return;
 
-            const width = preview.videoWidth;
-            const height = preview.videoHeight;
-
-            if (!width || !height) {
-                animationId = requestAnimationFrame(drawFrame);
-                return;
-            }
-
-            const scale = framing === "cover"
-                ? Math.max(720 / width, 1280 / height)
-                : Math.min(720 / width, 1280 / height);
-
-            const drawWidth = width * scale;
-            const drawHeight = height * scale;
-
-            const x = (720 - drawWidth) / 2;
-            const y = (1280 - drawHeight) / 2;
-
-            ctx.fillStyle = "#000";
-            ctx.fillRect(0, 0, 720, 1280);
-
-            ctx.filter = filter;
-
-            ctx.drawImage(
+            drawEditedFrame(
+                context,
                 preview,
-                x,
-                y,
-                drawWidth,
-                drawHeight
+                width,
+                height
             );
 
-            ctx.filter = "none";
-
-            if (overlay) {
-                ctx.font = "bold 42px Arial";
-                ctx.textAlign = "center";
-                ctx.fillStyle = "white";
-                ctx.strokeStyle = "black";
-                ctx.lineWidth = 5;
-
-                ctx.strokeText(overlay, 360, 1140);
-                ctx.fillText(overlay, 360, 1140);
-            }
-
-            if (preview.currentTime >= end || preview.ended) {
-                stopRecording();
+            if (
+                preview.currentTime >= end ||
+                preview.ended
+            ) {
+                stopExport();
                 return;
             }
 
-            animationId = requestAnimationFrame(drawFrame);
+            animationId = requestAnimationFrame(drawLoop);
         }
 
-        preview.pause();
-
-        preview.currentTime = start;
-
-        await new Promise(resolve => {
-            preview.onseeked = resolve;
-        });
-
-        recorder.start();
+        recorder.start(1000);
 
         await preview.play();
 
-        drawFrame();
+        $("editorStatus").textContent =
+            "Exporting " + resolution + "p at " + fps + " FPS...";
 
-        await finished;
+        drawLoop();
+
+        await exportFinished;
+
+        if (!chunks.length) {
+            throw new Error("The browser produced an empty video.");
+        }
+
+        const blob = new Blob(chunks, {
+            type: mimeType
+        });
+
+        if (!blob.size) {
+            throw new Error("The exported video is empty.");
+        }
 
         exportedReelFile = new File(
-            chunks,
-            "gocat-reel.webm",
-            { type: mimeType }
+            [blob],
+            "gocat-short.webm",
+            {
+                type: mimeType,
+                lastModified: Date.now()
+            }
         );
 
         $("editorStatus").textContent =
-            "Edits applied. Your Reel is ready to upload.";
+            "Export completed. Your edited Short is ready to publish.";
 
-        showToast("Reel edits completed!");
+        $("selectedVideoName").textContent =
+            exportedReelFile.name +
+            " • " +
+            (exportedReelFile.size / (1024 * 1024)).toFixed(1) +
+            " MB";
+
+        hideModal("editorModal");
+
+        $("uploadStatus").textContent =
+            "Edited Short ready. Add your title and publish.";
+
+        showToast("Short exported successfully!");
 
     } catch (error) {
-        console.error(error);
+        console.error("Export error:", error);
 
         $("editorStatus").textContent =
-            "Export failed. You can still upload the original video.";
+            "Export failed: " + error.message;
 
-        showToast("Could not export the edited video.");
+        showToast("Export failed: " + error.message);
 
     } finally {
+        finished = true;
+
         if (animationId) {
             cancelAnimationFrame(animationId);
         }
 
         preview.pause();
 
-        canvasStream.getTracks().forEach(track => track.stop());
-
-        if (sourceStream) {
-            sourceStream.getTracks().forEach(track => track.stop());
+        if (audioMix) {
+            audioMix.cleanup();
         }
 
+        canvasStream.getTracks().forEach(track => {
+            track.stop();
+        });
+
         button.disabled = false;
-        button.textContent = "Apply edits";
+        button.textContent = "Export edited Short";
     }
 });
 
 
 /* ============================================================
-   39 — PUBLISH VIDEO OR REEL
+   48 — CLOSE EDITOR
    ============================================================ */
 
-$("uploadForm").addEventListener("submit", async function(event) {
+function closeEditor() {
+    $("reelPreview").pause();
+
+    hideModal("editorModal");
+}
+
+
+listen("editorCloseBtn", "click", closeEditor);
+
+
+/* ============================================================
+   49 — SHORTS PLAYBACK SETTINGS
+   ============================================================ */
+
+listen("reelsFeed", "click", function(event) {
+    const soundButton = event.target.closest("[data-reel-sound]");
+
+    if (!soundButton) return;
+
+    const item = soundButton.closest(".reel-item");
+    const video = item?.querySelector(".reel-video");
+
+    if (!video) return;
+
+    video.muted = !video.muted;
+
+    soundButton.textContent =
+        video.muted ? "Muted" : "Sound";
+});
+
+
+/* ============================================================
+   50 — TUS RESUMABLE UPLOAD SUPPORT
+   Large video files use resumable upload when available.
+   ============================================================ */
+
+function loadTusLibrary() {
+    if (window.tus?.Upload) {
+        return Promise.resolve(true);
+    }
+
+    return new Promise(resolve => {
+        const existing = document.querySelector(
+            'script[data-gocat-tus="true"]'
+        );
+
+        if (existing) {
+            existing.addEventListener("load", () => {
+                resolve(Boolean(window.tus?.Upload));
+            });
+
+            existing.addEventListener("error", () => {
+                resolve(false);
+            });
+
+            return;
+        }
+
+        const script = document.createElement("script");
+
+        script.src =
+            "https://cdn.jsdelivr.net/npm/tus-js-client@4/dist/tus.min.js";
+
+        script.dataset.gocatTus = "true";
+
+        script.onload = () => {
+            resolve(Boolean(window.tus?.Upload));
+        };
+
+        script.onerror = () => {
+            resolve(false);
+        };
+
+        document.head.appendChild(script);
+    });
+}
+
+
+async function uploadWithTus(file, path, progressCallback) {
+    const tusReady = await loadTusLibrary();
+
+    if (!tusReady) {
+        return false;
+    }
+
+    const sessionResult = await db.auth.getSession();
+
+    if (sessionResult.error) {
+        throw sessionResult.error;
+    }
+
+    const session = sessionResult.data.session;
+
+    if (!session?.access_token) {
+        throw new Error("Your session expired. Please sign in again.");
+    }
+
+    const endpoint =
+        SUPABASE_URL + "/storage/v1/upload/resumable";
+
+    const metadata = {
+        bucketName: VIDEO_BUCKET,
+        objectName: path,
+        contentType: file.type || "video/mp4",
+        cacheControl: "3600"
+    };
+
+    return new Promise((resolve, reject) => {
+        const upload = new window.tus.Upload(file, {
+            endpoint: endpoint,
+
+            retryDelays: [
+                0,
+                3000,
+                5000,
+                10000,
+                20000
+            ],
+
+            chunkSize: 6 * 1024 * 1024,
+
+            headers: {
+                authorization:
+                    "Bearer " + session.access_token,
+
+                apikey: SUPABASE_KEY
+            },
+
+            metadata: metadata,
+
+            onError(error) {
+                reject(error);
+            },
+
+            onProgress(bytesUploaded, bytesTotal) {
+                const percent = Math.round(
+                    (bytesUploaded / bytesTotal) * 100
+                );
+
+                progressCallback(percent);
+            },
+
+            onSuccess() {
+                resolve(true);
+            }
+        });
+
+        upload.findPreviousUploads().then(previous => {
+            if (previous.length) {
+                upload.resumeFromPreviousUpload(previous[0]);
+            }
+
+            upload.start();
+        }).catch(reject);
+    });
+}
+
+
+/* ============================================================
+   51 — STORAGE UPLOAD WITH FALLBACK
+   ============================================================ */
+
+async function uploadVideoFile(file, path, progressCallback) {
+    /*
+       Resumable uploads are used for larger clips.
+       Smaller clips use Supabase's regular upload.
+    */
+
+    if (file.size > 6 * 1024 * 1024) {
+        progressCallback(2);
+
+        const resumable = await uploadWithTus(
+            file,
+            path,
+            progressCallback
+        );
+
+        if (resumable) {
+            return;
+        }
+    }
+
+    progressCallback(15);
+
+    const result = await db.storage
+        .from(VIDEO_BUCKET)
+        .upload(path, file, {
+            cacheControl: "3600",
+            upsert: false,
+            contentType: file.type || "video/mp4"
+        });
+
+    if (result.error) {
+        throw result.error;
+    }
+
+    progressCallback(100);
+}
+
+
+/* ============================================================
+   52 — PUBLISH VIDEO OR SHORT
+   ============================================================ */
+
+listen("uploadForm", "submit", async function(event) {
     event.preventDefault();
 
-    const file = exportedReelFile || selectedVideoFile;
+    const file =
+        exportedReelFile || selectedVideoFile;
 
     if (!file) {
-        showToast("Choose a video first.");
+        showToast("Select a video first.");
         return;
     }
 
@@ -2337,57 +3492,79 @@ $("uploadForm").addEventListener("submit", async function(event) {
     const topic = $("videoTopic").value;
 
     if (!title) {
-        showToast("Add a title first.");
+        showToast("Add a title.");
+        $("videoTitle").focus();
+        return;
+    }
+
+    if (!file.type.startsWith("video/")) {
+        showToast("The selected file is not a video.");
         return;
     }
 
     const button = $("publishVideoBtn");
-    const bar = $("uploadProgressBar");
 
     button.disabled = true;
     button.textContent = "Uploading...";
 
     $("uploadProgress").classList.remove("hidden");
 
-    bar.style.width = "10%";
+    $("uploadStatus").textContent =
+        "Preparing upload...";
 
-    let storagePath = null;
+    $("uploadProgressBar").style.width = "0%";
+
+    const extension =
+        file.name.split(".").pop().toLowerCase() || "mp4";
+
+    const path =
+        currentUser.id + "/" +
+        Date.now() + "-" +
+        Math.random().toString(36).slice(2, 8) +
+        "." + extension;
+
+    currentUploadPath = path;
 
     try {
-        const extension =
-            file.name.split(".").pop().toLowerCase() || "mp4";
+        await uploadVideoFile(
+            file,
+            path,
+            function(percent) {
+                $("uploadProgressBar").style.width =
+                    percent + "%";
 
-        storagePath =
-            currentUser.id + "/" +
-            Date.now() + "." + extension;
+                $("uploadStatus").textContent =
+                    "Uploading: " + percent + "%";
+            }
+        );
 
-        const upload = await db.storage
-            .from(VIDEO_BUCKET)
-            .upload(storagePath, file, {
-                cacheControl: "3600",
-                upsert: false,
-                contentType: file.type
-            });
+        $("uploadStatus").textContent =
+            "Saving video information...";
 
-        if (upload.error) throw upload.error;
-
-        bar.style.width = "70%";
-
-        const result = await db
+        const insert = await db
             .from("videos")
             .insert({
                 owner_id: currentUser.id,
                 title: title,
                 description: description,
                 topic: topic,
-                storage_path: storagePath,
+                storage_path: path,
                 views: 0,
-                is_short: uploadMode === "reel"
+                is_short: uploadMode === "short"
             });
 
-        if (result.error) throw result.error;
+        if (insert.error) {
+            await db.storage
+                .from(VIDEO_BUCKET)
+                .remove([path]);
 
-        bar.style.width = "100%";
+            throw insert.error;
+        }
+
+        $("uploadProgressBar").style.width = "100%";
+
+        $("uploadStatus").textContent =
+            "Published successfully.";
 
         await loadVideos();
 
@@ -2396,59 +3573,90 @@ $("uploadForm").addEventListener("submit", async function(event) {
 
         renderEverything();
 
+        currentUploadPath = null;
+
         hideModal("uploadModal");
 
-        $("uploadForm").reset();
-
-        selectedVideoFile = null;
-        exportedReelFile = null;
+        resetUploadForm();
 
         showToast(
-            uploadMode === "reel"
-                ? "Your Reel was published!"
-                : "Your video was published!"
+            uploadMode === "short"
+                ? "Your Short has been published!"
+                : "Your video has been published!"
         );
 
     } catch (error) {
-        console.error(error);
+        console.error("Upload error:", error);
 
-        if (storagePath) {
+        /*
+           If the database insert failed after storage upload,
+           remove the uploaded object to avoid orphaned files.
+        */
+
+        if (currentUploadPath) {
             await db.storage
                 .from(VIDEO_BUCKET)
-                .remove([storagePath]);
+                .remove([currentUploadPath]);
         }
+
+        $("uploadStatus").textContent =
+            error.message || "Upload failed.";
 
         showToast("Upload failed: " + error.message);
 
     } finally {
+        currentUploadPath = null;
+
         button.disabled = false;
 
         button.textContent =
-            uploadMode === "reel"
-                ? "Publish Reel"
+            uploadMode === "short"
+                ? "Publish Short"
                 : "Publish video";
     }
 });
 
 
 /* ============================================================
-   40 — CREATE POSTS
+   53 — OPEN UPLOAD BUTTONS
    ============================================================ */
 
-$("postImage").addEventListener("change", function() {
+document.addEventListener("click", function(event) {
+    const button = event.target.closest("[data-open-upload]");
+
+    if (!button) return;
+
+    openUpload(
+        button.dataset.openUpload === "short"
+            ? "short"
+            : "video"
+    );
+});
+
+
+/* ============================================================
+   54 — CREATE POSTS
+   ============================================================ */
+
+listen("postImage", "change", function() {
     $("postImageName").textContent =
         this.files[0]?.name || "";
 });
 
 
-$("createPostForm").addEventListener("submit", async function(event) {
+listen("createPostForm", "submit", async function(event) {
     event.preventDefault();
 
     const content = $("postContent").value.trim();
     const imageFile = $("postImage").files[0];
 
     if (!content && !imageFile) {
-        showToast("Write something or choose a photo.");
+        showToast("Write something or select an image.");
+        return;
+    }
+
+    if (imageFile && !imageFile.type.startsWith("image/")) {
+        showToast("Please select an image.");
         return;
     }
 
@@ -2462,10 +3670,6 @@ $("createPostForm").addEventListener("submit", async function(event) {
 
     try {
         if (imageFile) {
-            if (!imageFile.type.startsWith("image/")) {
-                throw new Error("Please choose an image.");
-            }
-
             storagePath =
                 currentUser.id + "/" +
                 Date.now() + "-" +
@@ -2478,7 +3682,9 @@ $("createPostForm").addEventListener("submit", async function(event) {
                     contentType: imageFile.type
                 });
 
-            if (upload.error) throw upload.error;
+            if (upload.error) {
+                throw upload.error;
+            }
         }
 
         const result = await db
@@ -2489,7 +3695,9 @@ $("createPostForm").addEventListener("submit", async function(event) {
                 media_path: storagePath
             });
 
-        if (result.error) throw result.error;
+        if (result.error) {
+            throw result.error;
+        }
 
         $("postContent").value = "";
         $("postImage").value = "";
@@ -2519,13 +3727,13 @@ $("createPostForm").addEventListener("submit", async function(event) {
 
     } finally {
         button.disabled = false;
-        button.textContent = "Publish";
+        button.textContent = "Publish post";
     }
 });
 
 
 /* ============================================================
-   41 — POST LIKES
+   55 — POST LIKES
    ============================================================ */
 
 async function togglePostLike(postId) {
@@ -2547,7 +3755,9 @@ async function togglePostLike(postId) {
                 .eq("post_id", postId)
                 .eq("user_id", currentUser.id);
 
-            if (result.error) throw result.error;
+            if (result.error) {
+                throw result.error;
+            }
 
             post.likes = post.likes.filter(
                 id => id !== String(currentUser.id)
@@ -2561,7 +3771,9 @@ async function togglePostLike(postId) {
                     user_id: currentUser.id
                 });
 
-            if (result.error) throw result.error;
+            if (result.error) {
+                throw result.error;
+            }
 
             post.likes.push(String(currentUser.id));
         }
@@ -2572,14 +3784,13 @@ async function togglePostLike(postId) {
         renderProfile();
 
     } catch (error) {
-        console.error(error);
         showToast("Post like failed: " + error.message);
     }
 }
 
 
 /* ============================================================
-   42 — DELETE POST
+   56 — DELETE POST
    ============================================================ */
 
 async function deletePost(postId) {
@@ -2587,9 +3798,13 @@ async function deletePost(postId) {
         String(item.id) === String(postId)
     );
 
-    if (!post || !isOwnContent(post.user_id)) return;
+    if (!post || !isOwnContent(post.user_id)) {
+        return;
+    }
 
-    if (!confirm("Delete this post?")) return;
+    if (!confirm("Delete this post?")) {
+        return;
+    }
 
     const result = await db
         .from("posts")
@@ -2610,17 +3825,14 @@ async function deletePost(postId) {
 
     await loadPosts();
 
-    renderPosts();
-    renderHomeFeed();
-    renderExplore();
-    renderProfile();
+    renderEverything();
 
     showToast("Post deleted.");
 }
 
 
 /* ============================================================
-   43 — POSTS PAGE
+   57 — POSTS PAGE
    ============================================================ */
 
 function renderPosts() {
@@ -2636,14 +3848,14 @@ function renderPosts() {
 }
 
 
-$("postsLoadMore").addEventListener("click", function() {
+listen("postsLoadMore", "click", function() {
     postsVisible += PAGE_SIZE;
     renderPosts();
 });
 
 
 /* ============================================================
-   44 — PROFILE PAGE
+   58 — PROFILE PAGE
    ============================================================ */
 
 function openOtherProfile(userId) {
@@ -2684,10 +3896,10 @@ function renderProfile() {
 
     $("profileActionBtn").textContent =
         own
-            ? "Edit profile"
+            ? "Edit channel"
             : isFollowing(profileId)
                 ? "Following"
-                : "＋ Follow";
+                : "+ Follow";
 
     $("profileActionBtn").onclick = function() {
         if (own) {
@@ -2707,49 +3919,56 @@ function renderProfile() {
         String(video.owner_id) === String(profileId)
     );
 
-    const myReels = myVideos.filter(video =>
-        isShort(video)
+    const regularVideos = myVideos.filter(video =>
+        !isShort(video)
     );
 
-    const myRegularVideos = myVideos.filter(video =>
-        !isShort(video)
+    const myReels = myVideos.filter(video =>
+        isShort(video)
     );
 
     const myPosts = posts.filter(post =>
         String(post.user_id) === String(profileId)
     );
 
-    const followerCount = follows.filter(item =>
+    const followers = follows.filter(item =>
         String(item.following_id) === String(profileId)
     ).length;
 
-    const followingCount = follows.filter(item =>
+    const following = follows.filter(item =>
         String(item.follower_id) === String(profileId)
     ).length;
 
     $("profileVideoCount").textContent =
-        myRegularVideos.length;
+        regularVideos.length;
+
+    $("profileShortCount").textContent =
+        myReels.length;
 
     $("profileFollowerCount").textContent =
-        followerCount;
+        followers;
 
     $("profileFollowingCount").textContent =
-        followingCount;
+        following;
 
     $("profilePostCount").textContent =
         myPosts.length;
 
     $("profileHome").innerHTML = `
         <div class="section-heading">
-            <h2>Videos</h2>
+            <div>
+                <h2>Latest videos</h2>
+            </div>
         </div>
 
         <div class="video-grid">
-            ${myRegularVideos.slice(0, 3).map(videoCard).join("")}
+            ${regularVideos.slice(0, 3).map(videoCard).join("")}
         </div>
 
         <div class="section-heading">
-            <h2>Reels</h2>
+            <div>
+                <h2>Latest Shorts</h2>
+            </div>
         </div>
 
         <div class="video-grid">
@@ -2757,7 +3976,9 @@ function renderProfile() {
         </div>
 
         <div class="section-heading">
-            <h2>Posts</h2>
+            <div>
+                <h2>Community posts</h2>
+            </div>
         </div>
 
         <div class="posts-feed">
@@ -2769,7 +3990,7 @@ function renderProfile() {
         myReels.map(videoCard).join("");
 
     $("profileVideos").innerHTML =
-        myRegularVideos.map(videoCard).join("");
+        regularVideos.map(videoCard).join("");
 
     $("profilePosts").innerHTML =
         myPosts.map(postCard).join("");
@@ -2779,7 +4000,7 @@ function renderProfile() {
 
 
 /* ============================================================
-   45 — PROFILE TABS
+   59 — PROFILE TABS
    ============================================================ */
 
 function renderProfileTab(tab) {
@@ -2817,10 +4038,10 @@ document.querySelectorAll("[data-profile-tab]").forEach(button => {
 
 
 /* ============================================================
-   46 — EDIT PROFILE
+   60 — EDIT PROFILE
    ============================================================ */
 
-$("editProfileForm").addEventListener("submit", async function(event) {
+listen("editProfileForm", "submit", async function(event) {
     event.preventDefault();
 
     const username = $("editUsername").value.trim();
@@ -2853,84 +4074,309 @@ $("editProfileForm").addEventListener("submit", async function(event) {
     currentProfileUserId = currentUser.id;
 
     renderEverything();
-
-    $("welcomeName").textContent = username;
-    $("topProfileBtn").textContent = getInitial(username);
+    updateUserInterface();
 
     hideModal("editProfileModal");
 
-    showToast("Profile updated!");
+    showToast("Channel updated.");
 });
 
 
 /* ============================================================
-   47 — NOTIFICATIONS
+   61 — CREATOR STUDIO
    ============================================================ */
 
-function addLocalNotification(icon, text) {
-    notifications.unshift({
-        id: crypto.randomUUID(),
-        icon,
-        text,
-        created_at: new Date().toISOString()
-    });
-
-    notifications = notifications.slice(0, 100);
-
-    localStorage.setItem(
-        "gocat_notifications_" + currentUser.id,
-        JSON.stringify(notifications)
+function renderStudio() {
+    const mine = videos.filter(video =>
+        isOwnContent(video.owner_id)
     );
 
-    renderNotifications();
+    const totalViews = mine.reduce(
+        (sum, video) =>
+            sum + Number(video.views || 0),
+        0
+    );
+
+    const totalLikes = mine.reduce(
+        (sum, video) =>
+            sum + (video.likes?.length || 0),
+        0
+    );
+
+    const followers = follows.filter(item =>
+        String(item.following_id) === String(currentUser.id)
+    ).length;
+
+    $("studioVideos").textContent = mine.length;
+
+    $("studioViews").textContent =
+        totalViews.toLocaleString();
+
+    $("studioLikes").textContent =
+        totalLikes.toLocaleString();
+
+    $("studioFollowers").textContent =
+        followers.toLocaleString();
+
+    $("studioContent").innerHTML = mine.length
+        ? mine.map(video => `
+            <div class="studio-content-item">
+
+                <div class="studio-content-thumb">
+                    <video
+                        src="${escapeHTML(getVideoURL(video.storage_path))}"
+                        muted
+                        preload="metadata">
+                    </video>
+                </div>
+
+                <div class="studio-content-details">
+
+                    <strong>${escapeHTML(video.title)}</strong>
+
+                    <small>
+                        ${isShort(video) ? "Short" : "Video"}
+                        · ${Number(video.views || 0)} views
+                        · ${video.likes?.length || 0} likes
+                    </small>
+
+                    <small>
+                        Published ${formatDate(video.created_at)}
+                    </small>
+
+                </div>
+
+                <div class="studio-content-actions">
+
+                    <button
+                        class="soft-btn"
+                        data-studio-watch="${escapeHTML(video.id)}">
+                        View
+                    </button>
+
+                    <button
+                        class="danger-outline-btn"
+                        data-delete-video="${escapeHTML(video.id)}">
+                        Delete
+                    </button>
+
+                </div>
+
+            </div>
+        `).join("")
+        : `
+            <div class="empty-card">
+                <h3>No uploads yet</h3>
+                <p>Your published videos will appear here.</p>
+
+                <button
+                    class="primary-btn"
+                    data-open-upload="video">
+                    Upload video
+                </button>
+            </div>
+        `;
 }
 
 
-function renderNotifications() {
-    const container = $("notificationList");
+/* ============================================================
+   62 — WATCH HISTORY
+   Stored locally in this browser.
+   ============================================================ */
 
-    if (!notifications.length) {
-        container.innerHTML = `
-            <div class="empty-card">
-                <div>🔔</div>
-                <h3>No notifications yet</h3>
-                <p>Your activity will appear here.</p>
-            </div>
+function getHistoryKey() {
+    return "gocat_watch_history_" + currentUser.id;
+}
+
+
+function getWatchHistory() {
+    return safeJSON(getHistoryKey(), []);
+}
+
+
+function saveWatchHistory(history) {
+    localStorage.setItem(
+        getHistoryKey(),
+        JSON.stringify(history.slice(0, 300))
+    );
+}
+
+
+function addToWatchHistory(videoId) {
+    if (!settings.history) return;
+
+    let history = getWatchHistory();
+
+    history = history.filter(item =>
+        String(item.id) !== String(videoId)
+    );
+
+    history.unshift({
+        id: String(videoId),
+        watched_at: new Date().toISOString()
+    });
+
+    saveWatchHistory(history);
+
+    renderHistory();
+}
+
+
+function renderHistory() {
+    const history = getWatchHistory();
+
+    const items = history
+        .map(entry => {
+            const video = videos.find(item =>
+                String(item.id) === String(entry.id)
+            );
+
+            if (!video) return null;
+
+            return {
+                video,
+                watched_at: entry.watched_at
+            };
+        })
+        .filter(Boolean);
+
+    $("historyEmpty").classList.toggle(
+        "hidden",
+        items.length > 0
+    );
+
+    $("historyFeed").innerHTML = items.map(item => {
+        const video = item.video;
+
+        const username = getUsername(video.owner_id);
+
+        return `
+            <article class="history-item">
+
+                <div class="history-thumb">
+
+                    <video
+                        src="${escapeHTML(getVideoURL(video.storage_path))}"
+                        muted
+                        preload="metadata">
+                    </video>
+
+                </div>
+
+                <div class="history-details">
+
+                    <h3>${escapeHTML(video.title)}</h3>
+
+                    <p>${escapeHTML(username)}</p>
+
+                    <p>
+                        ${formatDate(item.watched_at)}
+                        ·
+                        ${isShort(video) ? "Short" : "Video"}
+                    </p>
+
+                </div>
+
+                <button
+                    data-remove-history="${escapeHTML(video.id)}">
+                    Remove
+                </button>
+
+            </article>
         `;
+    }).join("");
+}
+
+
+function removeHistoryItem(videoId) {
+    const history = getWatchHistory().filter(item =>
+        String(item.id) !== String(videoId)
+    );
+
+    saveWatchHistory(history);
+
+    renderHistory();
+}
+
+
+function clearHistory() {
+    if (!confirm("Clear all watch history on this device?")) {
         return;
     }
 
-    container.innerHTML = notifications.map(item => `
-        <div class="notification-item">
+    saveWatchHistory([]);
 
-            <div class="notification-icon">
-                ${escapeHTML(item.icon)}
-            </div>
+    renderHistory();
 
-            <div>
-                <p>${escapeHTML(item.text)}</p>
-                <small>${formatDate(item.created_at)}</small>
-            </div>
-
-        </div>
-    `).join("");
+    showToast("Watch history cleared.");
 }
 
 
-$("clearNotificationsBtn").addEventListener("click", function() {
-    notifications = [];
-
-    localStorage.setItem(
-        "gocat_notifications_" + currentUser.id,
-        "[]"
-    );
-
-    renderNotifications();
-});
+listen("clearHistoryBtn", "click", clearHistory);
+listen("settingsClearHistory", "click", clearHistory);
 
 
 /* ============================================================
-   48 — MUTUAL FRIENDS
+   63 — VIDEO VIEW TRACKING
+   ============================================================ */
+
+async function registerVideoView(videoId) {
+    const key =
+        "gocat_viewed_v2_" + currentUser.id;
+
+    const viewed = safeJSON(key, []);
+
+    if (viewed.includes(String(videoId))) {
+        return;
+    }
+
+    viewed.push(String(videoId));
+
+    localStorage.setItem(
+        key,
+        JSON.stringify(viewed.slice(-300))
+    );
+
+    const video = videos.find(item =>
+        String(item.id) === String(videoId)
+    );
+
+    if (!video) return;
+
+    const nextViews =
+        Number(video.views || 0) + 1;
+
+    video.views = nextViews;
+
+    const result = await db
+        .from("videos")
+        .update({
+            views: nextViews
+        })
+        .eq("id", videoId);
+
+    if (result.error) {
+        console.warn("View count update:", result.error);
+    }
+}
+
+
+document.addEventListener("play", function(event) {
+    const element = event.target;
+
+    const videoId = element.dataset.playVideo;
+
+    if (!videoId || !currentUser) return;
+
+    addToWatchHistory(videoId);
+
+    registerVideoView(videoId);
+
+}, true);
+
+
+/* ============================================================
+   64 — MUTUAL FRIENDS FOR MESSAGES
    ============================================================ */
 
 function getMutualFriends() {
@@ -2980,7 +4426,7 @@ function renderChatFriends() {
 
 
 /* ============================================================
-   49 — OPEN CHAT
+   65 — OPEN CHAT
    ============================================================ */
 
 async function openChat(userId) {
@@ -2989,7 +4435,7 @@ async function openChat(userId) {
     );
 
     if (!allowed) {
-        showToast("Chats are available to mutual followers.");
+        showToast("Chat is available to mutual followers.");
         return;
     }
 
@@ -3008,7 +4454,7 @@ async function openChat(userId) {
 
 
 /* ============================================================
-   50 — LOAD MESSAGES
+   66 — LOAD MESSAGES
    ============================================================ */
 
 async function loadMessages() {
@@ -3044,8 +4490,13 @@ async function loadMessages() {
 
             return `
                 <div class="chat-bubble ${mine ? "mine" : ""}">
+
                     ${escapeHTML(message.text)}
-                    <time>${formatDate(message.created_at)}</time>
+
+                    <time>
+                        ${formatDate(message.created_at)}
+                    </time>
+
                 </div>
             `;
         }).join("")
@@ -3057,10 +4508,10 @@ async function loadMessages() {
 
 
 /* ============================================================
-   51 — SEND MESSAGE
+   67 — SEND MESSAGE
    ============================================================ */
 
-$("chatForm").addEventListener("submit", async function(event) {
+listen("chatForm", "submit", async function(event) {
     event.preventDefault();
 
     const text = $("messageInput").value.trim();
@@ -3087,24 +4538,102 @@ $("chatForm").addEventListener("submit", async function(event) {
 
 
 /* ============================================================
-   52 — NAVIGATION
+   68 — NOTIFICATIONS
    ============================================================ */
 
-function openPage(page) {
-    const allowedPages = [
-        "home",
-        "reels",
-        "explore",
-        "following",
-        "posts",
-        "chats",
-        "notifications",
-        "profile"
-    ];
+function addLocalNotification(icon, text) {
+    notifications.unshift({
+        id: crypto.randomUUID(),
+        icon,
+        text,
+        created_at: new Date().toISOString()
+    });
 
-    if (!allowedPages.includes(page)) return;
+    notifications = notifications.slice(0, 100);
+
+    localStorage.setItem(
+        "gocat_notifications_" + currentUser.id,
+        JSON.stringify(notifications)
+    );
+
+    renderNotifications();
+}
+
+
+function renderNotifications() {
+    const container = $("notificationList");
+
+    if (!notifications.length) {
+        container.innerHTML = `
+            <div class="empty-card">
+                <h3>No notifications yet</h3>
+                <p>Your GoCat activity will appear here.</p>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = notifications.map(item => `
+        <div class="notification-item">
+
+            <div class="notification-icon">
+                ${escapeHTML(item.icon)}
+            </div>
+
+            <div>
+                <p>${escapeHTML(item.text)}</p>
+
+                <small>
+                    ${formatDate(item.created_at)}
+                </small>
+            </div>
+
+        </div>
+    `).join("");
+}
+
+
+listen("clearNotificationsBtn", "click", function() {
+    notifications = [];
+
+    localStorage.setItem(
+        "gocat_notifications_" + currentUser.id,
+        "[]"
+    );
+
+    renderNotifications();
+});
+
+
+/* ============================================================
+   69 — NAVIGATION
+   ============================================================ */
+
+const allowedPages = [
+    "home",
+    "reels",
+    "explore",
+    "following",
+    "history",
+    "posts",
+    "chats",
+    "notifications",
+    "studio",
+    "profile",
+    "settings"
+];
+
+
+function openPage(page) {
+    if (!allowedPages.includes(page)) {
+        return;
+    }
 
     currentPage = page;
+
+    if (page === "profile" && !currentProfileUserId) {
+        currentProfileUserId = currentUser.id;
+    }
 
     document.querySelectorAll(".page-section")
         .forEach(section => {
@@ -3138,26 +4667,24 @@ function renderCurrentPage() {
     if (currentPage === "reels") renderReels();
     if (currentPage === "explore") renderExplore();
     if (currentPage === "following") renderFollowing();
+    if (currentPage === "history") renderHistory();
     if (currentPage === "posts") renderPosts();
     if (currentPage === "chats") renderChatFriends();
     if (currentPage === "notifications") renderNotifications();
+    if (currentPage === "studio") renderStudio();
     if (currentPage === "profile") renderProfile();
+    if (currentPage === "settings") renderSettings();
 }
 
 
-/* ============================================================
-   53 — PROFILE NAVIGATION FIX
-   Clicking Profile always opens MY profile
-   ============================================================ */
-
 document.addEventListener("click", function(event) {
-    const button = event.target.closest("[data-page]");
+    const navigation = event.target.closest("[data-page]");
 
-    if (!button) return;
+    if (!navigation) return;
 
     event.preventDefault();
 
-    const page = button.dataset.page;
+    const page = navigation.dataset.page;
 
     if (page === "profile") {
         currentProfileUserId = currentUser.id;
@@ -3169,10 +4696,10 @@ document.addEventListener("click", function(event) {
 
 
 /* ============================================================
-   54 — TOP PROFILE BUTTON
+   70 — PROFILE BUTTON
    ============================================================ */
 
-$("topProfileBtn").addEventListener("click", function() {
+listen("topProfileBtn", "click", function() {
     currentProfileUserId = currentUser.id;
     profileMode = "home";
 
@@ -3181,24 +4708,24 @@ $("topProfileBtn").addEventListener("click", function() {
 
 
 /* ============================================================
-   55 — MOBILE MENU
+   71 — MOBILE MENU
    ============================================================ */
 
-$("mobileMenuBtn").addEventListener("click", function() {
+listen("mobileMenuBtn", "click", function() {
     $("sidebar").classList.toggle("open");
 });
 
 
 /* ============================================================
-   56 — SEARCH
+   72 — SEARCH
    ============================================================ */
 
-$("searchInput").addEventListener("input", function() {
+listen("searchInput", "input", function() {
     const query = this.value.trim();
 
     $("clearSearch").classList.toggle(
         "hidden",
-        query.length === 0
+        !query
     );
 
     homeVisibleCycles = 1;
@@ -3214,7 +4741,7 @@ $("searchInput").addEventListener("input", function() {
 });
 
 
-$("clearSearch").addEventListener("click", function() {
+listen("clearSearch", "click", function() {
     $("searchInput").value = "";
 
     this.classList.add("hidden");
@@ -3228,48 +4755,102 @@ $("clearSearch").addEventListener("click", function() {
 
 
 /* ============================================================
-   57 — THEME BUTTON
+   73 — THEME
    ============================================================ */
 
-function updateTheme() {
-    const dark =
-        document.body.classList.contains("dark");
+listen("themeBtn", "click", function() {
+    settings.theme =
+        settings.theme === "dark"
+            ? "light"
+            : "dark";
 
-    $("themeIcon").textContent =
-        dark ? "☀️" : "🌙";
-
-    $("themeLabel").textContent =
-        dark ? "Light mode" : "Dark mode";
-}
-
-
-if (localStorage.getItem("gocat_theme") === "dark") {
-    document.body.classList.add("dark");
-}
-
-updateTheme();
-
-
-$("themeBtn").addEventListener("click", function() {
-    document.body.classList.toggle("dark");
-
-    const dark =
-        document.body.classList.contains("dark");
-
-    localStorage.setItem(
-        "gocat_theme",
-        dark ? "dark" : "light"
-    );
-
-    updateTheme();
+    saveSettings();
+    applyTheme();
 });
 
 
 /* ============================================================
-   58 — REFRESH HOME FEED
+   74 — SETTINGS PAGE
    ============================================================ */
 
-$("refreshFeedBtn").addEventListener("click", async function() {
+function renderSettings() {
+    $("settingTheme").value = settings.theme;
+    $("settingAutoplay").checked = settings.autoplay;
+    $("settingMuted").checked = settings.muted;
+    $("settingHistory").checked = settings.history;
+
+    $("settingsUsername").textContent =
+        currentProfile.username || "Creator";
+
+    $("settingsEmail").textContent =
+        currentUser.email || "";
+
+    $("settingsAvatar").textContent =
+        getInitial(currentProfile.username);
+}
+
+
+listen("settingTheme", "change", function() {
+    settings.theme = this.value;
+
+    saveSettings();
+    applyTheme();
+});
+
+
+listen("settingAutoplay", "change", function() {
+    settings.autoplay = this.checked;
+
+    saveSettings();
+
+    renderReels();
+});
+
+
+listen("settingMuted", "change", function() {
+    settings.muted = this.checked;
+
+    saveSettings();
+
+    renderReels();
+});
+
+
+listen("settingHistory", "change", function() {
+    settings.history = this.checked;
+
+    saveSettings();
+
+    if (!settings.history) {
+        showToast("New watch history entries are paused.");
+    } else {
+        showToast("Watch history enabled.");
+    }
+});
+
+
+listen("resetSettingsBtn", "click", function() {
+    settings = {
+        theme: "dark",
+        autoplay: true,
+        muted: true,
+        history: true
+    };
+
+    saveSettings();
+    applySettings();
+    renderSettings();
+    renderReels();
+
+    showToast("Settings restored.");
+});
+
+
+/* ============================================================
+   75 — REFRESH HOME
+   ============================================================ */
+
+listen("refreshFeedBtn", "click", async function() {
     this.disabled = true;
 
     try {
@@ -3279,67 +4860,23 @@ $("refreshFeedBtn").addEventListener("click", async function() {
 
         renderEverything();
 
-        showToast("Feed refreshed!");
+        showToast("GoCat refreshed.");
 
     } catch (error) {
         console.error(error);
-        showToast("Could not refresh the feed.");
-    }
 
-    this.disabled = false;
+        showToast(
+            "Refresh failed: " + error.message
+        );
+
+    } finally {
+        this.disabled = false;
+    }
 });
 
 
 /* ============================================================
-   59 — VIDEO VIEWS
-   One view per signed-in browser user per video
-   ============================================================ */
-
-document.addEventListener("play", async function(event) {
-    const videoElement = event.target;
-    const videoId = videoElement.dataset.playVideo;
-
-    if (!videoId || !currentUser) return;
-
-    const key = "gocat_viewed_" + currentUser.id;
-
-    const viewed = safeLocalJSON(key, []);
-
-    if (viewed.includes(String(videoId))) {
-        return;
-    }
-
-    viewed.push(String(videoId));
-
-    localStorage.setItem(
-        key,
-        JSON.stringify(viewed.slice(-300))
-    );
-
-    const video = videos.find(item =>
-        String(item.id) === String(videoId)
-    );
-
-    if (!video) return;
-
-    video.views = Number(video.views || 0) + 1;
-
-    const result = await db
-        .from("videos")
-        .update({
-            views: video.views
-        })
-        .eq("id", videoId);
-
-    if (result.error) {
-        console.warn("View count update failed:", result.error);
-    }
-
-}, true);
-
-
-/* ============================================================
-   60 — MODAL CLOSE BUTTONS
+   76 — MODAL CLOSE BUTTONS
    ============================================================ */
 
 document.querySelectorAll("[data-close]").forEach(button => {
@@ -3350,27 +4887,7 @@ document.querySelectorAll("[data-close]").forEach(button => {
 
 
 /* ============================================================
-   61 — LOGOUT
-   ============================================================ */
-
-$("logoutBtn").addEventListener("click", async function() {
-    const result = await db.auth.signOut();
-
-    if (result.error) {
-        showToast(result.error.message);
-        return;
-    }
-
-    currentUser = null;
-    currentProfile = null;
-    currentProfileUserId = null;
-
-    openLoginScreen();
-});
-
-
-/* ============================================================
-   62 — GLOBAL BUTTON ACTIONS
+   77 — GLOBAL BUTTON ACTIONS
    ============================================================ */
 
 document.addEventListener("click", function(event) {
@@ -3418,20 +4935,8 @@ document.addEventListener("click", function(event) {
         openSpecificReel(button.dataset.openReelId);
     }
 
-    if (button.dataset.reelSound !== undefined) {
-        const reel = button.closest(".reel-item");
-        const video = reel?.querySelector(".reel-video");
-
-        if (video) {
-            video.muted = !video.muted;
-
-            button.textContent =
-                video.muted ? "🔇" : "🔊";
-        }
-    }
-
-    if (button.dataset.createReel !== undefined) {
-        openUpload("reel");
+    if (button.dataset.createShort !== undefined) {
+        openUpload("short");
     }
 
     if (button.dataset.openUpload) {
@@ -3441,15 +4946,69 @@ document.addEventListener("click", function(event) {
     if (button.dataset.goPage) {
         if (button.dataset.goPage === "profile") {
             currentProfileUserId = currentUser.id;
+            profileMode = "home";
         }
 
         openPage(button.dataset.goPage);
     }
+
+    if (button.dataset.removeHistory) {
+        removeHistoryItem(button.dataset.removeHistory);
+    }
+
+    if (button.dataset.studioWatch) {
+        const videoId = button.dataset.studioWatch;
+        const video = videos.find(item =>
+            String(item.id) === String(videoId)
+        );
+
+        if (video && isShort(video)) {
+            openSpecificReel(videoId);
+        } else {
+            openPage("home");
+
+            setTimeout(() => {
+                const element = document.querySelector(
+                    `[data-play-video="${CSS.escape(String(videoId))}"]`
+                );
+
+                element?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "center"
+                });
+            }, 200);
+        }
+    }
+
 });
 
 
 /* ============================================================
-   63 — AUTH SESSION
+   78 — SIGN OUT
+   ============================================================ */
+
+async function signOutGoCat() {
+    const result = await db.auth.signOut();
+
+    if (result.error) {
+        showToast(result.error.message);
+        return;
+    }
+
+    currentUser = null;
+    currentProfile = null;
+    currentProfileUserId = null;
+
+    openLoginScreen();
+}
+
+
+listen("logoutBtn", "click", signOutGoCat);
+listen("settingsLogout", "click", signOutGoCat);
+
+
+/* ============================================================
+   79 — AUTH SESSION
    ============================================================ */
 
 async function initializeGoCat() {
@@ -3458,7 +5017,9 @@ async function initializeGoCat() {
     try {
         const result = await db.auth.getSession();
 
-        if (result.error) throw result.error;
+        if (result.error) {
+            throw result.error;
+        }
 
         const session = result.data.session;
 
@@ -3477,7 +5038,7 @@ async function initializeGoCat() {
         openLoginScreen();
 
         showAuthMessage(
-            "Could not connect to GoCat. Refresh and try again."
+            "Could not connect to GoCat: " + error.message
         );
 
     } finally {
@@ -3485,10 +5046,6 @@ async function initializeGoCat() {
     }
 }
 
-
-/* ============================================================
-   64 — AUTH STATE CHANGES
-   ============================================================ */
 
 db.auth.onAuthStateChange((event, session) => {
     if (event === "SIGNED_OUT") {
@@ -3502,7 +5059,7 @@ db.auth.onAuthStateChange((event, session) => {
 
 
 /* ============================================================
-   65 — START APPLICATION
+   80 — START APPLICATION
    ============================================================ */
 
 initializeGoCat();
