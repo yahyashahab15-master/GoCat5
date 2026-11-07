@@ -540,19 +540,21 @@ async function ensureProfile() {
         .slice(0, 20);
 
     const insert = await db
-        .from("users")
-        .insert({
-            id: currentUser.id,
-            username,
-            email: currentUser.email || "",
-            bio: "Welcome to my GoCat channel."
-        })
-        .select("*")
-        .single();
+    .from("videos")
+    .insert({
+        id: crypto.randomUUID(),
+        owner_id: currentUser.id,
+        title,
+        description,
+        topic,
+        storage_path: path,
+        views: 0,
+        is_short: uploadMode === "short",
+        created_at: Date.now()
+    });
 
-    if (insert.error) throw insert.error;
-
-    currentProfile = insert.data;
+if (insert.error) {
+    throw insert.error;
 }
 
 
