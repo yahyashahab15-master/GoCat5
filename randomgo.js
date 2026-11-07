@@ -2247,7 +2247,7 @@ listen("videoFile", "change", function() {
         return;
     }
 
-    const maxSize = 1024 * 1024 * 1024;
+    const maxSize = 50 * 1024 * 1024;
 
     if (file.size > maxSize) {
         showToast("This file is larger than 1 GB.");
@@ -3311,54 +3311,12 @@ listen("reelsFeed", "click", function(event) {
    50 — TUS RESUMABLE UPLOAD SUPPORT
    Large video files use resumable upload when available.
    ============================================================ */
-
-function loadTusLibrary() {
-    if (window.tus?.Upload) {
-        return Promise.resolve(true);
-    }
-
-    return new Promise(resolve => {
-        const existing = document.querySelector(
-            'script[data-gocat-tus="true"]'
-        );
-
-        if (existing) {
-            existing.addEventListener("load", () => {
-                resolve(Boolean(window.tus?.Upload));
-            });
-
-            existing.addEventListener("error", () => {
-                resolve(false);
-            });
-
-            return;
-        }
-
-        const script = document.createElement("script");
-
-        script.src =
-            "https://cdn.jsdelivr.net/npm/tus-js-client@4/dist/tus.min.js";
-
-        script.dataset.gocatTus = "true";
-
-        script.onload = () => {
-            resolve(Boolean(window.tus?.Upload));
-        };
-
-        script.onerror = () => {
-            resolve(false);
-        };
-
-        document.head.appendChild(script);
-    });
-}
-
-
 async function uploadWithTus(file, path, progressCallback) {
+
     const tusReady = await loadTusLibrary();
 
     if (!tusReady) {
-        return false;
+        throw new Error("Could not load the upload library.");
     }
 
     const sessionResult = await db.auth.getSession();
@@ -3370,47 +3328,45 @@ async function uploadWithTus(file, path, progressCallback) {
     const session = sessionResult.data.session;
 
     if (!session?.access_token) {
-        throw new Error("Your session expired. Please sign in again.");
+        throw new Error("Please sign in again.");
     }
 
-    const endpoint =
-        SUPABASE_URL + "/storage/v1/upload/resumable";
+    const projectRef = new URL(SUPABASE_URL).hostname.split(".")[0];
 
-    const metadata = {
-        bucketName: VIDEO_BUCKET,
-        objectName: path,
-        contentType: file.type || "video/mp4",
-        cacheControl: "3600"
-    };
+    const endpoint =
+        `https://${projectRef}.storage.supabase.co/storage/v1/upload/resumable`;
 
     return new Promise((resolve, reject) => {
+
         const upload = new window.tus.Upload(file, {
+
             endpoint: endpoint,
 
-            retryDelays: [
-                0,
-                3000,
-                5000,
-                10000,
-                20000
-            ],
+            retryDelays: [0, 3000, 5000, 10000, 20000],
 
             chunkSize: 6 * 1024 * 1024,
 
-            headers: {
-                authorization:
-                    "Bearer " + session.access_token,
+            uploadDataDuringCreation: true,
 
-                apikey: SUPABASE_KEY
+            removeFingerprintOnSuccess: true,
+
+            headers: {
+                authorization: "Bearer " + session.access_token
             },
 
-            metadata: metadata,
+            metadata: {
+                bucketName: VIDEO_BUCKET,
+                objectName: path,
+                contentType: file.type || "video/mp4",
+                cacheControl: "3600"
+            },
 
             onError(error) {
                 reject(error);
             },
 
             onProgress(bytesUploaded, bytesTotal) {
+
                 const percent = Math.round(
                     (bytesUploaded / bytesTotal) * 100
                 );
@@ -3419,17 +3375,24 @@ async function uploadWithTus(file, path, progressCallback) {
             },
 
             onSuccess() {
+                progressCallback(100);
                 resolve(true);
             }
+
         });
 
-        upload.findPreviousUploads().then(previous => {
-            if (previous.length) {
-                upload.resumeFromPreviousUpload(previous[0]);
-            }
+        upload.findPreviousUploads()
+            .then(previous => {
 
-            upload.start();
-        }).catch(reject);
+                if (previous.length) {
+                    upload.resumeFromPreviousUpload(previous[0]);
+                }
+
+                upload.start();
+
+            })
+            .catch(reject);
+
     });
 }
 
@@ -3439,23 +3402,16 @@ async function uploadWithTus(file, path, progressCallback) {
    ============================================================ */
 
 async function uploadVideoFile(file, path, progressCallback) {
-    /*
-       Resumable uploads are used for larger clips.
-       Smaller clips use Supabase's regular upload.
-    */
 
     if (file.size > 6 * 1024 * 1024) {
-        progressCallback(2);
 
-        const resumable = await uploadWithTus(
+        await uploadWithTus(
             file,
             path,
             progressCallback
         );
 
-        if (resumable) {
-            return;
-        }
+        return;
     }
 
     progressCallback(15);
@@ -4194,7 +4150,13 @@ function getHistoryKey() {
 
 
 function getWatchHistory() {
-    return safeJSON(getHistoryKey(), []);
+    const saved = safeJSON(getHistoryKey(), []);
+
+    if (!Array.isArray(saved)) {
+        return [];
+    }
+
+    return saved;
 }
 
 
@@ -4943,9 +4905,6 @@ document.addEventListener("click", function(event) {
         openUpload("short");
     }
 
-    if (button.dataset.openUpload) {
-        openUpload(button.dataset.openUpload);
-    }
 
     if (button.dataset.goPage) {
         if (button.dataset.goPage === "profile") {
@@ -5015,7 +4974,7 @@ listen("settingsLogout", "click", signOutGoCat);
    79 — AUTH SESSION
    ============================================================ */
 
-async function initializeGoCat() {
+ {
     const loader = $("loader");
 
     try {
@@ -5051,15 +5010,17 @@ async function initializeGoCat() {
 }
 
 
-db.auth.onAuthStateChange((event, session) => {
-    if (event === "SIGNED_OUT") {
-        currentUser = null;
-        currentProfile = null;
-        currentProfileUserId = null;
+if (db) {
+    db.auth.onAuthStateChange((event, session) => {
+        if (event === "SIGNED_OUT") {
+            currentUser = null;
+            currentProfile = null;
+            currentProfileUserId = null;
 
-        openLoginScreen();
-    }
-});
+            openLoginScreen();
+        }
+    });
+}
 
 
 /* ============================================================
