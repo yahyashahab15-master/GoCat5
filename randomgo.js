@@ -3497,20 +3497,24 @@ listen("uploadForm", "submit", async function(event) {
             "Saving video information...";
 
         const insert = await db
-            .from("videos")
-            .insert({
-                owner_id: currentUser.id,
-                title: title,
-                description: description,
-                topic: topic,
-                storage_path: path,
-                views: 0,
-                is_short: uploadMode === "short"
-            });
+    .from("videos")
+    .insert({
+        id: crypto.randomUUID(),
 
-        if (insert.error) {
-            throw insert.error;
-        }
+        owner_id: currentUser.id,
+        title: title,
+        description: description,
+        topic: topic,
+        storage_path: path,
+        views: 0,
+        is_short: uploadMode === "short"
+    });
+
+if (insert.error) {
+    throw insert.error;
+}
+
+
 
         // STEP 3 — Refresh GoCat
 
