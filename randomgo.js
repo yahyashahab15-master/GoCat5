@@ -4550,7 +4550,7 @@ function addLocalNotification(icon, text) {
         id: crypto.randomUUID(),
         icon,
         text,
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
     });
 
     notifications = notifications.slice(0, 100);
