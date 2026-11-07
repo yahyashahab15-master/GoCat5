@@ -2236,37 +2236,90 @@ document.querySelectorAll("[data-upload-mode]").forEach(button => {
    36 — VIDEO FILE SELECTION
    ============================================================ */
 
-listen("videoFile", "change", function() {
-    const file = this.files[0];
+   listen("videoFile", "change", function() {
+
+    const input = this;
+    const file = input.files[0];
 
     if (!file) return;
 
+    const maxSize = 50 * 1024 * 1024;
+    const maxDuration = 300;
+
     if (!file.type.startsWith("video/")) {
-        showToast("Please select a video file.");
-        this.value = "";
+        showToast("Please select a video.");
+        input.value = "";
         return;
     }
 
-    const maxSize = 50 * 1024 * 1024;
-
-if (file.size > maxSize) {
-    showToast("Video is larger than 50 MB. Please compress it.");
-    this.value = "";
-    return;
-}
-
-    selectedVideoFile = file;
-    exportedReelFile = null;
-
-    $("selectedVideoName").textContent =
-        file.name + " • " +
-        (file.size / (1024 * 1024)).toFixed(1) +
-        " MB";
-
-    if (uploadMode === "short") {
-        prepareReelEditor(file);
+    if (file.size > maxSize) {
+        showToast("Maximum file size on GoCat is 50 MB.");
+        input.value = "";
+        return;
     }
-})
+
+    const tempURL = URL.createObjectURL(file);
+    const testVideo = document.createElement("video");
+
+    testVideo.preload = "metadata";
+
+    testVideo.onloadedmetadata = function() {
+
+        const duration = testVideo.duration;
+        const width = testVideo.videoWidth;
+        const height = testVideo.videoHeight;
+
+        URL.revokeObjectURL(tempURL);
+
+        if (!Number.isFinite(duration) || !width || !height) {
+            showToast("Could not read video information.");
+            input.value = "";
+            return;
+        }
+
+        if (duration > maxDuration) {
+            showToast("GoCat videos can be up to 5 minutes.");
+            input.value = "";
+            return;
+        }
+
+        if (Math.max(width, height) > 3840 ||
+            Math.min(width, height) > 2160) {
+
+            showToast("Maximum resolution is 4K UHD.");
+            input.value = "";
+            return;
+        }
+
+        selectedVideoFile = file;
+        exportedReelFile = null;
+
+        $("selectedVideoName").textContent =
+            file.name + " • " +
+            (file.size / (1024 * 1024)).toFixed(1) +
+            " MB • " +
+            width + "x" + height;
+
+        if (uploadMode === "short") {
+            prepareReelEditor(file);
+        }
+
+        showToast("Video ready!");
+
+    };
+
+    testVideo.onerror = function() {
+
+        URL.revokeObjectURL(tempURL);
+
+        showToast("This video format could not be read.");
+
+        input.value = "";
+    };
+
+    testVideo.src = tempURL;
+
+});
 
 
 /* ============================================================
@@ -2287,7 +2340,6 @@ function prepareReelEditor(file) {
     preview.style.transform = "none";
     preview.playbackRate = 1;
 
-    $("reelEditor").classList.remove("hidden");
 
     $("editorProjectStatus").textContent = file.name;
 
@@ -3311,88 +3363,32 @@ listen("reelsFeed", "click", function(event) {
    50 — TUS RESUMABLE UPLOAD SUPPORT
    Large video files use resumable upload when available.
    ============================================================ */
-async function uploadWithTus(file, path, progressCallback) {
+function loadTusLibrary() {
 
-    const tusReady = await loadTusLibrary();
-
-    if (!tusReady) {
-        throw new Error("Could not load the upload library.");
+    if (window.tus?.Upload) {
+        return Promise.resolve(true);
     }
-
-    const sessionResult = await db.auth.getSession();
-
-    if (sessionResult.error) {
-        throw sessionResult.error;
-    }
-
-    const session = sessionResult.data.session;
-
-    if (!session?.access_token) {
-        throw new Error("Please sign in again.");
-    }
-
-    const projectRef = new URL(SUPABASE_URL).hostname.split(".")[0];
-
-    const endpoint =
-        `https://${projectRef}.storage.supabase.co/storage/v1/upload/resumable`;
 
     return new Promise((resolve, reject) => {
 
-        const upload = new window.tus.Upload(file, {
+        const script = document.createElement("script");
 
-            endpoint: endpoint,
+        script.src =
+            "https://unpkg.com/tus-js-client@4.3.1/dist/tus.min.js";
 
-            retryDelays: [0, 3000, 5000, 10000, 20000],
-
-            chunkSize: 6 * 1024 * 1024,
-
-            uploadDataDuringCreation: true,
-
-            removeFingerprintOnSuccess: true,
-
-            headers: {
-                authorization: "Bearer " + session.access_token
-            },
-
-            metadata: {
-                bucketName: VIDEO_BUCKET,
-                objectName: path,
-                contentType: file.type || "video/mp4",
-                cacheControl: "3600"
-            },
-
-            onError(error) {
-                reject(error);
-            },
-
-            onProgress(bytesUploaded, bytesTotal) {
-
-                const percent = Math.round(
-                    (bytesUploaded / bytesTotal) * 100
-                );
-
-                progressCallback(percent);
-            },
-
-            onSuccess() {
-                progressCallback(100);
+        script.onload = () => {
+            if (window.tus?.Upload) {
                 resolve(true);
+            } else {
+                reject(new Error("TUS library loaded but is unavailable."));
             }
+        };
 
-        });
+        script.onerror = () => {
+            reject(new Error("Could not load TUS library. Check your internet."));
+        };
 
-        upload.findPreviousUploads()
-            .then(previous => {
-
-                if (previous.length) {
-                    upload.resumeFromPreviousUpload(previous[0]);
-                }
-
-                upload.start();
-
-            })
-            .catch(reject);
-
+        document.head.appendChild(script);
     });
 }
 
@@ -3401,46 +3397,15 @@ async function uploadWithTus(file, path, progressCallback) {
    51 — STORAGE UPLOAD WITH FALLBACK
    ============================================================ */
 
-async function uploadVideoFile(file, path, progressCallback) {
-
-    if (file.size > 6 * 1024 * 1024) {
-
-        await uploadWithTus(
-            file,
-            path,
-            progressCallback
-        );
-
-        return;
-    }
-
-    progressCallback(15);
-
-    const result = await db.storage
-        .from(VIDEO_BUCKET)
-        .upload(path, file, {
-            cacheControl: "3600",
-            upsert: false,
-            contentType: file.type || "video/mp4"
-        });
-
-    if (result.error) {
-        throw result.error;
-    }
-
-    progressCallback(100);
-}
-
-
 /* ============================================================
    52 — PUBLISH VIDEO OR SHORT
    ============================================================ */
 
 listen("uploadForm", "submit", async function(event) {
+
     event.preventDefault();
 
-    const file =
-        exportedReelFile || selectedVideoFile;
+    const file = exportedReelFile || selectedVideoFile;
 
     if (!file) {
         showToast("Select a video first.");
@@ -3453,12 +3418,11 @@ listen("uploadForm", "submit", async function(event) {
 
     if (!title) {
         showToast("Add a title.");
-        $("videoTitle").focus();
         return;
     }
 
-    if (!file.type.startsWith("video/")) {
-        showToast("The selected file is not a video.");
+    if (file.size > 50 * 1024 * 1024) {
+        showToast("Maximum upload size is 50 MB.");
         return;
     }
 
@@ -3468,11 +3432,9 @@ listen("uploadForm", "submit", async function(event) {
     button.textContent = "Uploading...";
 
     $("uploadProgress").classList.remove("hidden");
-
-    $("uploadStatus").textContent =
-        "Preparing upload...";
-
     $("uploadProgressBar").style.width = "0%";
+
+    let uploaded = false;
 
     const extension =
         file.name.split(".").pop().toLowerCase() || "mp4";
@@ -3486,17 +3448,22 @@ listen("uploadForm", "submit", async function(event) {
     currentUploadPath = path;
 
     try {
-        await uploadVideoFile(
-            file,
-            path,
-            function(percent) {
-                $("uploadProgressBar").style.width =
-                    percent + "%";
 
-                $("uploadStatus").textContent =
-                    "Uploading: " + percent + "%";
-            }
-        );
+        // STEP 1 — Upload the actual video
+
+        await uploadVideoFile(file, path, function(percent) {
+
+            $("uploadProgressBar").style.width =
+                percent + "%";
+
+            $("uploadStatus").textContent =
+                "Uploading: " + percent + "%";
+
+        });
+
+        uploaded = true;
+
+        // STEP 2 — Save video information
 
         $("uploadStatus").textContent =
             "Saving video information...";
@@ -3514,17 +3481,10 @@ listen("uploadForm", "submit", async function(event) {
             });
 
         if (insert.error) {
-            await db.storage
-                .from(VIDEO_BUCKET)
-                .remove([path]);
-
             throw insert.error;
         }
 
-        $("uploadProgressBar").style.width = "100%";
-
-        $("uploadStatus").textContent =
-            "Published successfully.";
+        // STEP 3 — Refresh GoCat
 
         await loadVideos();
 
@@ -3533,6 +3493,13 @@ listen("uploadForm", "submit", async function(event) {
 
         renderEverything();
 
+        $("uploadProgressBar").style.width = "100%";
+
+        $("uploadStatus").textContent =
+            "Published successfully!";
+
+        const publishedMode = uploadMode;
+
         currentUploadPath = null;
 
         hideModal("uploadModal");
@@ -3540,23 +3507,21 @@ listen("uploadForm", "submit", async function(event) {
         resetUploadForm();
 
         showToast(
-            uploadMode === "short"
+            publishedMode === "short"
                 ? "Your Short has been published!"
                 : "Your video has been published!"
         );
 
     } catch (error) {
+
         console.error("Upload error:", error);
 
-        /*
-           If the database insert failed after storage upload,
-           remove the uploaded object to avoid orphaned files.
-        */
+        if (uploaded && currentUploadPath) {
 
-        if (currentUploadPath) {
             await db.storage
                 .from(VIDEO_BUCKET)
                 .remove([currentUploadPath]);
+
         }
 
         $("uploadStatus").textContent =
@@ -3565,6 +3530,7 @@ listen("uploadForm", "submit", async function(event) {
         showToast("Upload failed: " + error.message);
 
     } finally {
+
         currentUploadPath = null;
 
         button.disabled = false;
@@ -3573,7 +3539,9 @@ listen("uploadForm", "submit", async function(event) {
             uploadMode === "short"
                 ? "Publish Short"
                 : "Publish video";
+
     }
+
 });
 
 
