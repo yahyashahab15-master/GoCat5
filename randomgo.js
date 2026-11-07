@@ -2249,11 +2249,11 @@ listen("videoFile", "change", function() {
 
     const maxSize = 50 * 1024 * 1024;
 
-    if (file.size > maxSize) {
-        showToast("This file is larger than 1 GB.");
-        this.value = "";
-        return;
-    }
+if (file.size > maxSize) {
+    showToast("Video is larger than 50 MB. Please compress it.");
+    this.value = "";
+    return;
+}
 
     selectedVideoFile = file;
     exportedReelFile = null;
@@ -2266,7 +2266,7 @@ listen("videoFile", "change", function() {
     if (uploadMode === "short") {
         prepareReelEditor(file);
     }
-});
+})
 
 
 /* ============================================================
