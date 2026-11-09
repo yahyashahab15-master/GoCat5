@@ -126,3 +126,55 @@ CREATE POLICY "Users can update their own GoCat posts"
     WITH CHECK (auth.uid()::text = user_id::text);
 
 GRANT UPDATE ON public.posts TO authenticated;
+
+
+-- Ensure post_comments has a stable primary key and real foreign keys.
+-- Safe for existing rows: the current rows were checked for null/orphan references.
+ALTER TABLE public.post_comments
+    ADD COLUMN IF NOT EXISTS id uuid DEFAULT gen_random_uuid();
+
+ALTER TABLE public.post_comments
+    ALTER COLUMN id SET DEFAULT gen_random_uuid();
+
+UPDATE public.post_comments
+SET id = gen_random_uuid()
+WHERE id IS NULL;
+
+ALTER TABLE public.post_comments
+    ALTER COLUMN id SET NOT NULL;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'public.post_comments'::regclass
+          AND contype = 'p'
+    ) THEN
+        ALTER TABLE public.post_comments
+            ADD CONSTRAINT post_comments_pkey PRIMARY KEY (id);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'public.post_comments'::regclass
+          AND conname = 'post_comments_post_id_fkey'
+    ) THEN
+        ALTER TABLE public.post_comments
+            ADD CONSTRAINT post_comments_post_id_fkey
+            FOREIGN KEY (post_id) REFERENCES public.posts(id) ON DELETE CASCADE;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'public.post_comments'::regclass
+          AND conname = 'post_comments_user_id_fkey'
+    ) THEN
+        ALTER TABLE public.post_comments
+            ADD CONSTRAINT post_comments_user_id_fkey
+            FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+    END IF;
+END
+$$;
+
+CREATE INDEX IF NOT EXISTS post_comments_user_id_idx
+    ON public.post_comments(user_id);
