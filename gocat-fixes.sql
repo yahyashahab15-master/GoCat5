@@ -22,6 +22,47 @@ BEGIN
 END
 $$;
 
+-- Let signed-in users create their own GoCat profile rows.
+-- Existing public-profile SELECT rules are left unchanged.
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can create their own GoCat profile" ON public.users;
+CREATE POLICY "Users can create their own GoCat profile"
+    ON public.users
+    FOR INSERT
+    TO authenticated
+    WITH CHECK (auth.uid()::text = id::text);
+
+DROP POLICY IF EXISTS "Users can update their own GoCat profile" ON public.users;
+CREATE POLICY "Users can update their own GoCat profile"
+    ON public.users
+    FOR UPDATE
+    TO authenticated
+    USING (auth.uid()::text = id::text)
+    WITH CHECK (auth.uid()::text = id::text);
+
+GRANT INSERT, UPDATE ON public.users TO authenticated;
+
+-- Allow visitors to read video comments and signed-in users to add their own.
+ALTER TABLE public.comments ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Anyone can read GoCat video comments" ON public.comments;
+CREATE POLICY "Anyone can read GoCat video comments"
+    ON public.comments
+    FOR SELECT
+    TO anon, authenticated
+    USING (true);
+
+DROP POLICY IF EXISTS "Signed-in users can add GoCat video comments" ON public.comments;
+CREATE POLICY "Signed-in users can add GoCat video comments"
+    ON public.comments
+    FOR INSERT
+    TO authenticated
+    WITH CHECK (auth.uid()::text = user_id::text);
+
+GRANT SELECT ON public.comments TO anon, authenticated;
+GRANT INSERT ON public.comments TO authenticated;
+
 -- Create post_comments with exactly the same post_id data type as posts.id.
 -- This avoids guessing whether the existing posts.id column is UUID or BIGINT.
 CREATE TABLE IF NOT EXISTS public.post_comments AS
