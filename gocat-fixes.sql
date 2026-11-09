@@ -1,0 +1,78 @@
+-- GoCat database fixes
+-- Run this once in Supabase SQL Editor.
+-- GoCat stores created_at as Unix milliseconds (BIGINT), matching Date.now().
+
+-- Fix timestamp defaults on every existing public table that stores created_at as BIGINT.
+DO $$
+DECLARE
+    target record;
+BEGIN
+    FOR target IN
+        SELECT table_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND column_name = 'created_at'
+          AND data_type = 'bigint'
+    LOOP
+        EXECUTE format(
+            'ALTER TABLE public.%I ALTER COLUMN created_at SET DEFAULT ((extract(epoch FROM now()) * 1000)::bigint)',
+            target.table_name
+        );
+    END LOOP;
+END
+$$;
+
+-- Create post_comments with exactly the same post_id data type as posts.id.
+-- This avoids guessing whether the existing posts.id column is UUID or BIGINT.
+CREATE TABLE IF NOT EXISTS public.post_comments AS
+SELECT id AS post_id
+FROM public.posts
+WITH NO DATA;
+
+ALTER TABLE public.post_comments
+    ADD COLUMN IF NOT EXISTS user_id uuid,
+    ADD COLUMN IF NOT EXISTS content text,
+    ADD COLUMN IF NOT EXISTS created_at bigint
+        DEFAULT ((extract(epoch FROM now()) * 1000)::bigint);
+
+CREATE INDEX IF NOT EXISTS post_comments_post_id_created_at_idx
+    ON public.post_comments (post_id, created_at);
+
+ALTER TABLE public.post_comments ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Anyone can read GoCat post comments" ON public.post_comments;
+CREATE POLICY "Anyone can read GoCat post comments"
+    ON public.post_comments
+    FOR SELECT
+    TO anon, authenticated
+    USING (true);
+
+DROP POLICY IF EXISTS "Signed-in users can comment on GoCat posts" ON public.post_comments;
+CREATE POLICY "Signed-in users can comment on GoCat posts"
+    ON public.post_comments
+    FOR INSERT
+    TO authenticated
+    WITH CHECK (auth.uid()::text = user_id::text);
+
+DROP POLICY IF EXISTS "Users can delete their own GoCat post comments" ON public.post_comments;
+CREATE POLICY "Users can delete their own GoCat post comments"
+    ON public.post_comments
+    FOR DELETE
+    TO authenticated
+    USING (auth.uid()::text = user_id::text);
+
+GRANT SELECT ON public.post_comments TO anon, authenticated;
+GRANT INSERT, DELETE ON public.post_comments TO authenticated;
+
+-- Allow each signed-in author to edit only their own post text.
+ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can update their own GoCat posts" ON public.posts;
+CREATE POLICY "Users can update their own GoCat posts"
+    ON public.posts
+    FOR UPDATE
+    TO authenticated
+    USING (auth.uid()::text = user_id::text)
+    WITH CHECK (auth.uid()::text = user_id::text);
+
+GRANT UPDATE ON public.posts TO authenticated;
