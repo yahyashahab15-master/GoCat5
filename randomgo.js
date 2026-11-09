@@ -834,7 +834,7 @@ listen("commentForm", "submit", async function (event) {
 
     const result = await insertWithTextFallback(
         "comments",
-        { video_id: currentCommentVideoId, user_id: currentUser.id },
+        { video_id: currentCommentVideoId, user_id: currentUser.id, created_at: Date.now() },
         text, "content", "text"
     );
 
