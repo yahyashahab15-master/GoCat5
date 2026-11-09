@@ -759,3 +759,28 @@ h1, h2, h3 { letter-spacing: -.02em; }
     .video-actions { padding-left: 40px; }
     .toast { left: 12px; right: 12px; max-width: none; }
 }
+
+
+/* ---------- GoCat interaction upgrades ---------- */
+.avatar img, .channel-avatar img, #profileAvatar img, #settingsAvatar img, #sidebarAvatar img, #topProfileBtn img {
+    width:100%;height:100%;display:block;object-fit:cover;border-radius:inherit;
+}
+.comment-item { display:flex;align-items:flex-start;gap:10px;padding:12px 0;border-bottom:1px solid var(--border); }
+.comment-avatar { width:32px;height:32px;flex:0 0 32px;border-radius:50%;display:grid;place-items:center;background:var(--panel2);font-weight:700; }
+.comment-main { min-width:0;flex:1; }
+.comment-meta { display:flex;align-items:center;gap:9px;flex-wrap:wrap; }
+.comment-meta small { color:var(--muted);font-size:11px; }
+.comment-item p { margin:5px 0 4px;white-space:pre-wrap; }
+.comment-tools { display:flex;gap:12px; }
+.comment-replies { margin:8px 0 0 14px;padding-left:12px;border-left:2px solid var(--border); }
+.comment-replying { width:100%;font-size:12px;color:var(--accent); }
+.comment-compose { flex-wrap:wrap; }
+.danger-text { color:var(--red); }
+.chat-bubble { position:relative; }
+.chat-bubble time { opacity:.75; }
+.shortcut-list { display:grid;gap:10px; }
+.shortcut-list span { display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px; }
+.shortcut-list small { margin-left:auto;color:var(--muted); }
+kbd { display:inline-block;padding:3px 7px;border:1px solid var(--border);border-bottom-width:2px;border-radius:6px;background:var(--panel2);font:600 11px/1.4 inherit; }
+#editAvatarFile { max-width:100%; }
+@media(max-width:640px){.comment-replies{margin-left:5px;padding-left:8px}.comment-compose{gap:7px}}
