@@ -500,7 +500,26 @@ async function loadPosts() {
 }
 
 async function loadAllData() {
-    await Promise.all([loadUsers(), loadVideos(), loadFollows(), loadPosts()]);
+    // Load each area independently so one denied/temporarily unavailable table
+    // cannot prevent the homepage and the other sections from appearing.
+    const jobs = [
+        ["creators", loadUsers],
+        ["videos", loadVideos],
+        ["follows", loadFollows],
+        ["posts", loadPosts]
+    ];
+
+    const results = await Promise.allSettled(jobs.map(([, load]) => load()));
+    const failures = results
+        .map((result, index) => result.status === "rejected"
+            ? jobs[index][0] + ": " + (result.reason?.message || result.reason)
+            : null)
+        .filter(Boolean);
+
+    if (failures.length) {
+        console.warn("Some GoCat sections could not load:", failures.join(" | "));
+    }
+    return failures;
 }
 
 function renderLivePage() {
@@ -573,20 +592,36 @@ async function startGuestGoCat() {
     currentChatUserId = null;
     isGoCatAdmin = false;
     notifications = [];
+
     try {
         await loadAllData();
-        updateUserInterface();
-        openApp();
-        subscribeToLiveFeed();
-        renderEverything();
-        openPage("home");
-        checkSharedVideoLink();
     } catch (error) {
-        console.error("Guest browsing startup:", error);
-        updateUserInterface();
-        openApp();
-        showToast("Some GoCat content could not load: " + (error.message || error));
+        // Keep the public shell usable even if Supabase cannot be reached.
+        console.error("Guest data startup:", error);
     }
+
+    updateUserInterface();
+    openApp();
+    subscribeToLiveFeed();
+
+    try {
+        renderEverything();
+    } catch (error) {
+        console.error("GoCat first render:", error);
+    }
+
+    // Always select Home on first load, including partial/offline startup.
+    try {
+        openPage("home");
+    } catch (error) {
+        console.error("GoCat home navigation:", error);
+        currentPage = "home";
+        document.querySelectorAll(".page-section").forEach(section => {
+            section.classList.toggle("hidden", section.id !== "page-home");
+        });
+    }
+
+    checkSharedVideoLink();
 }
 
 function updateUserInterface() {
@@ -2621,21 +2656,48 @@ function getMutualFriends() {
 function renderChatFriends() {
     const container = $("chatFriends");
     if (!container) return;
+
+    const count = $("chatThreadCount");
     if (!currentUser) {
-        container.innerHTML = "<p class='muted-text'>Sign in to see your conversations.</p>";
+        if (count) count.textContent = "0";
+        container.innerHTML = `
+            <div class="chat-list-empty">
+                <span class="chat-list-empty-icon">✉</span>
+                <strong>Your inbox is waiting</strong>
+                <p>Sign in to message creators who follow you back.</p>
+                <button class="soft-btn" type="button" data-login-trigger>Sign in</button>
+            </div>`;
         return;
     }
+
     const search = $("chatSearch")?.value.trim().toLowerCase() || "";
-    const friends = getMutualFriends().filter(user => String(user.username || "").toLowerCase().includes(search));
+    const friends = getMutualFriends().filter(user =>
+        String(user.username || "").toLowerCase().includes(search)
+    );
+
+    if (count) count.textContent = String(friends.length);
 
     container.innerHTML = friends.length
         ? friends.map(user => `
             <button class="chat-friend ${String(currentChatUserId) === String(user.id) ? "active" : ""}"
-                data-chat-user="${esc(user.id)}">
-                <span class="chat-friend-avatar" style="${avatarBg(user.username)}">${user.avatar_path ? `<img src="${esc(storageURL("profile-avatars", user.avatar_path))}" alt="" loading="lazy">` : esc(initial(user.username))}</span>
-                ${esc(user.username)}
+                data-chat-user="${esc(user.id)}" aria-label="Open chat with ${esc(user.username)}">
+                <span class="chat-friend-avatar" style="${avatarBg(user.username)}">
+                    ${user.avatar_path
+                        ? `<img src="${esc(storageURL("profile-avatars", user.avatar_path))}" alt="" loading="lazy">`
+                        : esc(initial(user.username))}
+                </span>
+                <span class="chat-friend-copy">
+                    <strong>${esc(user.username)}</strong>
+                    <small>Mutual connection</small>
+                </span>
+                <span class="chat-friend-arrow" aria-hidden="true">›</span>
             </button>`).join("")
-        : "<p class='muted-text'>Follow people who follow you back to chat with them.</p>";
+        : `
+            <div class="chat-list-empty">
+                <span class="chat-list-empty-icon">◎</span>
+                <strong>No conversations found</strong>
+                <p>Chat opens when you and another creator follow each other.</p>
+            </div>`;
 }
 
 async function openChat(userId) {
@@ -2677,7 +2739,13 @@ async function openChat(userId) {
             }
         });
 
+    const chatUser = users.find(user => String(user.id) === String(userId));
     if ($("chatTitle")) $("chatTitle").textContent = getUsername(userId);
+    if ($("chatHeaderAvatar")) {
+        $("chatHeaderAvatar").innerHTML = chatUser?.avatar_path
+            ? `<img src="${esc(storageURL("profile-avatars", chatUser.avatar_path))}" alt="">`
+            : esc(initial(chatUser?.username || getUsername(userId)));
+    }
     if ($("chatPresence")) $("chatPresence").textContent = "Connecting…";
     if ($("chatTypingStatus")) $("chatTypingStatus").textContent = "";
     if ($("messageInput")) $("messageInput").disabled = false;
@@ -2697,7 +2765,12 @@ async function loadMessages() {
     const result = await db.from("messages").select("*").or(filter).order("created_at", { ascending: true }).limit(200);
     if (result.error) {
         console.error(result.error);
-        container.innerHTML = "<p class='chat-empty'>Could not load messages. Check your messages table and policies.</p>";
+        container.innerHTML = `
+            <div class="chat-empty-state">
+                <span class="chat-empty-icon">!</span>
+                <strong>Messages could not load</strong>
+                <p>Check the messages table and its access policies, then try again.</p>
+            </div>`;
         return;
     }
     const messages = result.data || [];
@@ -2706,7 +2779,12 @@ async function loadMessages() {
         const body = esc(m.content ?? m.text ?? "").replace(/\n/g, "<br>");
         return '<div class="chat-bubble ' + (mine ? "mine" : "") + '">' +
             body + '<time>' + formatDate(m.created_at) + " " + (mine ? (m.is_read ? "· Seen" : "· Sent") : "") + '</time></div>';
-    }).join("") : "<p class='chat-empty'>No messages yet. Say hello.</p>";
+    }).join("") : `
+        <div class="chat-empty-state">
+            <span class="chat-empty-icon">✦</span>
+            <strong>Start the conversation</strong>
+            <p>Send a message to say hello. Only you and this creator can see this chat.</p>
+        </div>`;
     if (nearBottom) container.scrollTop = container.scrollHeight;
 
     const unread = messages.filter(m => String(m.recipient_id) === String(currentUser.id) && !m.is_read).map(m => m.id);
@@ -3079,7 +3157,15 @@ async function initializeGoCat() {
         console.error("GOCAT STARTUP ERROR:", error);
         updateUserInterface();
         openApp();
-        showToast("GoCat is in guest mode, but some content could not load: " + error.message);
+        // The Supabase SDK or session request may fail; still show the Home shell.
+        try {
+            openPage("home");
+        } catch (pageError) {
+            console.warn("Could not render Home during fallback startup:", pageError);
+            currentPage = "home";
+            document.getElementById("page-home")?.classList.remove("hidden");
+        }
+        showToast("GoCat opened in guest mode. Some content may be unavailable: " + (error.message || error));
 
     } finally {
         loader?.classList.add("hide");
