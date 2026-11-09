@@ -24,7 +24,8 @@ const db = window.supabase?.createClient
 /* ---------- 02 STATE ---------- */
 
 let currentUser = null, currentProfile = null, isGoCatAdmin = false;
-let currentProfileUserId = null, currentCommentVideoId = null, currentCommentPostId = null, currentChatUserId = null;
+let currentProfileUserId = null, currentCommentVideoId = null, currentCommentPostId = null, currentCommentParentId = null, currentChatUserId = null;
+let chatRealtimeChannel = null, commentRealtimeChannel = null;
 let users = [], videos = [], posts = [], follows = [], notifications = [];
 let currentPage = "home", activeHomeTopic = "All", exploreMode = "videos", profileMode = "home";
 let homeVisibleCycles = 1, exploreVisible = 6, postsVisible = 5, reelsVisible = 5;
@@ -115,11 +116,13 @@ function nameHue(name) {
 const avatarBg = name =>
     `background:linear-gradient(135deg,hsl(${nameHue(name)} 60% 50%),hsl(${(nameHue(name) + 40) % 360} 60% 38%));color:#fff`;
 
-function paintAvatar(id, name) {
+function paintAvatar(id, name, avatarPath = "") {
     const el = $(id);
     if (!el) return;
-    el.textContent = initial(name);
     el.style.cssText = avatarBg(name);
+    el.innerHTML = avatarPath
+        ? `<img src="${esc(storageURL("profile-avatars", avatarPath))}" alt="" loading="lazy">`
+        : esc(initial(name));
 }
 
 const initial = name => String(name || "?").trim().charAt(0).toUpperCase();
@@ -405,7 +408,7 @@ async function loadAdminStatus() {
 async function loadUsers() {
     const result = await db
         .from("users")
-        .select("id,username,bio,created_at")
+        .select("id,username,bio,avatar_path,created_at")
         .order("created_at", { ascending: false });
 
     if (result.error) throw result.error;
@@ -508,10 +511,10 @@ function updateUserInterface() {
     const username = currentProfile?.username || "Creator";
 
     if ($("welcomeName")) $("welcomeName").textContent = username;
-    paintAvatar("topProfileBtn", username);
-    paintAvatar("sidebarAvatar", username);
+    paintAvatar("topProfileBtn", username, currentProfile?.avatar_path || "");
+    paintAvatar("sidebarAvatar", username, currentProfile?.avatar_path || "");
     if ($("sidebarUsername")) $("sidebarUsername").textContent = username;
-    paintAvatar("settingsAvatar", username);
+    paintAvatar("settingsAvatar", username, currentProfile?.avatar_path || "");
     if ($("settingsUsername")) $("settingsUsername").textContent = username;
     if ($("settingsEmail")) $("settingsEmail").textContent = currentUser?.email || "";
 }
@@ -519,7 +522,7 @@ function updateUserInterface() {
 
 /* ---------- 09 CARDS ---------- */
 
-const avatar = (name, cls = "") => `<span class="avatar ${cls}" style="${avatarBg(name)}">${esc(initial(name))}</span>`;
+const avatar = (name, cls = "", path = "") => `<span class="avatar ${cls}" style="${avatarBg(name)}">${path ? `<img src="${esc(storageURL("profile-avatars", path))}" alt="" loading="lazy">` : esc(initial(name))}</span>`;
 
 const pill = (ic, label, attr, cls = "") =>
     `<button class="pill ${cls}" ${attr}>${icon(ic)}<span>${label}</span></button>`;
@@ -537,7 +540,7 @@ function videoCard(video) {
             </div>
 
             <div class="video-body">
-                <button class="avatar-btn" data-profile-user="${esc(video.owner_id)}">${avatar(username)}</button>
+                <button class="avatar-btn" data-profile-user="${esc(video.owner_id)}">${avatar(username, "", getUser(video.owner_id)?.avatar_path || "")}</button>
 
                 <div class="video-text">
                     <h3>${esc(video.title)}</h3>
@@ -823,6 +826,8 @@ async function toggleVideoLike(videoId) {
 async function openComments(videoId) {
     currentCommentVideoId = videoId;
     currentCommentPostId = null;
+    currentCommentParentId = null;
+    subscribeToComments();
     if ($("commentsModalTitle")) $("commentsModalTitle").textContent = "Video comments";
     if ($("commentsList")) $("commentsList").innerHTML = "<p class='muted-text'>Loading comments...</p>";
     showModal("commentsModal");
@@ -832,6 +837,8 @@ async function openComments(videoId) {
 async function openPostComments(postId) {
     currentCommentPostId = postId;
     currentCommentVideoId = null;
+    currentCommentParentId = null;
+    subscribeToComments();
     if ($("commentsModalTitle")) $("commentsModalTitle").textContent = "Post comments";
     if ($("commentsList")) $("commentsList").innerHTML = "<p class='muted-text'>Loading comments...</p>";
     showModal("commentsModal");
@@ -840,34 +847,34 @@ async function openPostComments(postId) {
 
 async function renderComments() {
     if (!$("commentsList")) return;
-
     let result;
     if (currentCommentPostId !== null) {
-        result = await db.from("post_comments").select("*")
-            .eq("post_id", String(currentCommentPostId))
-            .order("created_at", { ascending: true });
+        result = await db.from("post_comments").select("*").eq("post_id", String(currentCommentPostId)).order("created_at", { ascending: true });
     } else if (currentCommentVideoId !== null) {
-        result = await db.from("comments").select("*")
-            .eq("video_id", currentCommentVideoId)
-            .order("created_at", { ascending: true });
-    } else {
-        return;
-    }
-
-    if (result.error) {
-        $("commentsList").textContent = result.error.message;
-        return;
-    }
-
+        result = await db.from("comments").select("*").eq("video_id", currentCommentVideoId).order("created_at", { ascending: true });
+    } else return;
+    if (result.error) { $("commentsList").textContent = result.error.message; return; }
     const comments = result.data || [];
-    $("commentsList").innerHTML = comments.length
-        ? comments.map(c => `
-            <div class="comment-item">
-                <strong>${esc(getUsername(c.user_id))}</strong>
-                <p>${esc(c.content ?? c.text ?? "")}</p>
-                <small>${formatDate(c.created_at)}</small>
-            </div>`).join("")
-        : "<p class='muted-text'>No comments yet. Start the conversation.</p>";
+    const children = new Map();
+    comments.forEach(item => {
+        const key = item.parent_id ? String(item.parent_id) : "root";
+        if (!children.has(key)) children.set(key, []);
+        children.get(key).push(item);
+    });
+    const renderBranch = (parent, depth = 0) => (children.get(parent) || []).map(item => {
+        const own = String(item.user_id) === String(currentUser.id);
+        const body = item.content ?? item.text ?? "";
+        return `<article class="comment-item ${depth ? "comment-reply" : ""}" data-comment-id="${esc(item.id)}">
+            <div class="comment-avatar">${esc(initial(getUsername(item.user_id)))}</div>
+            <div class="comment-main">
+                <div class="comment-meta"><strong>${esc(getUsername(item.user_id))}</strong><small>${formatDate(item.created_at)}</small></div>
+                <p>${esc(body)}</p>
+                <div class="comment-tools"><button type="button" class="text-btn" data-reply-comment="${esc(item.id)}">Reply</button>${own ? `<button type="button" class="text-btn danger-text" data-delete-comment="${esc(item.id)}">Delete</button>` : ""}</div>
+                <div class="comment-replies">${renderBranch(String(item.id), depth + 1)}</div>
+            </div>
+        </article>`;
+    }).join("");
+    $("commentsList").innerHTML = comments.length ? renderBranch("root") : "<p class='muted-text'>No comments yet. Start the conversation.</p>";
 }
 
 listen("commentForm", "submit", async function (event) {
@@ -886,14 +893,15 @@ listen("commentForm", "submit", async function (event) {
                 post_id: String(currentCommentPostId),
                 user_id: currentUser.id,
                 content: text,
+                parent_id: currentCommentParentId,
                 created_at: Date.now()
             });
         } else {
-            // The live public.comments table stores its message in the "text" column.
             result = await db.from("comments").insert({
                 video_id: currentCommentVideoId,
                 user_id: currentUser.id,
                 text,
+                parent_id: currentCommentParentId,
                 created_at: Date.now()
             });
         }
@@ -901,6 +909,9 @@ listen("commentForm", "submit", async function (event) {
         if (result.error) throw result.error;
 
         $("commentInput").value = "";
+        currentCommentParentId = null;
+        if ($("commentReplyingTo")) $("commentReplyingTo").textContent = "";
+        if ($("commentInput")) $("commentInput").placeholder = "Add a comment";
         if (currentCommentPostId !== null) await loadPosts();
         else await loadVideos();
 
@@ -915,6 +926,34 @@ listen("commentForm", "submit", async function (event) {
     }
 });
 
+
+function subscribeToComments() {
+    if (commentRealtimeChannel) db.removeChannel(commentRealtimeChannel);
+    const table = currentCommentPostId !== null ? "post_comments" : "comments";
+    const key = currentCommentPostId !== null ? "post_id" : "video_id";
+    const value = String(currentCommentPostId !== null ? currentCommentPostId : currentCommentVideoId);
+    commentRealtimeChannel = db.channel("gocat-comments-" + table + "-" + value)
+        .on("postgres_changes", { event: "*", schema: "public", table, filter: key + "=eq." + value }, () => renderComments())
+        .subscribe();
+}
+
+async function deleteComment(commentId) {
+    const table = currentCommentPostId !== null ? "post_comments" : "comments";
+    const result = await db.from(table).delete().eq("id", commentId).eq("user_id", currentUser.id);
+    if (result.error) return showToast("Could not delete comment: " + result.error.message);
+    await renderComments();
+    if (currentCommentPostId !== null) await loadPosts(); else await loadVideos();
+    renderEverything();
+}
+
+function beginCommentReply(commentId) {
+    currentCommentParentId = commentId;
+    if ($("commentReplyingTo")) $("commentReplyingTo").textContent = "Replying to a comment · ";
+    if ($("commentInput")) {
+        $("commentInput").placeholder = "Write a reply...";
+        $("commentInput").focus();
+    }
+}
 
 /* ---------- 13 SHARE AND DELETE VIDEO ---------- */
 
@@ -1045,6 +1084,7 @@ function renderReels() {
 
 function observeReels() {
     if (reelObserver) reelObserver.disconnect();
+    document.querySelectorAll(".reel-video").forEach(video => { video.muted = settings.muted; });
 
     const feed = $("reelsFeed");
     if (!feed || !("IntersectionObserver" in window)) return;
@@ -1081,8 +1121,15 @@ listen("reelsFeed", "click", function (event) {
     const video = soundButton.closest(".reel-item")?.querySelector(".reel-video");
     if (!video) return;
 
-    video.muted = !video.muted;
-    soundButton.innerHTML = icon(video.muted ? "mute" : "volume");
+    settings.muted = !settings.muted;
+    saveSettings();
+    document.querySelectorAll(".reel-video").forEach(reel => { reel.muted = settings.muted; });
+    document.querySelectorAll("[data-reel-sound]").forEach(button => {
+        button.innerHTML = icon(settings.muted ? "mute" : "volume");
+        button.setAttribute("aria-label", settings.muted ? "Unmute all Shorts" : "Mute all Shorts");
+    });
+    if ($("settingMuted")) $("settingMuted").checked = settings.muted;
+    showToast(settings.muted ? "Shorts muted" : "Shorts sound on");
 });
 
 
@@ -2192,7 +2239,7 @@ function renderProfile() {
     if ($("profileUsername")) $("profileUsername").textContent = profile.username || "Creator";
     if ($("profileEmail")) $("profileEmail").textContent = own ? currentUser.email : "";
     if ($("profileBio")) $("profileBio").textContent = profile.bio || "Welcome to GoCat.";
-    paintAvatar("profileAvatar", profile.username);
+    paintAvatar("profileAvatar", profile.username, profile.avatar_path || "");
 
     if ($("profileActionBtn")) {
         $("profileActionBtn").textContent = own ? "Edit channel" : isFollowing(profileId) ? "Following" : "Follow";
@@ -2200,6 +2247,8 @@ function renderProfile() {
             if (own) {
                 $("editUsername").value = profile.username || "";
                 $("editBio").value = profile.bio || "";
+                if ($("editAvatarFile")) $("editAvatarFile").value = "";
+                if ($("editAvatarName")) $("editAvatarName").textContent = profile.avatar_path ? "Current photo saved" : "No photo selected";
                 showModal("editProfileModal");
             } else {
                 toggleFollow(profileId);
@@ -2258,11 +2307,21 @@ listen("editProfileForm", "submit", async function (event) {
 
     const username = $("editUsername")?.value.trim() || "";
     const bio = $("editBio")?.value.trim() || "";
+    const avatarFile = $("editAvatarFile")?.files?.[0];
 
     if (username.length < 3) return showToast("Username must have at least 3 characters.");
+    if (avatarFile && (!avatarFile.type.startsWith("image/") || avatarFile.size > 2 * 1024 * 1024)) {
+        return showToast("Choose a JPG, PNG or WebP image under 2 MB.");
+    }
 
     try {
-        const result = await db.from("users").update({ username, bio })
+        let avatarPath = currentProfile?.avatar_path || null;
+        if (avatarFile) {
+            avatarPath = currentUser.id + "/avatar-" + Date.now() + "." + (avatarFile.type.split("/")[1] || "jpg").replace("jpeg","jpg");
+            const upload = await db.storage.from("profile-avatars").upload(avatarPath, avatarFile, { upsert: true, contentType: avatarFile.type });
+            if (upload.error) throw upload.error;
+        }
+        const result = await db.from("users").update({ username, bio, avatar_path: avatarPath })
             .eq("id", currentUser.id).select("*").single();
         if (result.error) throw result.error;
 
@@ -2383,22 +2442,28 @@ listen("clearHistoryBtn", "click", clearHistory);
 listen("settingsClearHistory", "click", clearHistory);
 
 async function registerVideoView(videoId) {
-    if (!currentUser) return;
-
-    const key = "gocat_viewed_v2_" + currentUser.id;
-    const viewed = safeJSON(key, []);
-    if (viewed.includes(String(videoId))) return;
-
-    viewed.push(String(videoId));
-    try { localStorage.setItem(key, JSON.stringify(viewed.slice(-300))); } catch {}
-
+    if (!currentUser || !videoId) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const key = "gocat_viewed_daily_" + currentUser.id;
+    const viewed = safeJSON(key, {});
+    if (viewed[String(videoId)] === today) return;
+    const result = await db.from("video_views").insert({ video_id: String(videoId), user_id: String(currentUser.id) });
+    if (result.error) {
+        if (result.error.code !== "23505") console.warn("View tracking:", result.error.message);
+        viewed[String(videoId)] = today;
+        try { localStorage.setItem(key, JSON.stringify(viewed)); } catch {}
+        return;
+    }
+    viewed[String(videoId)] = today;
+    try { localStorage.setItem(key, JSON.stringify(viewed)); } catch {}
     const video = videos.find(v => String(v.id) === String(videoId));
-    if (!video) return;
-
-    video.views = Number(video.views || 0) + 1;
-
-    const result = await db.from("videos").update({ views: video.views }).eq("id", videoId);
-    if (result.error) console.warn("View tracking:", result.error.message);
+    if (video) video.views = Number(video.views || 0) + 1;
+    renderStudio();
+    document.querySelectorAll("[data-play-video='" + CSS.escape(String(videoId)) + "']").forEach(el => {
+        const card = el.closest(".video-card");
+        const viewLabel = card?.querySelector(".video-sub span");
+        if (viewLabel) viewLabel.textContent = compact(video?.views || 0) + " views";
+    });
 }
 
 document.addEventListener("play", function (event) {
@@ -2445,6 +2510,13 @@ async function openChat(userId) {
     }
 
     currentChatUserId = userId;
+    if (chatRealtimeChannel) db.removeChannel(chatRealtimeChannel);
+    chatRealtimeChannel = db.channel("gocat-chat-" + [String(currentUser.id), String(userId)].sort().join("-"))
+        .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, payload => {
+            const row = payload.new || payload.old || {};
+            if ([String(row.sender_id), String(row.recipient_id)].includes(String(currentUser.id)) &&
+                [String(row.sender_id), String(row.recipient_id)].includes(String(currentChatUserId))) loadMessages();
+        }).subscribe();
 
     if ($("chatTitle")) $("chatTitle").textContent = getUsername(userId);
     if ($("messageInput")) $("messageInput").disabled = false;
@@ -2472,16 +2544,23 @@ async function loadMessages() {
     }
 
     const messages = result.data || [];
-
     container.innerHTML = messages.length
-        ? messages.map(m => `
-            <div class="chat-bubble ${String(m.sender_id) === String(currentUser.id) ? "mine" : ""}">
+        ? messages.map(m => {
+            const mine = String(m.sender_id) === String(currentUser.id);
+            return `<div class="chat-bubble ${mine ? "mine" : ""}">
                 ${esc(m.content ?? m.text ?? "")}
-                <time>${formatDate(m.created_at)}</time>
-            </div>`).join("")
+                <time>${formatDate(m.created_at)} ${mine ? (m.is_read ? "· Seen" : "· Sent") : ""}</time>
+            </div>`;
+        }).join("")
         : "<p class='chat-empty'>No messages yet. Say hello.</p>";
-
     container.scrollTop = container.scrollHeight;
+
+    const unread = messages.filter(m => String(m.recipient_id) === String(currentUser.id) && !m.is_read).map(m => m.id);
+    if (unread.length) {
+        const readResult = await db.from("messages").update({ is_read: true, read_at: new Date().toISOString() })
+            .in("id", unread).eq("recipient_id", currentUser.id);
+        if (readResult.error) console.warn("Read receipts:", readResult.error.message);
+    }
 }
 
 listen("chatForm", "submit", async function (event) {
@@ -2662,7 +2741,10 @@ function renderSettings() {
     if ($("settingHistory")) $("settingHistory").checked = settings.history;
     if ($("settingsUsername")) $("settingsUsername").textContent = currentProfile?.username || "Creator";
     if ($("settingsEmail")) $("settingsEmail").textContent = currentUser?.email || "";
-    paintAvatar("settingsAvatar", currentProfile?.username);
+    paintAvatar("settingsAvatar", currentProfile?.username, currentProfile?.avatar_path || "");
+    if ($("settingAutoplay")) $("settingAutoplay").checked = settings.autoplay;
+    if ($("settingMuted")) $("settingMuted").checked = settings.muted;
+    if ($("settingHistory")) $("settingHistory").checked = settings.history;
 }
 
 listen("settingTheme", "change", function () { settings.theme = this.value; saveSettings(); applyTheme(); });
@@ -2730,6 +2812,8 @@ document.addEventListener("click", function (event) {
     if (d.chatUser) openChat(d.chatUser);
     if (d.likePost) togglePostLike(d.likePost);
     if (d.commentsPost) openPostComments(d.commentsPost);
+    if (d.replyComment) beginCommentReply(d.replyComment);
+    if (d.deleteComment) deleteComment(d.deleteComment);
     if (d.editPost) editPost(d.editPost);
     if (d.deletePost) deletePost(d.deletePost);
     if (d.openReelId) openSpecificReel(d.openReelId);
@@ -2822,6 +2906,50 @@ async function initializeGoCat() {
         loader?.classList.add("hide");
     }
 }
+
+// Paste an image directly into the post composer with Ctrl+V.
+document.addEventListener("paste", function (event) {
+    if (!currentUser || currentPage !== "posts") return;
+    const items = Array.from(event.clipboardData?.items || []);
+    const imageItem = items.find(item => item.type.startsWith("image/"));
+    if (!imageItem) return;
+    const file = imageItem.getAsFile();
+    if (!file) return;
+    const extension = file.type.split("/")[1] || "png";
+    const pasted = new File([file], "gocat-pasted-image." + extension, { type: file.type });
+    const transfer = new DataTransfer();
+    transfer.items.add(pasted);
+    if ($("postImage")) $("postImage").files = transfer.files;
+    if ($("postImageName")) $("postImageName").textContent = "Pasted image ready";
+    showToast("Image pasted into your post");
+});
+
+// Keyboard shortcuts: / or Ctrl+K search, M mute Shorts, J/L seek, K/Space play-pause.
+document.addEventListener("keydown", function (event) {
+    const tag = event.target?.tagName;
+    const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(tag) || event.target?.isContentEditable;
+    if (typing) return;
+    if ((event.key === "/" || (event.ctrlKey && event.key.toLowerCase() === "k")) && !event.altKey) {
+        event.preventDefault(); $("searchInput")?.focus(); return;
+    }
+    if (event.key.toLowerCase() === "m") {
+        settings.muted = !settings.muted; saveSettings();
+        document.querySelectorAll(".reel-video").forEach(video => video.muted = settings.muted);
+        document.querySelectorAll("[data-reel-sound]").forEach(button => button.innerHTML = icon(settings.muted ? "mute" : "volume"));
+        showToast(settings.muted ? "Shorts muted" : "Shorts sound on"); return;
+    }
+    const video = event.target.closest?.("video") || document.querySelector(".reel-item video") || document.querySelector(".video-player");
+    if (!video) return;
+    if (event.key === " " || event.key.toLowerCase() === "k") {
+        event.preventDefault(); if (video.paused) video.play().catch(()=>{}); else video.pause();
+    } else if (event.key.toLowerCase() === "j") {
+        video.currentTime = Math.max(0, video.currentTime - 10);
+    } else if (event.key.toLowerCase() === "l") {
+        video.currentTime = Math.min(video.duration || Infinity, video.currentTime + 10);
+    } else if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+        event.preventDefault(); video.volume = Math.min(1, Math.max(0, video.volume + (event.key === "ArrowUp" ? 0.05 : -0.05)));
+    }
+});
 
 window.addEventListener("beforeunload", function () {
     if (currentObjectURL) URL.revokeObjectURL(currentObjectURL);
