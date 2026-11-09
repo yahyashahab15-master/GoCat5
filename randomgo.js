@@ -590,7 +590,7 @@ function postCard(post) {
     return `
         <article class="post-card">
             <div class="post-head">
-                ${avatar(username)}
+                ${avatar(username, "", getUser(post.user_id)?.avatar_path || "")}
                 <div class="post-meta">
                     <strong>${esc(username)}</strong>
                     <small>${formatDate(post.created_at)}</small>
@@ -865,7 +865,7 @@ async function renderComments() {
         const own = String(item.user_id) === String(currentUser.id);
         const body = item.content ?? item.text ?? "";
         return `<article class="comment-item ${depth ? "comment-reply" : ""}" data-comment-id="${esc(item.id)}">
-            <div class="comment-avatar">${esc(initial(getUsername(item.user_id)))}</div>
+            <div class="comment-avatar">${getUser(item.user_id)?.avatar_path ? `<img src="${esc(storageURL("profile-avatars", getUser(item.user_id).avatar_path))}" alt="" loading="lazy">` : esc(initial(getUsername(item.user_id)))}</div>
             <div class="comment-main">
                 <div class="comment-meta"><strong>${esc(getUsername(item.user_id))}</strong><small>${formatDate(item.created_at)}</small></div>
                 <p>${esc(body)}</p>
@@ -1055,7 +1055,7 @@ function renderReels() {
 
                 <div class="reel-info">
                     <div class="reel-user-row">
-                        <span class="reel-user-avatar" style="${avatarBg(username)}">${esc(initial(username))}</span>
+                        <span class="reel-user-avatar" style="${avatarBg(username)}">${getUser(video.owner_id)?.avatar_path ? `<img src="${esc(storageURL("profile-avatars", getUser(video.owner_id).avatar_path))}" alt="" loading="lazy">` : esc(initial(username))}</span>
                         <button class="reel-username" data-profile-user="${esc(video.owner_id)}">@${esc(username)}</button>
                         ${!isOwnContent(video.owner_id)
                             ? `<button class="reel-follow" data-follow-user="${esc(video.owner_id)}">${isFollowing(video.owner_id) ? "Following" : "Follow"}</button>`
@@ -2501,7 +2501,7 @@ function renderChatFriends() {
         ? friends.map(user => `
             <button class="chat-friend ${String(currentChatUserId) === String(user.id) ? "active" : ""}"
                 data-chat-user="${esc(user.id)}">
-                <span class="chat-friend-avatar" style="${avatarBg(user.username)}">${esc(initial(user.username))}</span>
+                <span class="chat-friend-avatar" style="${avatarBg(user.username)}">${user.avatar_path ? `<img src="${esc(storageURL("profile-avatars", user.avatar_path))}" alt="" loading="lazy">` : esc(initial(user.username))}</span>
                 ${esc(user.username)}
             </button>`).join("")
         : "<p class='muted-text'>Follow people who follow you back to chat with them.</p>";
