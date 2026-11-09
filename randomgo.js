@@ -2449,9 +2449,12 @@ async function registerVideoView(videoId) {
     if (viewed[String(videoId)] === today) return;
     const result = await db.from("video_views").insert({ video_id: String(videoId), user_id: String(currentUser.id) });
     if (result.error) {
-        if (result.error.code !== "23505") console.warn("View tracking:", result.error.message);
-        viewed[String(videoId)] = today;
-        try { localStorage.setItem(key, JSON.stringify(viewed)); } catch {}
+        if (result.error.code === "23505") {
+            viewed[String(videoId)] = today;
+            try { localStorage.setItem(key, JSON.stringify(viewed)); } catch {}
+        } else {
+            console.warn("View tracking:", result.error.message);
+        }
         return;
     }
     viewed[String(videoId)] = today;
