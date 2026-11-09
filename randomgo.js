@@ -2078,11 +2078,12 @@ listen("createPostForm", "submit", async function (event) {
             if (upload.error) throw upload.error;
         }
 
+        // posts.created_at is TIMESTAMPTZ in the live database.
+        // Let its DEFAULT now() populate the value instead of sending Date.now().
         const result = await db.from("posts").insert({
             user_id: currentUser.id,
             content,
-            media_path: storagePath,
-            created_at: Date.now()
+            media_path: storagePath
         });
         if (result.error) throw result.error;
 
