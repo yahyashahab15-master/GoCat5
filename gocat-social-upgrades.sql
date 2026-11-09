@@ -41,8 +41,10 @@ CREATE POLICY "GoCat recipients can mark messages read" ON public.messages FOR U
 CREATE INDEX IF NOT EXISTS messages_conversation_created_at_idx ON public.messages(sender_id,recipient_id,created_at);
 CREATE INDEX IF NOT EXISTS messages_unread_recipient_idx ON public.messages(recipient_id,is_read) WHERE is_read=false;
 CREATE OR REPLACE FUNCTION public.are_mutual_followers(user_a text,user_b text) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
- SELECT EXISTS(SELECT 1 FROM public.follows f WHERE f.follower_id::text=user_a AND f.following_id::text=user_b)
- AND EXISTS(SELECT 1 FROM public.follows f WHERE f.follower_id::text=user_b AND f.following_id::text=user_a); $$;
+ SELECT (user_a=(SELECT auth.uid())::text OR user_b=(SELECT auth.uid())::text)
+ AND EXISTS(SELECT 1 FROM public.follows f WHERE f.follower_id::text=user_a AND f.following_id::text=user_b)
+ AND EXISTS(SELECT 1 FROM public.follows f WHERE f.follower_id::text=user_b AND f.following_id::text=user_a); $;
+CREATE INDEX IF NOT EXISTS video_views_user_id_idx ON public.video_views(user_id);
 REVOKE ALL ON FUNCTION public.are_mutual_followers(text,text) FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.are_mutual_followers(text,text) TO authenticated;
 REVOKE ALL ON FUNCTION public.is_gocat_admin() FROM PUBLIC,anon;
