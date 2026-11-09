@@ -405,6 +405,16 @@
                         </label>
                     </div>
                     <div class="settings-card">
+                        <h2>Keyboard shortcuts</h2>
+                        <div class="shortcut-list">
+                            <span><kbd>/</kbd> or <kbd>Ctrl</kbd> + <kbd>K</kbd><small>Focus search</small></span>
+                            <span><kbd>Space</kbd> or <kbd>K</kbd><small>Play / pause video</small></span>
+                            <span><kbd>M</kbd><small>Mute / unmute Shorts</small></span>
+                            <span><kbd>J</kbd> / <kbd>L</kbd><small>Seek backward / forward 10 seconds</small></span>
+                            <span><kbd>↑</kbd> / <kbd>↓</kbd><small>Adjust volume</small></span>
+                        </div>
+                    </div>
+                    <div class="settings-card">
                         <h2>Data on this device</h2>
                         <p class="muted-text">Watch history and notifications are stored in this browser only.</p>
                         <div class="btn-row">
@@ -645,6 +655,7 @@
         </div>
         <div id="commentsList" class="comments-list"></div>
         <form id="commentForm" class="comment-compose">
+            <div id="commentReplyingTo" class="comment-replying"></div>
             <input id="commentInput" maxlength="500" placeholder="Add a comment" required>
             <button class="primary-btn" type="submit">Post</button>
         </form>
@@ -662,6 +673,10 @@
         <form id="editProfileForm" class="upload-main-fields">
             <label class="field">Username
                 <input id="editUsername" minlength="3" maxlength="20" required>
+            </label>
+            <label class="field">Profile picture
+                <input id="editAvatarFile" type="file" accept="image/jpeg,image/png,image/webp">
+                <small id="editAvatarName" class="muted-text">Choose a JPG, PNG or WebP image under 2 MB.</small>
             </label>
             <label class="field">Channel description
                 <textarea id="editBio" maxlength="250" rows="4"></textarea>
