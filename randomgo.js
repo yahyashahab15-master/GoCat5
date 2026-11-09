@@ -426,7 +426,7 @@ async function loadAdminStatus() {
 async function loadUsers() {
     const result = await db
         .from("users")
-        .select("id,username,email,bio,created_at")
+        .select("id,username,bio,created_at")
         .order("created_at", { ascending: false });
 
     if (result.error) throw result.error;
