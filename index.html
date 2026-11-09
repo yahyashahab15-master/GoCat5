@@ -286,29 +286,58 @@
 
             <!-- MESSAGES -->
             <section id="page-chats" class="page-section hidden">
-                <div class="page-title-row">
-                    <div><h1>Messages</h1></div>
+                <div class="page-title-row chat-page-heading">
+                    <div>
+                        <h1>Messages</h1>
+                        <p>Keep up with the creators you connect with.</p>
+                    </div>
+                    <span class="chat-private-note"><span></span> Private conversations</span>
                 </div>
                 <div class="chat-layout">
                     <aside class="chat-friends">
-                        <h3>Conversations</h3>
-                        <input id="chatSearch" class="chat-search" type="search" placeholder="Search conversations" aria-label="Search conversations">
-                        <div id="chatFriends"></div>
+                        <div class="chat-inbox-heading">
+                            <div><h3>Inbox</h3><p>Your conversations</p></div>
+                            <span id="chatThreadCount" class="chat-thread-count">0</span>
+                        </div>
+                        <label class="chat-search-wrap">
+                            <span aria-hidden="true">⌕</span>
+                            <input id="chatSearch" class="chat-search" type="search" placeholder="Search people" aria-label="Search conversations">
+                        </label>
+                        <p class="chat-list-caption">MUTUAL CONNECTIONS</p>
+                        <div id="chatFriends" class="chat-friends-list"></div>
                     </aside>
                     <div class="chat-panel">
                         <div class="chat-title">
-                            <strong id="chatTitle">Select a conversation</strong>
-                            <small id="chatPresence" class="chat-presence">Choose a mutual follower</small>
+                            <div class="chat-title-profile">
+                                <span id="chatHeaderAvatar" class="chat-header-avatar">✦</span>
+                                <div class="chat-title-copy">
+                                    <strong id="chatTitle">Select a conversation</strong>
+                                    <small id="chatPresence" class="chat-presence">Choose a mutual follower</small>
+                                </div>
+                            </div>
+                            <span class="chat-encryption-note">✦ &nbsp; Your private space</span>
                         </div>
-                        <div id="chatMessages" class="chat-messages"><p class="chat-empty">Choose a creator to start chatting.</p></div>
+                        <div id="chatMessages" class="chat-messages">
+                            <div class="chat-empty-state">
+                                <span class="chat-empty-icon">✦</span>
+                                <strong>Your messages, in one place</strong>
+                                <p>Choose a mutual connection to start a private conversation.</p>
+                            </div>
+                        </div>
                         <div id="chatTypingStatus" class="chat-typing" aria-live="polite"></div>
                         <div class="chat-emoji-row" aria-label="Quick reactions">
-                            <button type="button" data-chat-emoji="👍">👍</button><button type="button" data-chat-emoji="❤️">❤️</button>
-                            <button type="button" data-chat-emoji="😂">😂</button><button type="button" data-chat-emoji="🎉">🎉</button>
+                            <span class="chat-quick-label">Quick reactions</span>
+                            <button type="button" data-chat-emoji="👍" aria-label="Add thumbs up">👍</button>
+                            <button type="button" data-chat-emoji="❤️" aria-label="Add heart">❤️</button>
+                            <button type="button" data-chat-emoji="😂" aria-label="Add laugh">😂</button>
+                            <button type="button" data-chat-emoji="🎉" aria-label="Add celebration">🎉</button>
                         </div>
                         <form id="chatForm" class="chat-compose">
-                            <textarea id="messageInput" maxlength="2000" rows="1" placeholder="Write a message · Enter to send, Shift+Enter for a new line" disabled required></textarea>
-                            <button id="sendMessageBtn" class="primary-btn" type="submit" disabled>Send</button>
+                            <div class="chat-compose-field">
+                                <textarea id="messageInput" maxlength="2000" rows="1" placeholder="Write a message…" aria-label="Write a message. Press Enter to send." disabled required></textarea>
+                                <small>Enter to send <span>·</span> Shift + Enter for a new line</small>
+                            </div>
+                            <button id="sendMessageBtn" class="primary-btn" type="submit" disabled><span>Send</span><span aria-hidden="true">➤</span></button>
                         </form>
                     </div>
                 </div>
