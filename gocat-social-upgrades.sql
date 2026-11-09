@@ -59,4 +59,12 @@ DROP POLICY IF EXISTS "GoCat users update their own profile avatars" ON storage.
 CREATE POLICY "GoCat users update their own profile avatars" ON storage.objects FOR UPDATE TO authenticated USING(bucket_id='profile-avatars' AND (storage.foldername(name))[1]=(SELECT auth.uid())::text) WITH CHECK(bucket_id='profile-avatars' AND (storage.foldername(name))[1]=(SELECT auth.uid())::text);
 DROP POLICY IF EXISTS "GoCat users delete their own profile avatars" ON storage.objects;
 CREATE POLICY "GoCat users delete their own profile avatars" ON storage.objects FOR DELETE TO authenticated USING(bucket_id='profile-avatars' AND (storage.foldername(name))[1]=(SELECT auth.uid())::text);
-ALTER PUBLICATION supabase_realtime ADD TABLE public.comments,public.post_comments;
+DO $
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname='supabase_realtime' AND schemaname='public' AND tablename='comments') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.comments;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname='supabase_realtime' AND schemaname='public' AND tablename='post_comments') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.post_comments;
+  END IF;
+END $;
