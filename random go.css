@@ -150,7 +150,7 @@ i[data-icon], .nav-link i, .icon-btn i, .pill i { display: inline-flex; }
     background: linear-gradient(160deg, #1a2f66 0%, #0f0f10 70%);
     color: #f2f2f3;
 }
-.auth-showcase h2 { font-size: clamp(30px, 4vw, 48px); line-height: 1.08; letter-spacing: -1.4px; max-width: 520px; }
+.auth-showcase h1, .auth-showcase h2 { font-size: clamp(30px, 4vw, 48px); line-height: 1.08; letter-spacing: -1.4px; max-width: 520px; }
 .auth-showcase p { color: #a3a3ab; font-size: 16px; max-width: 440px; }
 .auth-brand { display: flex; align-items: center; gap: 10px; font-size: 22px; margin-bottom: 14px; }
 .auth-brand-mobile { display: none; }
