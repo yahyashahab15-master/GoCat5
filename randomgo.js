@@ -24,7 +24,7 @@ const db = window.supabase?.createClient
 /* ---------- 02 STATE ---------- */
 
 let currentUser = null, currentProfile = null, isGoCatAdmin = false;
-let currentProfileUserId = null, currentCommentVideoId = null, currentChatUserId = null;
+let currentProfileUserId = null, currentCommentVideoId = null, currentCommentPostId = null, currentChatUserId = null;
 let users = [], videos = [], posts = [], follows = [], notifications = [];
 let currentPage = "home", activeHomeTopic = "All", exploreMode = "videos", profileMode = "home";
 let homeVisibleCycles = 1, exploreVisible = 6, postsVisible = 5, reelsVisible = 5;
@@ -343,6 +343,28 @@ listen("registerForm", "submit", async function (event) {
     }
 });
 
+listen("googleLoginBtn", "click", async function () {
+    if (!db) return showAuthMessage("Supabase is not connected.");
+    this.disabled = true;
+    this.textContent = "Connecting to Google...";
+
+    try {
+        const { error } = await db.auth.signInWithOAuth({
+            provider: "google",
+            options: {
+                redirectTo: window.location.origin + window.location.pathname,
+                queryParams: { access_type: "offline", prompt: "consent" }
+            }
+        });
+        if (error) throw error;
+    } catch (error) {
+        console.error("Google sign-in error:", error);
+        showAuthMessage("Google sign-in failed: " + error.message);
+        this.disabled = false;
+        this.textContent = "Continue with Google";
+    }
+});
+
 
 /* ---------- 07 PROFILE, ADMIN, DATA LOADING ---------- */
 
@@ -367,7 +389,7 @@ async function ensureProfile() {
 
         const insert = await db
             .from("users")
-            .insert({ id: currentUser.id, username, email: currentUser.email })
+            .insert({ id: currentUser.id, username, email: currentUser.email, created_at: Date.now() })
             .select("*")
             .maybeSingle();
 
@@ -454,14 +476,21 @@ async function loadPosts() {
         return;
     }
 
-    const likesResult = await db.from("post_likes").select("post_id,user_id");
+    const [likesResult, commentsResult] = await Promise.all([
+        db.from("post_likes").select("post_id,user_id"),
+        db.from("post_comments").select("*").order("created_at", { ascending: true })
+    ]);
+
     if (likesResult.error) console.warn("Post likes:", likesResult.error.message);
+    if (commentsResult.error) console.warn("Post comments (run gocat-fixes.sql):", commentsResult.error.message);
 
     const allLikes = likesResult.data || [];
+    const allComments = commentsResult.data || [];
 
     posts = (result.data || []).map(post => ({
         ...post,
-        likes: allLikes.filter(l => String(l.post_id) === String(post.id)).map(l => String(l.user_id))
+        likes: allLikes.filter(l => String(l.post_id) === String(post.id)).map(l => String(l.user_id)),
+        comments: allComments.filter(c => String(c.post_id) === String(post.id))
     }));
 }
 
@@ -556,10 +585,25 @@ function videoCard(video) {
     `;
 }
 
+function linkifyPostText(value) {
+    const escaped = esc(value ?? "");
+    return escaped.replace(/https?:\/\/[^\s<]+/gi, match => {
+        let href = match;
+        let trailing = "";
+        while (/[),.!?;:]$/.test(href)) {
+            trailing = href.slice(-1) + trailing;
+            href = href.slice(0, -1);
+        }
+        if (!href) return match;
+        return `<a href="${href}" target="_blank" rel="noopener noreferrer">${href}</a>${trailing}`;
+    });
+}
+
 function postCard(post) {
     const username = getUsername(post.user_id);
     const liked = hasLiked(post);
     const imageURL = getPostImageURL(post.media_path);
+    const isOwnPost = String(post.user_id) === String(currentUser?.id);
 
     return `
         <article class="post-card">
@@ -569,14 +613,16 @@ function postCard(post) {
                     <strong>${esc(username)}</strong>
                     <small>${formatDate(post.created_at)}</small>
                 </div>
+                ${isOwnPost ? pill("edit", "Edit", `data-edit-post="${esc(post.id)}"`) : ""}
                 ${canManageContent(post.user_id) ? pill("trash", "Delete", `data-delete-post="${esc(post.id)}"`, "delete-btn") : ""}
             </div>
 
-            ${post.content ? `<p class="post-content">${esc(post.content)}</p>` : ""}
+            ${post.content ? `<p class="post-content">${linkifyPostText(post.content)}</p>` : ""}
             ${imageURL ? `<img class="post-image" src="${esc(imageURL)}" alt="Post image" loading="lazy">` : ""}
 
             <div class="post-actions">
                 ${pill("heart", post.likes?.length || 0, `data-like-post="${esc(post.id)}"`, liked ? "liked" : "")}
+                ${pill("message", post.comments?.length || 0, `data-comments-post="${esc(post.id)}"`)}
             </div>
         </article>
     `;
@@ -797,17 +843,37 @@ async function toggleVideoLike(videoId) {
 
 async function openComments(videoId) {
     currentCommentVideoId = videoId;
+    currentCommentPostId = null;
+    if ($("commentsModalTitle")) $("commentsModalTitle").textContent = "Video comments";
+    if ($("commentsList")) $("commentsList").innerHTML = "<p class='muted-text'>Loading comments...</p>";
+    showModal("commentsModal");
+    await renderComments();
+}
+
+async function openPostComments(postId) {
+    currentCommentPostId = postId;
+    currentCommentVideoId = null;
+    if ($("commentsModalTitle")) $("commentsModalTitle").textContent = "Post comments";
     if ($("commentsList")) $("commentsList").innerHTML = "<p class='muted-text'>Loading comments...</p>";
     showModal("commentsModal");
     await renderComments();
 }
 
 async function renderComments() {
-    if (!currentCommentVideoId || !$("commentsList")) return;
+    if (!$("commentsList")) return;
 
-    const result = await db.from("comments").select("*")
-        .eq("video_id", currentCommentVideoId)
-        .order("created_at", { ascending: true });
+    let result;
+    if (currentCommentPostId !== null) {
+        result = await db.from("post_comments").select("*")
+            .eq("post_id", String(currentCommentPostId))
+            .order("created_at", { ascending: true });
+    } else if (currentCommentVideoId !== null) {
+        result = await db.from("comments").select("*")
+            .eq("video_id", currentCommentVideoId)
+            .order("created_at", { ascending: true });
+    } else {
+        return;
+    }
 
     if (result.error) {
         $("commentsList").textContent = result.error.message;
@@ -815,7 +881,6 @@ async function renderComments() {
     }
 
     const comments = result.data || [];
-
     $("commentsList").innerHTML = comments.length
         ? comments.map(c => `
             <div class="comment-item">
@@ -830,25 +895,43 @@ listen("commentForm", "submit", async function (event) {
     event.preventDefault();
 
     const text = $("commentInput")?.value.trim() || "";
-    if (!text || !currentCommentVideoId) return;
+    if (!text || (currentCommentVideoId === null && currentCommentPostId === null)) return;
 
-    const result = await insertWithTextFallback(
-        "comments",
-        { video_id: currentCommentVideoId, user_id: currentUser.id, created_at: Date.now() },
-        text, "content", "text"
-    );
+    const button = this.querySelector('button[type="submit"]');
+    if (button) button.disabled = true;
 
-    if (result.error) {
-        showToast("Comment error: " + result.error.message);
-        return;
+    try {
+        let result;
+        if (currentCommentPostId !== null) {
+            result = await db.from("post_comments").insert({
+                post_id: String(currentCommentPostId),
+                user_id: currentUser.id,
+                content: text,
+                created_at: Date.now()
+            });
+        } else {
+            result = await insertWithTextFallback(
+                "comments",
+                { video_id: currentCommentVideoId, user_id: currentUser.id, created_at: Date.now() },
+                text, "content", "text"
+            );
+        }
+
+        if (result.error) throw result.error;
+
+        $("commentInput").value = "";
+        if (currentCommentPostId !== null) await loadPosts();
+        else await loadVideos();
+
+        await renderComments();
+        renderEverything();
+        showToast("Comment posted");
+    } catch (error) {
+        console.error("Comment error:", error);
+        showToast("Comment error: " + error.message);
+    } finally {
+        if (button) button.disabled = false;
     }
-
-    $("commentInput").value = "";
-
-    await loadVideos();
-    await renderComments();
-    renderEverything();
-    showToast("Comment posted");
 });
 
 
@@ -1849,11 +1932,12 @@ async function uploadVideoFile(file, path, progress) {
 /* ---------- 23 PUBLISH VIDEO OR SHORT ---------- */
 
 async function insertVideoRecord(record) {
-    let result = await db.from("videos").insert({ id: crypto.randomUUID(), ...record });
+    const data = { created_at: Date.now(), ...record };
+    let result = await db.from("videos").insert({ id: crypto.randomUUID(), ...data });
 
     // If "id" is an auto-number column the UUID is rejected, so retry without it.
     if (result.error && /uuid|integer|bigint|identity|invalid input/i.test(result.error.message || "")) {
-        result = await db.from("videos").insert(record);
+        result = await db.from("videos").insert(data);
     }
 
     return result;
@@ -1982,7 +2066,10 @@ listen("createPostForm", "submit", async function (event) {
         }
 
         const result = await db.from("posts").insert({
-            user_id: currentUser.id, content, media_path: storagePath
+            user_id: currentUser.id,
+            content,
+            media_path: storagePath,
+            created_at: Date.now()
         });
         if (result.error) throw result.error;
 
@@ -2030,6 +2117,39 @@ async function togglePostLike(postId) {
 
     } catch (error) {
         showToast("Like failed: " + error.message);
+    }
+}
+
+async function editPost(postId) {
+    const post = posts.find(p => String(p.id) === String(postId));
+    if (!post || String(post.user_id) !== String(currentUser.id)) return;
+
+    const editedContent = prompt("Edit your post:", post.content || "");
+    if (editedContent === null) return;
+
+    const content = editedContent.trim();
+    if (!content && !post.media_path) {
+        showToast("A post needs text or an image.");
+        return;
+    }
+
+    try {
+        const result = await db.from("posts")
+            .update({ content })
+            .eq("id", postId)
+            .eq("user_id", currentUser.id)
+            .select("id")
+            .maybeSingle();
+
+        if (result.error) throw result.error;
+        if (!result.data) throw new Error("No post was updated. Check your Supabase UPDATE policy.");
+
+        await loadPosts();
+        renderEverything();
+        showToast("Post updated");
+    } catch (error) {
+        console.error("Post edit error:", error);
+        showToast("Edit failed: " + error.message);
     }
 }
 
@@ -2627,6 +2747,8 @@ document.addEventListener("click", function (event) {
     if (d.profileUser) openOtherProfile(d.profileUser);
     if (d.chatUser) openChat(d.chatUser);
     if (d.likePost) togglePostLike(d.likePost);
+    if (d.commentsPost) openPostComments(d.commentsPost);
+    if (d.editPost) editPost(d.editPost);
     if (d.deletePost) deletePost(d.deletePost);
     if (d.openReelId) openSpecificReel(d.openReelId);
     if (button.hasAttribute("data-create-short")) openUpload("short");
@@ -2659,7 +2781,7 @@ async function signOutGoCat() {
         const result = await db.auth.signOut();
         if (result.error) throw result.error;
 
-        currentUser = currentProfile = currentProfileUserId = currentChatUserId = currentCommentVideoId = null;
+        currentUser = currentProfile = currentProfileUserId = currentChatUserId = currentCommentVideoId = currentCommentPostId = null;
         isGoCatAdmin = false;
         users = []; videos = []; posts = []; follows = []; notifications = [];
 
