@@ -923,11 +923,13 @@ listen("commentForm", "submit", async function (event) {
                 created_at: Date.now()
             });
         } else {
-            result = await insertWithTextFallback(
-                "comments",
-                { video_id: currentCommentVideoId, user_id: currentUser.id, created_at: Date.now() },
-                text, "content", "text"
-            );
+            // The live public.comments table stores its message in the "text" column.
+            result = await db.from("comments").insert({
+                video_id: currentCommentVideoId,
+                user_id: currentUser.id,
+                text,
+                created_at: Date.now()
+            });
         }
 
         if (result.error) throw result.error;
