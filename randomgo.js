@@ -359,7 +359,20 @@ listen("googleLoginBtn", "click", async function () {
         if (error) throw error;
     } catch (error) {
         console.error("Google sign-in error:", error);
-        showAuthMessage("Google sign-in failed: " + error.message);
+
+        const message = error?.message || "Unknown authentication error.";
+        const lower = message.toLowerCase();
+
+        if (lower.includes("provider") && (lower.includes("not enabled") || lower.includes("unsupported"))) {
+            showAuthMessage("Google sign-in is not enabled yet. Enable Google in Supabase → Authentication → Providers, then add your Google Client ID and Secret.");
+        } else if (lower.includes("redirect") && (lower.includes("url") || lower.includes("not allowed"))) {
+            showAuthMessage("Redirect URL not allowed. Add https://yahyashahab15-master.github.io/GoCat5/ under Supabase → Authentication → URL Configuration → Redirect URLs.");
+        } else if (lower.includes("invalid client") || lower.includes("unauthorized_client") || lower.includes("client_id")) {
+            showAuthMessage("Google OAuth credentials were rejected. Check the Client ID and Client Secret in Supabase and the callback URL in Google Cloud.");
+        } else {
+            showAuthMessage("Google sign-in failed: " + message);
+        }
+
         this.disabled = false;
         this.textContent = "Continue with Google";
     }
