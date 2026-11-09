@@ -26,6 +26,15 @@ $$;
 -- Existing public-profile SELECT rules are left unchanged.
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Signed-in users can read GoCat profiles" ON public.users;
+CREATE POLICY "Signed-in users can read GoCat profiles"
+    ON public.users
+    FOR SELECT
+    TO authenticated
+    USING (true);
+
+GRANT SELECT ON public.users TO authenticated;
+
 DROP POLICY IF EXISTS "Users can create their own GoCat profile" ON public.users;
 CREATE POLICY "Users can create their own GoCat profile"
     ON public.users
