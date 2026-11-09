@@ -25,7 +25,8 @@ const db = window.supabase?.createClient
 
 let currentUser = null, currentProfile = null, isGoCatAdmin = false;
 let currentProfileUserId = null, currentCommentVideoId = null, currentCommentPostId = null, currentCommentParentId = null, currentChatUserId = null;
-let chatRealtimeChannel = null, commentRealtimeChannel = null;
+let chatRealtimeChannel = null, commentRealtimeChannel = null, feedRealtimeChannel = null;
+let liveRefreshTimer = null, chatTypingTimer = null, feedRealtimeReady = false;
 let users = [], videos = [], posts = [], follows = [], notifications = [];
 let currentPage = "home", activeHomeTopic = "All", exploreMode = "videos", profileMode = "home";
 let homeVisibleCycles = 1, exploreVisible = 6, postsVisible = 5, reelsVisible = 5;
@@ -144,7 +145,7 @@ function isFollowing(id) {
 }
 
 const isShort = v => v?.is_short === true || v?.is_short === "true";
-const hasLiked = item => (item.likes || []).includes(String(currentUser.id));
+const hasLiked = item => !!currentUser && (item.likes || []).includes(String(currentUser.id));
 
 function formatDate(value) {
     if (!value) return "Just now";
@@ -253,33 +254,54 @@ applySettings();
 
 /* ---------- 06 AUTHENTICATION ---------- */
 
-function openLoginScreen() {
+function openLoginScreen(message = "") {
+    $("app")?.classList.remove("hidden");
     $("authScreen")?.classList.remove("hidden");
-    $("app")?.classList.add("hidden");
     $("loginForm")?.classList.remove("hidden");
     $("registerForm")?.classList.add("hidden");
     if ($("authTitle")) $("authTitle").textContent = "Welcome back";
-    if ($("authSubtitle")) $("authSubtitle").textContent = "Sign in to continue to your workspace.";
-    showAuthMessage("");
+    if ($("authSubtitle")) $("authSubtitle").textContent = "Sign in to like, follow, comment, post and chat.";
+    showAuthMessage(message);
+    setTimeout(() => $("loginEmail")?.focus(), 60);
 }
 
 function openRegisterScreen() {
+    $("app")?.classList.remove("hidden");
     $("authScreen")?.classList.remove("hidden");
-    $("app")?.classList.add("hidden");
     $("loginForm")?.classList.add("hidden");
     $("registerForm")?.classList.remove("hidden");
     if ($("authTitle")) $("authTitle").textContent = "Create your account";
     if ($("authSubtitle")) $("authSubtitle").textContent = "Join the GoCat creator community.";
     showAuthMessage("");
+    setTimeout(() => $("registerUsername")?.focus(), 60);
+}
+
+function closeAuthModal() {
+    $("authScreen")?.classList.add("hidden");
+    showAuthMessage("");
+}
+
+function requireAuth(action = "continue") {
+    if (currentUser) return true;
+    openLoginScreen("Sign in to " + action + ".");
+    return false;
 }
 
 function openApp() {
     $("authScreen")?.classList.add("hidden");
     $("app")?.classList.remove("hidden");
+    updateUserInterface();
 }
 
 listen("showRegister", "click", openRegisterScreen);
 listen("showLogin", "click", openLoginScreen);
+listen("authCloseBtn", "click", closeAuthModal);
+listen("continueGuestBtn", "click", closeAuthModal);
+document.querySelectorAll("[data-close-auth]").forEach(el => el.addEventListener("click", closeAuthModal));
+listen("sidebarSignInBtn", "click", () => openLoginScreen());
+document.addEventListener("click", event => {
+    if (event.target.closest("[data-login-trigger]")) openLoginScreen();
+});
 
 listen("loginForm", "submit", async function (event) {
     event.preventDefault();
@@ -351,7 +373,8 @@ listen("registerForm", "submit", async function (event) {
 /* ---------- 07 PROFILE, ADMIN, DATA LOADING ---------- */
 
 async function ensureProfile() {
-    const existing = await db.from("users").select("*").eq("id", currentUser.id).maybeSingle();
+    const publicColumns = "id,username,bio,avatar_path,created_at";
+    const existing = await db.from("users").select(publicColumns).eq("id", currentUser.id).maybeSingle();
     if (existing.error) throw existing.error;
 
     if (existing.data) {
@@ -372,18 +395,18 @@ async function ensureProfile() {
         const insert = await db
             .from("users")
             .insert({ id: currentUser.id, username, email: currentUser.email, created_at: Date.now() })
-            .select("*")
+            .select("id,username,bio,avatar_path,created_at")
             .maybeSingle();
 
         if (!insert.error) {
-            currentProfile = insert.data || { id: currentUser.id, username, email: currentUser.email };
+            currentProfile = insert.data || { id: currentUser.id, username, created_at: Date.now() };
             return;
         }
 
         if (!/duplicate|unique/i.test(insert.error.message || "")) throw insert.error;
 
         // Someone (or a database trigger) may have just created this profile.
-        const again = await db.from("users").select("*").eq("id", currentUser.id).maybeSingle();
+        const again = await db.from("users").select(publicColumns).eq("id", currentUser.id).maybeSingle();
         if (again.data) { currentProfile = again.data; return; }
     }
 
@@ -480,43 +503,115 @@ async function loadAllData() {
     await Promise.all([loadUsers(), loadVideos(), loadFollows(), loadPosts()]);
 }
 
+function renderLivePage() {
+    renderSuggestedCreators();
+    if (currentPage === "home") renderHomeFeed();
+    if (currentPage === "reels") renderReels();
+    if (currentPage === "explore") renderExplore();
+    if (currentPage === "following" && currentUser) renderFollowing();
+    if (currentPage === "posts") renderPosts();
+    if (currentPage === "profile") renderProfile();
+    if (currentPage === "chats" && currentUser) {
+        renderChatFriends();
+        if (currentChatUserId) loadMessages();
+    }
+}
+
+function queueLiveRefresh(delay = 450) {
+    clearTimeout(liveRefreshTimer);
+    liveRefreshTimer = setTimeout(async () => {
+        if (!db || document.hidden) return;
+        try { await loadAllData(); renderLivePage(); }
+        catch (error) { console.warn("Live feed refresh:", error.message || error); }
+    }, delay);
+}
+
+function subscribeToLiveFeed() {
+    if (!db) return;
+    if (feedRealtimeChannel) db.removeChannel(feedRealtimeChannel);
+    const tables = ["videos", "likes", "comments", "posts", "post_likes", "post_comments", "follows", "users"];
+    let channel = db.channel("gocat-live-feed");
+    tables.forEach(table => {
+        channel = channel.on("postgres_changes", { event: "*", schema: "public", table }, () => queueLiveRefresh());
+    });
+    feedRealtimeChannel = channel.subscribe(status => { feedRealtimeReady = status === "SUBSCRIBED"; });
+}
+
+setInterval(() => {
+    if (!feedRealtimeReady && !document.hidden && db) queueLiveRefresh(0);
+}, 60000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) queueLiveRefresh(80); });
+
 
 /* ---------- 08 START APP ---------- */
 
 async function startGoCat() {
     try {
         if (!currentUser) throw new Error("No signed-in user was found.");
-
         await ensureProfile();
         await loadAdminStatus();
         await loadAllData();
-
         currentProfileUserId = currentUser.id;
         notifications = safeJSON("gocat_notifications_" + currentUser.id, []);
-
         updateUserInterface();
         openApp();
+        subscribeToLiveFeed();
         renderEverything();
         openPage("home");
         checkSharedVideoLink();
-
     } catch (error) {
         console.error("GoCat startup:", error);
-        openLoginScreen();
-        showAuthMessage("Could not load GoCat: " + (error.message || error));
+        openApp();
+        openLoginScreen("Could not load your account: " + (error.message || error));
+    }
+}
+
+async function startGuestGoCat() {
+    currentUser = null;
+    currentProfile = null;
+    currentProfileUserId = null;
+    currentChatUserId = null;
+    isGoCatAdmin = false;
+    notifications = [];
+    try {
+        await loadAllData();
+        updateUserInterface();
+        openApp();
+        subscribeToLiveFeed();
+        renderEverything();
+        openPage("home");
+        checkSharedVideoLink();
+    } catch (error) {
+        console.error("Guest browsing startup:", error);
+        updateUserInterface();
+        openApp();
+        showToast("Some GoCat content could not load: " + (error.message || error));
     }
 }
 
 function updateUserInterface() {
-    const username = currentProfile?.username || "Creator";
-
+    const signedIn = !!currentUser;
+    const username = signedIn ? (currentProfile?.username || "Creator") : "Guest";
     if ($("welcomeName")) $("welcomeName").textContent = username;
-    paintAvatar("topProfileBtn", username, currentProfile?.avatar_path || "");
-    paintAvatar("sidebarAvatar", username, currentProfile?.avatar_path || "");
     if ($("sidebarUsername")) $("sidebarUsername").textContent = username;
-    paintAvatar("settingsAvatar", username, currentProfile?.avatar_path || "");
     if ($("settingsUsername")) $("settingsUsername").textContent = username;
-    if ($("settingsEmail")) $("settingsEmail").textContent = currentUser?.email || "";
+    if ($("settingsEmail")) $("settingsEmail").textContent = signedIn ? (currentUser.email || "") : "Browsing without an account";
+    paintAvatar("sidebarAvatar", username, currentProfile?.avatar_path || "");
+    paintAvatar("settingsAvatar", username, currentProfile?.avatar_path || "");
+    if ($("topProfileBtn")) {
+        if (signedIn) {
+            paintAvatar("topProfileBtn", username, currentProfile?.avatar_path || "");
+            $("topProfileBtn").classList.remove("guest-signin-btn");
+            $("topProfileBtn").setAttribute("aria-label", "Open your channel");
+        } else {
+            $("topProfileBtn").textContent = "Sign in";
+            $("topProfileBtn").classList.add("guest-signin-btn");
+            $("topProfileBtn").setAttribute("aria-label", "Sign in to GoCat");
+        }
+    }
+    $("logoutBtn")?.classList.toggle("hidden", !signedIn);
+    $("sidebarSignInBtn")?.classList.toggle("hidden", signedIn);
+    $("settingsLogout")?.classList.toggle("hidden", !signedIn);
 }
 
 
@@ -764,7 +859,7 @@ function renderSuggestedCreators() {
 }
 
 async function toggleFollow(userId) {
-    if (!currentUser || isOwnContent(userId)) return;
+    if (!requireAuth("follow creators") || isOwnContent(userId)) return;
 
     const existing = follows.find(f =>
         String(f.follower_id) === String(currentUser.id) && String(f.following_id) === String(userId));
@@ -800,6 +895,7 @@ async function toggleFollow(userId) {
 /* ---------- 12 LIKES AND COMMENTS ---------- */
 
 async function toggleVideoLike(videoId) {
+    if (!requireAuth("like videos")) return;
     const video = videos.find(v => String(v.id) === String(videoId));
     if (!video) return;
 
@@ -830,6 +926,8 @@ async function openComments(videoId) {
     subscribeToComments();
     if ($("commentsModalTitle")) $("commentsModalTitle").textContent = "Video comments";
     if ($("commentsList")) $("commentsList").innerHTML = "<p class='muted-text'>Loading comments...</p>";
+    $("commentForm")?.classList.toggle("hidden", !currentUser);
+    $("commentGuestPrompt")?.classList.toggle("hidden", !!currentUser);
     showModal("commentsModal");
     await renderComments();
 }
@@ -841,6 +939,8 @@ async function openPostComments(postId) {
     subscribeToComments();
     if ($("commentsModalTitle")) $("commentsModalTitle").textContent = "Post comments";
     if ($("commentsList")) $("commentsList").innerHTML = "<p class='muted-text'>Loading comments...</p>";
+    $("commentForm")?.classList.toggle("hidden", !currentUser);
+    $("commentGuestPrompt")?.classList.toggle("hidden", !!currentUser);
     showModal("commentsModal");
     await renderComments();
 }
@@ -862,7 +962,7 @@ async function renderComments() {
         children.get(key).push(item);
     });
     const renderBranch = (parent, depth = 0) => (children.get(parent) || []).map(item => {
-        const own = String(item.user_id) === String(currentUser.id);
+        const own = !!currentUser && String(item.user_id) === String(currentUser.id);
         const body = item.content ?? item.text ?? "";
         return `<article class="comment-item ${depth ? "comment-reply" : ""}" data-comment-id="${esc(item.id)}">
             <div class="comment-avatar">${getUser(item.user_id)?.avatar_path ? `<img src="${esc(storageURL("profile-avatars", getUser(item.user_id).avatar_path))}" alt="" loading="lazy">` : esc(initial(getUsername(item.user_id)))}</div>
@@ -879,6 +979,7 @@ async function renderComments() {
 
 listen("commentForm", "submit", async function (event) {
     event.preventDefault();
+    if (!requireAuth("comment or reply")) return;
 
     const text = $("commentInput")?.value.trim() || "";
     if (!text || (currentCommentVideoId === null && currentCommentPostId === null)) return;
@@ -1082,9 +1183,24 @@ function renderReels() {
     observeReels();
 }
 
+function applyReelAudioPreference(video) {
+    if (!(video instanceof HTMLVideoElement)) return;
+    video.defaultMuted = settings.muted;
+    video.muted = settings.muted;
+}
+
+function updateReelSoundButtons() {
+    document.querySelectorAll("[data-reel-sound]").forEach(button => {
+        button.innerHTML = icon(settings.muted ? "mute" : "volume");
+        button.setAttribute("aria-label", settings.muted ? "Turn Shorts sound on" : "Mute Shorts");
+        button.title = settings.muted ? "Turn sound on for all Shorts" : "Mute all Shorts";
+    });
+}
+
 function observeReels() {
     if (reelObserver) reelObserver.disconnect();
-    document.querySelectorAll(".reel-video").forEach(video => { video.muted = settings.muted; });
+    document.querySelectorAll(".reel-video").forEach(applyReelAudioPreference);
+    updateReelSoundButtons();
 
     const feed = $("reelsFeed");
     if (!feed || !("IntersectionObserver" in window)) return;
@@ -1092,6 +1208,7 @@ function observeReels() {
     reelObserver = new IntersectionObserver(entries => {
         entries.forEach(entry => {
             const video = entry.target;
+            applyReelAudioPreference(video);
             if (entry.isIntersecting && settings.autoplay) video.play().catch(() => {});
             else video.pause();
         });
@@ -1123,11 +1240,8 @@ listen("reelsFeed", "click", function (event) {
 
     settings.muted = !settings.muted;
     saveSettings();
-    document.querySelectorAll(".reel-video").forEach(reel => { reel.muted = settings.muted; });
-    document.querySelectorAll("[data-reel-sound]").forEach(button => {
-        button.innerHTML = icon(settings.muted ? "mute" : "volume");
-        button.setAttribute("aria-label", settings.muted ? "Unmute all Shorts" : "Mute all Shorts");
-    });
+    document.querySelectorAll(".reel-video").forEach(applyReelAudioPreference);
+    updateReelSoundButtons();
     if ($("settingMuted")) $("settingMuted").checked = settings.muted;
     showToast(settings.muted ? "Shorts muted" : "Shorts sound on");
 });
@@ -1217,6 +1331,11 @@ listen("exploreLoadMore", "click", () => { exploreVisible += 6; renderExplore();
 /* ---------- 16 FOLLOWING PAGE ---------- */
 
 function renderFollowing() {
+    if (!currentUser) {
+        if ($("followingFeed")) $("followingFeed").innerHTML = "";
+        $("followingEmpty")?.classList.remove("hidden");
+        return;
+    }
     const ids = follows
         .filter(f => String(f.follower_id) === String(currentUser.id))
         .map(f => String(f.following_id));
@@ -1259,6 +1378,7 @@ function setUploadMode(mode) {
 }
 
 function openUpload(mode = "video") {
+    if (!requireAuth("upload videos and Shorts")) return;
     resetUploadForm();
     setUploadMode(mode);
     showModal("uploadModal");
@@ -2071,6 +2191,7 @@ listen("postImage", "change", function () {
 
 listen("createPostForm", "submit", async function (event) {
     event.preventDefault();
+    if (!requireAuth("publish posts")) return;
 
     const content = $("postContent")?.value.trim() || "";
     const imageFile = $("postImage")?.files?.[0];
@@ -2127,6 +2248,7 @@ listen("createPostForm", "submit", async function (event) {
 });
 
 async function togglePostLike(postId) {
+    if (!requireAuth("like posts")) return;
     const post = posts.find(p => String(p.id) === String(postId));
     if (!post) return;
 
@@ -2208,6 +2330,8 @@ async function deletePost(postId) {
 function renderPosts() {
     const container = $("postsFeed");
     if (!container) return;
+    $("guestPostPrompt")?.classList.toggle("hidden", !!currentUser);
+    $("createPostForm")?.classList.toggle("hidden", !currentUser);
 
     container.innerHTML = posts.length
         ? posts.slice(0, postsVisible).map(postCard).join("")
@@ -2228,7 +2352,8 @@ function openOtherProfile(userId) {
 }
 
 function renderProfile() {
-    const profileId = currentProfileUserId || currentUser.id;
+    const profileId = currentProfileUserId || currentUser?.id;
+    if (!profileId) return;
     const profile = getUser(profileId) ||
         (String(currentProfile?.id) === String(profileId) ? currentProfile : null);
 
@@ -2237,7 +2362,7 @@ function renderProfile() {
     const own = isOwnContent(profileId);
 
     if ($("profileUsername")) $("profileUsername").textContent = profile.username || "Creator";
-    if ($("profileEmail")) $("profileEmail").textContent = own ? currentUser.email : "";
+    if ($("profileEmail")) $("profileEmail").textContent = own ? (currentUser?.email || "") : "";
     if ($("profileBio")) $("profileBio").textContent = profile.bio || "Welcome to GoCat.";
     paintAvatar("profileAvatar", profile.username, profile.avatar_path || "");
 
@@ -2322,7 +2447,7 @@ listen("editProfileForm", "submit", async function (event) {
             if (upload.error) throw upload.error;
         }
         const result = await db.from("users").update({ username, bio, avatar_path: avatarPath })
-            .eq("id", currentUser.id).select("*").single();
+            .eq("id", currentUser.id).select("id,username,bio,avatar_path,created_at").single();
         if (result.error) throw result.error;
 
         currentProfile = result.data;
@@ -2343,6 +2468,7 @@ listen("editProfileForm", "submit", async function (event) {
 /* ---------- 26 CREATOR STUDIO ---------- */
 
 function renderStudio() {
+    if (!currentUser) return;
     const mine = isGoCatAdmin ? videos : videos.filter(v => isOwnContent(v.owner_id));
 
     const set = (id, value) => { if ($(id)) $(id).textContent = value; };
@@ -2380,7 +2506,7 @@ function renderStudio() {
 
 /* ---------- 27 WATCH HISTORY AND VIEWS ---------- */
 
-const getHistoryKey = () => "gocat_watch_history_" + currentUser.id;
+const getHistoryKey = () => "gocat_watch_history_" + (currentUser ? currentUser.id : "guest");
 
 function getWatchHistory() {
     const saved = safeJSON(getHistoryKey(), []);
@@ -2474,16 +2600,17 @@ document.addEventListener("play", function (event) {
     if (!(element instanceof HTMLVideoElement)) return;
 
     const videoId = element.dataset.playVideo;
-    if (!videoId || !currentUser) return;
+    if (!videoId) return;
 
     addToWatchHistory(videoId);
-    registerVideoView(videoId);
+    if (currentUser) registerVideoView(videoId);
 }, true);
 
 
 /* ---------- 28 MESSAGES ---------- */
 
 function getMutualFriends() {
+    if (!currentUser) return [];
     const me = String(currentUser.id);
     const following = follows.filter(f => String(f.follower_id) === me).map(f => String(f.following_id));
     const followers = follows.filter(f => String(f.following_id) === me).map(f => String(f.follower_id));
@@ -2494,8 +2621,12 @@ function getMutualFriends() {
 function renderChatFriends() {
     const container = $("chatFriends");
     if (!container) return;
-
-    const friends = getMutualFriends();
+    if (!currentUser) {
+        container.innerHTML = "<p class='muted-text'>Sign in to see your conversations.</p>";
+        return;
+    }
+    const search = $("chatSearch")?.value.trim().toLowerCase() || "";
+    const friends = getMutualFriends().filter(user => String(user.username || "").toLowerCase().includes(search));
 
     container.innerHTML = friends.length
         ? friends.map(user => `
@@ -2508,55 +2639,75 @@ function renderChatFriends() {
 }
 
 async function openChat(userId) {
+    if (!requireAuth("chat")) return;
     if (!getMutualFriends().some(u => String(u.id) === String(userId))) {
         return showToast("Chat is available to mutual followers.");
     }
 
     currentChatUserId = userId;
     if (chatRealtimeChannel) db.removeChannel(chatRealtimeChannel);
-    chatRealtimeChannel = db.channel("gocat-chat-" + [String(currentUser.id), String(userId)].sort().join("-"))
+    const channelName = "gocat-chat-" + [String(currentUser.id), String(userId)].sort().join("-");
+    chatRealtimeChannel = db.channel(channelName, { config: { presence: { key: String(currentUser.id) } } })
         .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, payload => {
             const row = payload.new || payload.old || {};
             if ([String(row.sender_id), String(row.recipient_id)].includes(String(currentUser.id)) &&
                 [String(row.sender_id), String(row.recipient_id)].includes(String(currentChatUserId))) loadMessages();
-        }).subscribe();
+        })
+        .on("presence", { event: "sync" }, () => {
+            const state = chatRealtimeChannel.presenceState();
+            const online = !!state[String(userId)]?.length;
+            if ($("chatPresence")) $("chatPresence").textContent = online ? "Online" : "Offline";
+        })
+        .on("broadcast", { event: "typing" }, event => {
+            const info = event.payload || {};
+            if (String(info.userId) === String(currentUser.id)) return;
+            if ($("chatTypingStatus")) $("chatTypingStatus").textContent = info.typing ? (getUsername(userId) + " is typing…") : "";
+            clearTimeout(chatTypingTimer);
+            if (info.typing) chatTypingTimer = setTimeout(() => {
+                if ($("chatTypingStatus")) $("chatTypingStatus").textContent = "";
+            }, 2200);
+        })
+        .subscribe(async status => {
+            if (status === "SUBSCRIBED") {
+                await chatRealtimeChannel.track({
+                    userId: String(currentUser.id),
+                    username: currentProfile?.username || "Creator",
+                    online_at: new Date().toISOString()
+                });
+            }
+        });
 
     if ($("chatTitle")) $("chatTitle").textContent = getUsername(userId);
+    if ($("chatPresence")) $("chatPresence").textContent = "Connecting…";
+    if ($("chatTypingStatus")) $("chatTypingStatus").textContent = "";
     if ($("messageInput")) $("messageInput").disabled = false;
     if ($("sendMessageBtn")) $("sendMessageBtn").disabled = false;
-
     renderChatFriends();
     await loadMessages();
 }
 
 async function loadMessages() {
-    if (!currentChatUserId) return;
-
+    if (!currentUser || !currentChatUserId) return;
+    const container = $("chatMessages");
+    if (!container) return;
+    const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 90;
     const filter =
         "and(sender_id.eq." + currentUser.id + ",recipient_id.eq." + currentChatUserId + ")," +
         "and(sender_id.eq." + currentChatUserId + ",recipient_id.eq." + currentUser.id + ")";
-
-    const result = await db.from("messages").select("*").or(filter).order("created_at", { ascending: true });
-    const container = $("chatMessages");
-    if (!container) return;
-
+    const result = await db.from("messages").select("*").or(filter).order("created_at", { ascending: true }).limit(200);
     if (result.error) {
         console.error(result.error);
         container.innerHTML = "<p class='chat-empty'>Could not load messages. Check your messages table and policies.</p>";
         return;
     }
-
     const messages = result.data || [];
-    container.innerHTML = messages.length
-        ? messages.map(m => {
-            const mine = String(m.sender_id) === String(currentUser.id);
-            return `<div class="chat-bubble ${mine ? "mine" : ""}">
-                ${esc(m.content ?? m.text ?? "")}
-                <time>${formatDate(m.created_at)} ${mine ? (m.is_read ? "· Seen" : "· Sent") : ""}</time>
-            </div>`;
-        }).join("")
-        : "<p class='chat-empty'>No messages yet. Say hello.</p>";
-    container.scrollTop = container.scrollHeight;
+    container.innerHTML = messages.length ? messages.map(m => {
+        const mine = String(m.sender_id) === String(currentUser.id);
+        const body = esc(m.content ?? m.text ?? "").replace(/\n/g, "<br>");
+        return '<div class="chat-bubble ' + (mine ? "mine" : "") + '">' +
+            body + '<time>' + formatDate(m.created_at) + " " + (mine ? (m.is_read ? "· Seen" : "· Sent") : "") + '</time></div>';
+    }).join("") : "<p class='chat-empty'>No messages yet. Say hello.</p>";
+    if (nearBottom) container.scrollTop = container.scrollHeight;
 
     const unread = messages.filter(m => String(m.recipient_id) === String(currentUser.id) && !m.is_read).map(m => m.id);
     if (unread.length) {
@@ -2566,8 +2717,31 @@ async function loadMessages() {
     }
 }
 
+listen("chatSearch", "input", renderChatFriends);
+listen("messageInput", "input", function () {
+    if (!chatRealtimeChannel || !currentChatUserId || !currentUser) return;
+    chatRealtimeChannel.send({ type: "broadcast", event: "typing", payload: { userId: String(currentUser.id), typing: !!this.value.trim() } });
+});
+listen("messageInput", "keydown", function (event) {
+    if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        $("chatForm")?.requestSubmit();
+    }
+});
+document.querySelectorAll("[data-chat-emoji]").forEach(button => {
+    button.addEventListener("click", () => {
+        if (!requireAuth("chat")) return;
+        const input = $("messageInput");
+        if (!input) return;
+        input.value += button.dataset.chatEmoji || "";
+        input.focus();
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+});
+
 listen("chatForm", "submit", async function (event) {
     event.preventDefault();
+    if (!requireAuth("send messages")) return;
 
     const text = $("messageInput")?.value.trim() || "";
     if (!text || !currentChatUserId) return;
@@ -2585,6 +2759,10 @@ listen("chatForm", "submit", async function (event) {
 
         $("messageInput").value = "";
         await loadMessages();
+        if (chatRealtimeChannel) chatRealtimeChannel.send({
+            type: "broadcast", event: "typing",
+            payload: { userId: String(currentUser.id), typing: false }
+        });
 
     } catch (error) {
         showToast("Message failed: " + error.message);
@@ -2653,11 +2831,15 @@ function closeSidebar() {
 }
 
 function openPage(page) {
-    if (!allowedPages.includes(page) || !currentUser) return;
+    if (!allowedPages.includes(page)) return;
+    const privatePages = ["following", "chats", "notifications", "studio"];
+    if (privatePages.includes(page) && !requireAuth("open " + page)) return;
+    if (page === "profile" && !currentProfileUserId) {
+        if (!currentUser) return requireAuth("open your channel");
+        currentProfileUserId = currentUser.id;
+    }
 
     currentPage = page;
-
-    if (page === "profile" && !currentProfileUserId) currentProfileUserId = currentUser.id;
 
     document.querySelectorAll(".page-section").forEach(s => s.classList.toggle("hidden", s.id !== "page-" + page));
     document.querySelectorAll("[data-page]").forEach(b => {
@@ -2682,20 +2864,17 @@ function renderCurrentPage() {
 
 document.addEventListener("click", function (event) {
     const nav = event.target.closest("[data-page]");
-    if (!nav || !currentUser) return;
-
+    if (!nav) return;
     event.preventDefault();
-
-    if (nav.dataset.page === "profile") {
+    if (nav.dataset.page === "profile" && currentUser && !currentProfileUserId) {
         currentProfileUserId = currentUser.id;
         profileMode = "home";
     }
-
     openPage(nav.dataset.page);
 });
 
 listen("topProfileBtn", "click", function () {
-    if (!currentUser) return;
+    if (!currentUser) return openLoginScreen();
     currentProfileUserId = currentUser.id;
     profileMode = "home";
     openPage("profile");
@@ -2797,46 +2976,40 @@ document.querySelectorAll("[data-close]").forEach(button => {
 document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
     ["commentsModal", "editProfileModal", "uploadModal"].forEach(hideModal);
+    closeAuthModal();
     closeSidebar();
 });
 
 document.addEventListener("click", function (event) {
     const button = event.target.closest("button");
-    if (!button || !currentUser) return;
-
+    if (!button) return;
     const d = button.dataset;
 
-    if (d.followUser) toggleFollow(d.followUser);
-    if (d.likeVideo) toggleVideoLike(d.likeVideo);
-    if (d.commentsVideo) openComments(d.commentsVideo);
-    if (d.shareVideo) shareVideo(d.shareVideo);
-    if (d.deleteVideo) deleteVideo(d.deleteVideo);
-    if (d.profileUser) openOtherProfile(d.profileUser);
-    if (d.chatUser) openChat(d.chatUser);
-    if (d.likePost) togglePostLike(d.likePost);
-    if (d.commentsPost) openPostComments(d.commentsPost);
-    if (d.replyComment) beginCommentReply(d.replyComment);
-    if (d.deleteComment) deleteComment(d.deleteComment);
-    if (d.editPost) editPost(d.editPost);
-    if (d.deletePost) deletePost(d.deletePost);
-    if (d.openReelId) openSpecificReel(d.openReelId);
-    if (button.hasAttribute("data-create-short")) openUpload("short");
-    if (d.removeHistory) removeHistoryItem(d.removeHistory);
-
+    if (d.followUser) return toggleFollow(d.followUser);
+    if (d.likeVideo) return toggleVideoLike(d.likeVideo);
+    if (d.commentsVideo) return openComments(d.commentsVideo);
+    if (d.shareVideo) return shareVideo(d.shareVideo);
+    if (d.deleteVideo) { if (requireAuth("manage videos")) deleteVideo(d.deleteVideo); return; }
+    if (d.profileUser) return openOtherProfile(d.profileUser);
+    if (d.chatUser) return openChat(d.chatUser);
+    if (d.likePost) return togglePostLike(d.likePost);
+    if (d.commentsPost) return openPostComments(d.commentsPost);
+    if (d.replyComment) { if (requireAuth("reply to comments")) beginCommentReply(d.replyComment); return; }
+    if (d.deleteComment) { if (requireAuth("delete comments")) deleteComment(d.deleteComment); return; }
+    if (d.editPost) { if (requireAuth("edit posts")) editPost(d.editPost); return; }
+    if (d.deletePost) { if (requireAuth("delete posts")) deletePost(d.deletePost); return; }
+    if (d.openReelId) return openSpecificReel(d.openReelId);
+    if (button.hasAttribute("data-create-short")) return openUpload("short");
+    if (d.removeHistory) return removeHistoryItem(d.removeHistory);
     if (d.goPage) {
-        if (d.goPage === "profile") { currentProfileUserId = currentUser.id; profileMode = "home"; }
-        openPage(d.goPage);
+        if (d.goPage === "profile" && currentUser) { currentProfileUserId = currentUser.id; profileMode = "home"; }
+        return openPage(d.goPage);
     }
-
     if (d.studioWatch) {
+        if (!requireAuth("open Creator Studio")) return;
         const video = videos.find(v => String(v.id) === String(d.studioWatch));
-
-        if (video && isShort(video)) {
-            openSpecificReel(video.id);
-        } else {
-            openPage("home");
-            scrollToVideo(d.studioWatch);
-        }
+        if (video && isShort(video)) openSpecificReel(video.id);
+        else { openPage("home"); scrollToVideo(d.studioWatch); }
     }
 });
 
@@ -2853,8 +3026,10 @@ async function signOutGoCat() {
         currentUser = currentProfile = currentProfileUserId = currentChatUserId = currentCommentVideoId = currentCommentPostId = null;
         isGoCatAdmin = false;
         users = []; videos = []; posts = []; follows = []; notifications = [];
-
-        openLoginScreen();
+        if (chatRealtimeChannel) db.removeChannel(chatRealtimeChannel);
+        chatRealtimeChannel = null;
+        await startGuestGoCat();
+        showToast("Signed out. You are browsing as a guest.");
 
     } catch (error) {
         showToast("Sign out failed: " + error.message);
@@ -2866,10 +3041,10 @@ listen("settingsLogout", "click", signOutGoCat);
 
 if (db) {
     db.auth.onAuthStateChange(event => {
-        if (event === "SIGNED_OUT") {
+        if (event === "SIGNED_OUT" && currentUser) {
             currentUser = currentProfile = currentProfileUserId = currentChatUserId = null;
             isGoCatAdmin = false;
-            openLoginScreen();
+            startGuestGoCat();
         }
     });
 }
@@ -2897,13 +3072,14 @@ async function initializeGoCat() {
             currentUser = session.user;
             await withTimeout(startGoCat(), 25000, "Loading timed out. Check your Supabase permissions.");
         } else {
-            openLoginScreen();
+            await startGuestGoCat();
         }
 
     } catch (error) {
         console.error("GOCAT STARTUP ERROR:", error);
-        openLoginScreen();
-        showAuthMessage("GoCat could not load: " + error.message);
+        updateUserInterface();
+        openApp();
+        showToast("GoCat is in guest mode, but some content could not load: " + error.message);
 
     } finally {
         loader?.classList.add("hide");
@@ -2912,7 +3088,11 @@ async function initializeGoCat() {
 
 // Paste an image directly into the post composer with Ctrl+V.
 document.addEventListener("paste", function (event) {
-    if (!currentUser || currentPage !== "posts") return;
+    if (currentPage !== "posts") return;
+    if (!currentUser) {
+        if (Array.from(event.clipboardData?.items || []).some(item => item.type.startsWith("image/"))) requireAuth("create posts");
+        return;
+    }
     const items = Array.from(event.clipboardData?.items || []);
     const imageItem = items.find(item => item.type.startsWith("image/"));
     if (!imageItem) return;
@@ -2937,8 +3117,8 @@ document.addEventListener("keydown", function (event) {
     }
     if (event.key.toLowerCase() === "m") {
         settings.muted = !settings.muted; saveSettings();
-        document.querySelectorAll(".reel-video").forEach(video => video.muted = settings.muted);
-        document.querySelectorAll("[data-reel-sound]").forEach(button => button.innerHTML = icon(settings.muted ? "mute" : "volume"));
+        document.querySelectorAll(".reel-video").forEach(applyReelAudioPreference);
+        updateReelSoundButtons();
         showToast(settings.muted ? "Shorts muted" : "Shorts sound on"); return;
     }
     const video = event.target.closest?.("video") || document.querySelector(".reel-item video") || document.querySelector(".video-player");
