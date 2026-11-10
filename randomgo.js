@@ -27,6 +27,7 @@ let currentUser = null, currentProfile = null, isGoCatAdmin = false;
 let currentProfileUserId = null, currentCommentVideoId = null, currentCommentPostId = null, currentCommentParentId = null, currentChatUserId = null;
 let chatRealtimeChannel = null, commentRealtimeChannel = null, feedRealtimeChannel = null;
 let liveRefreshTimer = null, chatTypingTimer = null, feedRealtimeReady = false;
+let activePlaybackVideoId = null, liveRenderPending = false;
 let users = [], videos = [], posts = [], follows = [], notifications = [];
 let currentPage = "home", activeHomeTopic = "All", exploreMode = "videos", profileMode = "home";
 let homeVisibleCycles = 1, exploreVisible = 6, postsVisible = 5, reelsVisible = 5;
@@ -524,6 +525,15 @@ async function loadAllData() {
 
 function renderLivePage() {
     renderSuggestedCreators();
+
+    // Never replace a video element while the viewer is watching it.
+    // Realtime changes are held until the clip ends or the viewer leaves the page.
+    if (activePlaybackVideoId) {
+        liveRenderPending = true;
+        return;
+    }
+
+    liveRenderPending = false;
     if (currentPage === "home") renderHomeFeed();
     if (currentPage === "reels") renderReels();
     if (currentPage === "explore") renderExplore();
@@ -540,6 +550,13 @@ function queueLiveRefresh(delay = 450) {
     clearTimeout(liveRefreshTimer);
     liveRefreshTimer = setTimeout(async () => {
         if (!db || document.hidden) return;
+
+        // View-count updates and other realtime events must not reset playback.
+        if (activePlaybackVideoId) {
+            liveRenderPending = true;
+            return;
+        }
+
         try { await loadAllData(); renderLivePage(); }
         catch (error) { console.warn("Live feed refresh:", error.message || error); }
     }, delay);
@@ -2661,8 +2678,19 @@ document.addEventListener("play", function (event) {
     const videoId = element.dataset.playVideo;
     if (!videoId) return;
 
+    activePlaybackVideoId = String(videoId);
     addToWatchHistory(videoId);
     if (currentUser) registerVideoView(videoId);
+}, true);
+
+document.addEventListener("ended", function (event) {
+    const element = event.target;
+    if (!(element instanceof HTMLVideoElement)) return;
+    const videoId = element.dataset.playVideo;
+    if (!videoId || String(videoId) !== activePlaybackVideoId) return;
+
+    activePlaybackVideoId = null;
+    if (liveRenderPending) queueLiveRefresh(0);
 }, true);
 
 
@@ -2941,6 +2969,20 @@ function openPage(page) {
         currentProfileUserId = currentUser.id;
     }
 
+    const previousPage = currentPage;
+    const hadPendingLiveRefresh = liveRenderPending;
+
+    if (previousPage !== page) {
+        // Stop hidden-page playback and release any refresh that was deferred for it.
+        document.getElementById("page-" + previousPage)?.querySelectorAll("video").forEach(video => video.pause());
+        activePlaybackVideoId = null;
+        liveRenderPending = false;
+    } else if (activePlaybackVideoId) {
+        // Clicking the already-open navigation item must not restart the current video.
+        closeSidebar();
+        return;
+    }
+
     currentPage = page;
 
     document.querySelectorAll(".page-section").forEach(s => s.classList.toggle("hidden", s.id !== "page-" + page));
@@ -2952,6 +2994,7 @@ function openPage(page) {
 
     closeSidebar();
     renderCurrentPage();
+    if (previousPage !== page && hadPendingLiveRefresh) queueLiveRefresh(0);
     window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
