@@ -37,6 +37,7 @@
 
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script defer src="randomgo.js"></script>
+<script defer src="gocat-enhancements.js"></script>
 </head>
 
 <body class="dark">
@@ -56,11 +57,18 @@
   </symbol>
 </svg>
 <!-- LOADER -->
-<div id="loader" class="loader-screen">
-    <div class="loader-brand">
-        <span class="brand-symbol"><svg viewBox="0 0 32 32"><use href="#logo"/></svg></span>
-        <div class="loader-line"><span></span></div>
+<div id="loader" class="loader-screen" role="status" aria-live="polite">
+    <div class="gocat-loader-orbit orbit-one"></div>
+    <div class="gocat-loader-orbit orbit-two"></div>
+    <div class="gocat-loader-glow"></div>
+    <div class="gocat-loader-content">
+        <div class="gocat-loader-mark"><svg viewBox="0 0 32 32"><use href="#logo"/></svg><span></span></div>
+        <div class="gocat-loader-wordmark">Go<span>Cat</span></div>
+        <p class="gocat-loader-tagline">A world of things to watch.</p>
+        <div class="gocat-loader-track"><span></span></div>
+        <small>Preparing your feed</small>
     </div>
+    <div class="gocat-loader-corner">DISCOVER · CREATE · CONNECT</div>
 </div>
 
 <!-- GUEST-FIRST AUTH DIALOG -->
@@ -103,7 +111,7 @@
 
         <nav class="side-nav">
             <button class="nav-link active" data-page="home"><i data-icon="home"></i><span>Home</span></button>
-            <button class="nav-link" data-page="reels"><i data-icon="shorts"></i><span>Shorts</span></button>
+            <button class="nav-link" data-page="reels"><i data-icon="shorts"></i><span>Reels</span></button>
             <button class="nav-link" data-page="explore"><i data-icon="compass"></i><span>Explore</span></button>
             <button class="nav-link" data-page="following"><i data-icon="users"></i><span>Following</span></button>
         </nav>
@@ -147,7 +155,7 @@
 
             <div class="search-box">
                 <i data-icon="search"></i>
-                <input id="searchInput" type="search" placeholder="Search videos, Shorts and creators">
+                <input id="searchInput" type="search" placeholder="Search videos, Reels and creators">
                 <button id="clearSearch" type="button" class="icon-btn hidden" aria-label="Clear search"><i data-icon="close"></i></button>
             </div>
 
@@ -202,12 +210,12 @@
             <!-- SHORTS -->
             <section id="page-reels" class="page-section hidden">
                 <div class="page-title-row">
-                    <div><h1>Shorts</h1></div>
-                    <button id="createReelBtn" class="primary-btn"><i data-icon="plus"></i>Create Short</button>
+                    <div><h1>Reels</h1></div>
+                    <button id="createReelBtn" class="primary-btn"><i data-icon="plus"></i>Create Reel</button>
                 </div>
                 <div class="shorts-workspace"><div id="reelsFeed" class="reels-feed"></div></div>
                 <div id="reelsLoadMoreWrap" class="load-more-wrap hidden">
-                    <button id="reelsLoadMore" class="soft-btn">Show more Shorts</button>
+                    <button id="reelsLoadMore" class="soft-btn">Show more Reels</button>
                 </div>
             </section>
 
@@ -218,7 +226,7 @@
                 </div>
                 <div class="tab-row">
                     <button class="tab-btn active" data-explore-tab="videos">Videos</button>
-                    <button class="tab-btn" data-explore-tab="reels">Shorts</button>
+                    <button class="tab-btn" data-explore-tab="reels">Reels</button>
                     <button class="tab-btn" data-explore-tab="people">Creators</button>
                     <button class="tab-btn" data-explore-tab="posts">Posts</button>
                 </div>
@@ -382,14 +390,14 @@
                 </div>
                 <div class="channel-stats">
                     <div><strong id="profileVideoCount">0</strong><span>Videos</span></div>
-                    <div><strong id="profileShortCount">0</strong><span>Shorts</span></div>
+                    <div><strong id="profileShortCount">0</strong><span>Reels</span></div>
                     <div><strong id="profileFollowerCount">0</strong><span>Followers</span></div>
                     <div><strong id="profileFollowingCount">0</strong><span>Following</span></div>
                     <div><strong id="profilePostCount">0</strong><span>Posts</span></div>
                 </div>
                 <div class="profile-tabs">
                     <button class="profile-tab active" data-profile-tab="home">Home</button>
-                    <button class="profile-tab" data-profile-tab="reels">Shorts</button>
+                    <button class="profile-tab" data-profile-tab="reels">Reels</button>
                     <button class="profile-tab" data-profile-tab="videos">Videos</button>
                     <button class="profile-tab" data-profile-tab="posts">Posts</button>
                 </div>
@@ -461,7 +469,7 @@
 
     <nav class="mobile-nav">
         <button class="mobile-nav-btn active" data-page="home"><i data-icon="home"></i><small>Home</small></button>
-        <button class="mobile-nav-btn" data-page="reels"><i data-icon="shorts"></i><small>Shorts</small></button>
+        <button class="mobile-nav-btn" data-page="reels"><i data-icon="shorts"></i><small>Reels</small></button>
         <button class="mobile-nav-btn" data-page="explore"><i data-icon="compass"></i><small>Explore</small></button>
         <button class="mobile-nav-btn" data-page="history"><i data-icon="clock"></i><small>History</small></button>
         <button class="mobile-nav-btn" data-page="profile"><i data-icon="user"></i><small>Channel</small></button>
