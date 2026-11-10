@@ -49,80 +49,179 @@
       .join(" ").toLowerCase().includes(query);
   }
 
-  // Keep the established data contract expected by GoCat's home renderer.
+  // Recommendations are ranked independently inside each content type.
+  // GoCat always keeps its original order: 4 videos, 4 Reels, then 2 posts.
+  window.gocatRecommendationScore = score;
+
   window.getHomeFeedData = function () {
     const query = $("searchInput")?.value.trim().toLowerCase() || "";
     const topicOK = video => activeHomeTopic === "All" || video.topic === activeHomeTopic;
     return {
-      regularVideos: videos.filter(v => !isReel(v) && topicOK(v) && matches(v, "video", query))
+      regularVideos: videos
+        .filter(v => !isReel(v) && topicOK(v) && matches(v, "video", query))
         .sort((a, b) => score(b, "video") - score(a, "video")),
-      shorts: videos.filter(v => isReel(v) && topicOK(v) && matches(v, "video", query))
+      shorts: videos
+        .filter(v => isReel(v) && topicOK(v) && matches(v, "video", query))
         .sort((a, b) => score(b, "video") - score(a, "video")),
-      communityPosts: posts.filter(p => matches(p, "post", query))
+      communityPosts: posts
+        .filter(p => matches(p, "post", query))
         .sort((a, b) => score(b, "post") - score(a, "post"))
     };
   };
 
-  // One combined stream: long videos, Reels and posts are interleaved card-by-card.
   window.buildHomeFeedCycles = function () {
     const data = window.getHomeFeedData();
-    const queues = [
-      { kind: "video", list: data.regularVideos, index: 0 },
-      { kind: "reel", list: data.shorts, index: 0 },
-      { kind: "post", list: data.communityPosts, index: 0 }
-    ];
-    const mixed = [];
-    let previousKind = "";
-    while (queues.some(q => q.index < q.list.length)) {
-      const ready = queues.filter(q => q.index < q.list.length);
-      ready.sort((a, b) => {
-        const aScore = score(a.list[a.index], a.kind === "post" ? "post" : "video") - (a.kind === previousKind ? 2.5 : 0);
-        const bScore = score(b.list[b.index], b.kind === "post" ? "post" : "video") - (b.kind === previousKind ? 2.5 : 0);
-        return bScore - aScore;
-      });
-      const chosen = ready[0];
-      mixed.push({ kind: chosen.kind, item: chosen.list[chosen.index++] });
-      previousKind = chosen.kind;
-    }
+    let videoIndex = 0;
+    let reelIndex = 0;
+    let postIndex = 0;
     const cycles = [];
-    for (let i = 0; i < mixed.length; i += 6) {
-      const cards = mixed.slice(i, i + 6).map(entry => {
-        let card = "";
-        if (entry.kind === "post") card = postCard(entry.item);
-        else if (entry.kind === "reel") card = homeReelCard(entry.item);
-        else card = videoCard(entry.item);
-        return '<div class="mix-feed-item mix-' + entry.kind + '">' + card +
-          (entry.kind === "post" ? "" : '<button class="mix-send-video" type="button" data-share-chat-video="' +
-          esc(entry.item.id) + '">Send to mutual ↗</button>') + '</div>';
-      }).join("");
-      cycles.push('<section class="home-feed-section mix-recommendation-section"><div class="mix-feed-grid">' +
-        cards + '</div></section>');
+
+    while (
+      videoIndex < data.regularVideos.length ||
+      reelIndex < data.shorts.length ||
+      postIndex < data.communityPosts.length
+    ) {
+      const sections = [];
+
+      if (videoIndex < data.regularVideos.length) {
+        const group = data.regularVideos.slice(videoIndex, videoIndex + 4);
+        videoIndex += group.length;
+        sections.push(
+          '<section class="home-feed-section home-video-section">' +
+            '<div class="home-feed-heading"><h2>Videos for you</h2></div>' +
+            '<div class="home-feed-video-grid">' + group.map(videoCard).join("") + '</div>' +
+          '</section>'
+        );
+      }
+
+      if (reelIndex < data.shorts.length) {
+        const group = data.shorts.slice(reelIndex, reelIndex + 4);
+        reelIndex += group.length;
+        sections.push(
+          '<section class="home-feed-section home-reels-section">' +
+            '<div class="home-feed-heading">' +
+              '<div class="home-shelf-title"><span class="shorts-logo">' + icon("shorts") + '</span><h2>Reels for you</h2></div>' +
+              '<button class="text-btn" data-go-page="reels">See all</button>' +
+            '</div>' +
+            '<div class="home-shorts-shelf">' + group.map(homeReelCard).join("") + '</div>' +
+          '</section>'
+        );
+      }
+
+      if (postIndex < data.communityPosts.length) {
+        const group = data.communityPosts.slice(postIndex, postIndex + 2);
+        postIndex += group.length;
+        sections.push(
+          '<section class="home-feed-section home-posts-section">' +
+            '<div class="home-feed-heading"><h2>From the community</h2><button class="text-btn" data-go-page="posts">View posts</button></div>' +
+            '<div class="home-feed-post-grid">' + group.map(postCard).join("") + '</div>' +
+          '</section>'
+        );
+      }
+
+      cycles.push(sections.join(""));
     }
     return cycles;
   };
 
-  // Add a real recommendation panel after the viewer reaches the last available Reel.
-  // Recommendations use existing public GoCat Reels only; no fake content is generated.
-  const originalRenderReels = window.renderReels;
-  if (typeof originalRenderReels === "function") {
-    window.renderReels = function () {
-      originalRenderReels();
-      const feed = $("reelsFeed");
-      const allReels = videos.filter(isReel);
-      if (!feed || !allReels.length || reelsVisible < allReels.length) return;
+  // Append the next complete group automatically when the reader approaches the bottom.
+  let homeFeedObserver = null;
+  function renderHomeFeedAutomatically() {
+    const container = $("homeFeed");
+    if (!container) return;
 
-      const recentIds = new Set(allReels.slice(Math.max(0, allReels.length - 3)).map(v => String(v.id)));
-      const pool = allReels.filter(v => !recentIds.has(String(v.id)));
-      const source = pool.length ? pool : allReels;
-      const recommendations = source.slice().sort(() => Math.random() - 0.5).slice(0, 3);
-      const panel = document.createElement("section");
-      panel.className = "reels-end-card";
-      panel.innerHTML = '<span aria-hidden="true">✦</span><h2>You reached the end</h2><p>Here are a few more Reels to explore.</p>' +
-        recommendations.map(video => '<button type="button" class="soft-btn" data-open-reel-id="' + esc(video.id) + '">' +
-          esc(video.title || "Watch this Reel") + ' · @' + esc(getUsername(video.owner_id)) + '</button>').join("");
-      feed.appendChild(panel);
-    };
+    if (homeFeedObserver) {
+      homeFeedObserver.disconnect();
+      homeFeedObserver = null;
+    }
+
+    const data = window.getHomeFeedData();
+    const cycles = window.buildHomeFeedCycles();
+    const hasObserver = "IntersectionObserver" in window;
+
+    if (!hasObserver) {
+      homeVisibleCycles = cycles.length;
+    } else {
+      homeVisibleCycles = Math.min(
+        Math.max(1, Number(homeVisibleCycles) || 1),
+        Math.max(1, cycles.length)
+      );
+    }
+
+    const visible = cycles.slice(0, homeVisibleCycles);
+    container.innerHTML = visible.join("");
+
+    const total = data.regularVideos.length + data.shorts.length + data.communityPosts.length;
+    const shown = visible.reduce((sum, html) => {
+      const matches = html.match(/class="video-card"|class="post-card"|class="home-short-card"/g);
+      return sum + (matches ? matches.length : 0);
+    }, 0);
+
+    $("homeEmpty")?.classList.toggle("hidden", total > 0);
+    $("homeLoadMoreWrap")?.classList.add("hidden");
+    if ($("homeCount")) $("homeCount").textContent = "Showing " + shown + " of " + total;
+
+    if (hasObserver && visible.length < cycles.length) {
+      const sentinel = document.createElement("div");
+      sentinel.className = "home-feed-auto-loader";
+      sentinel.setAttribute("aria-label", "More GoCat content loads automatically as you scroll");
+      sentinel.innerHTML = '<span></span><small>More from GoCat</small>';
+      container.appendChild(sentinel);
+
+      homeFeedObserver = new IntersectionObserver(entries => {
+        if (!entries.some(entry => entry.isIntersecting)) return;
+        homeFeedObserver?.disconnect();
+        homeFeedObserver = null;
+        homeVisibleCycles = Math.min(homeVisibleCycles + 1, cycles.length);
+        renderHomeFeedAutomatically();
+      }, { rootMargin: "650px 0px" });
+
+      homeFeedObserver.observe(sentinel);
+    }
   }
+  window.renderHomeFeed = renderHomeFeedAutomatically;
+
+  // The Posts page follows other posts and loads another batch automatically.
+  let postsFeedObserver = null;
+  window.renderPosts = function () {
+    const container = $("postsFeed");
+    if (!container) return;
+
+    if (postsFeedObserver) {
+      postsFeedObserver.disconnect();
+      postsFeedObserver = null;
+    }
+
+    $("guestPostPrompt")?.classList.toggle("hidden", !!currentUser);
+    $("createPostForm")?.classList.toggle("hidden", !currentUser);
+
+    const rankedPosts = posts.slice().sort((a, b) => score(b, "post") - score(a, "post"));
+    const hasObserver = "IntersectionObserver" in window;
+    if (!hasObserver) postsVisible = rankedPosts.length;
+    const visible = rankedPosts.slice(0, Math.max(5, Number(postsVisible) || 5));
+
+    container.innerHTML = visible.length
+      ? visible.map(postCard).join("")
+      : "<div class='empty-card'><h3>No posts yet</h3><p>Share the first update.</p></div>";
+
+    $("postsLoadMoreWrap")?.classList.add("hidden");
+
+    if (hasObserver && visible.length < rankedPosts.length) {
+      const sentinel = document.createElement("div");
+      sentinel.className = "home-feed-auto-loader";
+      sentinel.innerHTML = '<span></span><small>Loading more posts</small>';
+      container.appendChild(sentinel);
+
+      postsFeedObserver = new IntersectionObserver(entries => {
+        if (!entries.some(entry => entry.isIntersecting)) return;
+        postsFeedObserver?.disconnect();
+        postsFeedObserver = null;
+        postsVisible += 5;
+        window.renderPosts();
+      }, { rootMargin: "650px 0px" });
+      postsFeedObserver.observe(sentinel);
+    }
+  };
 
   // Record genuine playback starts as lightweight local preference signals.
   document.addEventListener("play", event => {
@@ -132,7 +231,15 @@
     if (id) recordView(videos.find(v => String(v.id) === String(id)));
   }, true);
 
-  // Add one-tap loading of the next recommended Reels as the viewer reaches the end.
+  // Keep Reels ranked among Reels, with automatic loading instead of a manual button.
+  const originalRenderReels = window.renderReels;
+  if (typeof originalRenderReels === "function") {
+    window.renderReels = function () {
+      originalRenderReels();
+      $("reelsLoadMoreWrap")?.classList.add("hidden");
+    };
+  }
+
   let extendingReels = false;
   const reelFeed = $("reelsFeed");
   if (reelFeed) {
