@@ -1609,3 +1609,99 @@ input:focus, textarea:focus, select:focus {
 @media (prefers-reduced-motion: reduce) {
   .home-feed-auto-loader span { animation: none; }
 }
+
+
+/* GoCat identity + properly contained Reels cards */
+.brand-symbol {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 11px;
+  background: #eaf7ef;
+  color: #0b3322;
+  box-shadow: none;
+}
+.brand-symbol svg { display:block; width:100%; height:100%; }
+.brand > strong, .auth-brand > strong { color: var(--text); font-weight: 800; letter-spacing: -.045em; }
+.gocat-loader-mark {
+  background: #eaf7ef;
+  box-shadow: none;
+}
+.gocat-loader-mark svg { width:100%; height:100%; }
+
+/* Four Reels cards share the available shelf width; never overflow their parent. */
+.home-shorts-shelf {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-flow: row;
+  grid-auto-columns: auto;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  gap: clamp(8px, 1.2vw, 16px);
+  overflow: visible;
+  padding: 2px 0 8px;
+}
+.home-short-card {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  overflow: hidden;
+}
+.home-short-open { display:block; width:100%; min-width:0; }
+.home-short-thumb {
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  overflow: hidden;
+}
+.home-short-thumb video {
+  display:block;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+}
+.home-short-title {
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  font-size: clamp(10px, 1vw, 13px);
+  overflow-wrap:anywhere;
+}
+.home-short-info { min-width:0; }
+.home-short-info small { overflow-wrap:anywhere; }
+
+/* The full Reels viewer stays centered and fully inside its workspace. */
+.shorts-workspace { width:100%; min-width:0; }
+.reels-feed {
+  width: min(100%, 380px);
+  height: min(78svh, 720px);
+  min-height: min(420px, calc(100svh - 180px));
+  max-height: 720px;
+  flex: 0 1 380px;
+  border-radius: 18px;
+}
+.reel-item {
+  width:100%;
+  height:100%;
+  min-height:100%;
+  max-height:100%;
+  box-sizing:border-box;
+}
+.reel-video { object-fit:contain; }
+
+@media (max-width: 980px) {
+  .home-shorts-shelf { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .home-shorts-shelf { grid-template-columns: repeat(2, minmax(0, 1fr)); gap:10px; }
+  .home-short-title { font-size:12px; }
+  .reels-feed {
+    width:min(100%, 360px);
+    height:min(74svh, 650px);
+    min-height:min(390px, calc(100svh - 170px));
+  }
+  .brand-symbol { width:34px; height:34px; flex-basis:34px; }
+}
