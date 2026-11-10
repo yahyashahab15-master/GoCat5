@@ -5,18 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0f0f10">
 <title>GoCat — Discover Videos, Explore Creators & Share</title>
-<meta name="description" content="GoCat is a video-sharing platform where you can discover videos, explore creators, watch Shorts, and share your own content.">
+<meta name="description" content="GoCat is a video-sharing platform where you can discover videos, explore creators, watch Reels, and share your own content.">
 <meta name="robots" content="index, follow, max-image-preview:large">
 <link rel="canonical" href="https://yahyashahab15-master.github.io/GoCat5/">
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="GoCat">
 <meta property="og:title" content="GoCat — Discover Videos, Explore Creators & Share">
-<meta property="og:description" content="Discover videos, explore creators, watch Shorts, and share your own content on GoCat.">
+<meta property="og:description" content="Discover videos, explore creators, watch Reels, and share your own content on GoCat.">
 <meta property="og:url" content="https://yahyashahab15-master.github.io/GoCat5/">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="GoCat — Discover Videos, Explore Creators & Share">
-<meta name="twitter:description" content="Discover videos, explore creators, watch Shorts, and share your own content on GoCat.">
+<meta name="twitter:description" content="Discover videos, explore creators, watch Reels, and share your own content on GoCat.">
 
 <script type="application/ld+json">
 {
@@ -24,7 +24,7 @@
   "@type": "WebSite",
   "name": "GoCat",
   "url": "https://yahyashahab15-master.github.io/GoCat5/",
-  "description": "A video-sharing platform for discovering videos, exploring creators, watching Shorts, and sharing content.",
+  "description": "A video-sharing platform for discovering videos, exploring creators, watching Reels, and sharing content.",
   "inLanguage": "en"
 }
 </script>
@@ -367,7 +367,7 @@
                     <button class="primary-btn" data-open-upload="video"><i data-icon="upload"></i>Upload</button>
                 </div>
                 <div class="studio-stats">
-                    <div class="studio-stat-card"><span>Videos and Shorts</span><strong id="studioVideos">0</strong></div>
+                    <div class="studio-stat-card"><span>Videos and Reels</span><strong id="studioVideos">0</strong></div>
                     <div class="studio-stat-card"><span>Views</span><strong id="studioViews">0</strong></div>
                     <div class="studio-stat-card"><span>Likes</span><strong id="studioLikes">0</strong></div>
                     <div class="studio-stat-card"><span>Followers</span><strong id="studioFollowers">0</strong></div>
@@ -423,11 +423,11 @@
                     <div class="settings-card">
                         <h2>Playback</h2>
                         <label class="settings-row">
-                            <span><strong>Autoplay Shorts</strong><small>Play the Short you are looking at.</small></span>
+                            <span><strong>Autoplay Reels</strong><small>Play the Reel you are looking at.</small></span>
                             <input id="settingAutoplay" type="checkbox">
                         </label>
                         <label class="settings-row">
-                            <span><strong>Start Shorts muted</strong><small>Shorts begin without sound.</small></span>
+                            <span><strong>Start Reels muted</strong><small>Reels begin without sound.</small></span>
                             <input id="settingMuted" type="checkbox">
                         </label>
                         <label class="settings-row">
@@ -440,7 +440,7 @@
                         <div class="shortcut-list">
                             <span><kbd>/</kbd> or <kbd>Ctrl</kbd> + <kbd>K</kbd><small>Focus search</small></span>
                             <span><kbd>Space</kbd> or <kbd>K</kbd><small>Play / pause video</small></span>
-                            <span><kbd>M</kbd><small>Mute / unmute Shorts</small></span>
+                            <span><kbd>M</kbd><small>Mute / unmute Reels</small></span>
                             <span><kbd>J</kbd> / <kbd>L</kbd><small>Seek backward / forward 10 seconds</small></span>
                             <span><kbd>↑</kbd> / <kbd>↓</kbd><small>Adjust volume</small></span>
                         </div>
@@ -490,7 +490,7 @@
 
         <div class="upload-mode-tabs">
             <button type="button" class="upload-mode-btn active" data-upload-mode="video">Video</button>
-            <button type="button" class="upload-mode-btn" data-upload-mode="short">Short</button>
+            <button type="button" class="upload-mode-btn" data-upload-mode="short">Reel</button>
         </div>
 
         <label id="videoDropArea" class="upload-dropzone">
@@ -532,7 +532,7 @@
     <div class="modal-backdrop" data-close="editorModal"></div>
     <div class="editor-window">
         <div class="editor-topbar">
-            <div class="editor-brand"><span class="brand-symbol"><svg viewBox="0 0 32 32"><use href="#logo"/></svg></span><div><strong>GoCat Studio</strong><small>Shorts editor</small></div></div>
+            <div class="editor-brand"><span class="brand-symbol"><svg viewBox="0 0 32 32"><use href="#logo"/></svg></span><div><strong>GoCat Studio</strong><small>Reels editor</small></div></div>
             <div class="editor-top-actions">
                 <span id="editorProjectStatus">Untitled project</span>
                 <button class="soft-btn" id="editorCloseBtn">Close</button>
@@ -671,7 +671,7 @@
 
         <div class="editor-export-bar">
             <div><strong>Ready to export?</strong><p id="editorStatus">Select a video and adjust your edits.</p></div>
-            <button id="exportReelBtn" class="primary-btn">Export Short</button>
+            <button id="exportReelBtn" class="primary-btn">Export Reel</button>
         </div>
     </div>
 </div>
