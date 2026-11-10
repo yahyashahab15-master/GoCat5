@@ -128,6 +128,7 @@
             <button id="sidebarSignInBtn" class="soft-btn full-btn guest-sidebar-signin" type="button">Sign in to GoCat</button>
             <button id="themeBtn" class="nav-link"><i id="themeIcon"></i><span id="themeLabel">Light appearance</span></button>
             <button class="nav-link" data-page="settings"><i data-icon="settings"></i><span>Settings</span></button>
+            <button id="adminNavBtn" class="nav-link hidden" data-page="admin"><i data-icon="shield"></i><span>Admin panel</span></button>
             <div class="sidebar-user">
                 <div id="sidebarAvatar" class="avatar">G</div>
                 <div class="sidebar-user-info">
@@ -400,6 +401,16 @@
             </section>
 
             <!-- SETTINGS -->
+            <section id="page-admin" class="page-section hidden">
+                <div class="page-title-row"><div><h1>GoCat Admin</h1><p class="muted-text">Owner-only community and content management.</p></div><button class="soft-btn" id="adminRefreshBtn">Refresh</button></div>
+                <div class="settings-layout">
+                    <div class="settings-card"><h2>Community overview</h2><div class="admin-stats"><div><strong id="adminUserCount">—</strong><small>Creators</small></div><div><strong id="adminVideoCount">—</strong><small>Videos & Reels</small></div><div><strong id="adminPostCount">—</strong><small>Posts</small></div></div></div>
+                    <div class="settings-card"><h2>Find a creator</h2><input id="adminUserSearch" type="search" placeholder="Search username…"><div id="adminUserList" class="admin-user-list"></div></div>
+                    <div class="settings-card"><h2>Content moderation</h2><p class="muted-text">Remove content that breaks GoCat rules. Use the Delete controls on posts and videos throughout the app; admin permissions apply across creators.</p></div>
+                    <div class="settings-card"><h2>Important</h2><p class="muted-text">Follower totals stay tied to real follows. GoCat does not manufacture followers or engagement.</p></div>
+                </div>
+            </section>
+
             <section id="page-settings" class="page-section hidden">
                 <div class="page-title-row">
                     <div><h1>Settings</h1></div>
