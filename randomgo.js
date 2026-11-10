@@ -1,6 +1,6 @@
 /* ============================================================
    GOCAT — COMPLETE JAVASCRIPT
-   Supabase auth, feed, videos, Shorts, posts, profiles, follows,
+   Supabase auth, feed, videos, Reels, posts, profiles, follows,
    comments, studio, history, chat and uploads.
    ============================================================ */
 
@@ -144,7 +144,7 @@ function isFollowing(id) {
         String(f.follower_id) === String(currentUser.id) && String(f.following_id) === String(id));
 }
 
-const isShort = v => v?.is_short === true || v?.is_short === "true";
+const isReel = v => v?.is_short === true || v?.is_short === "true";
 const hasLiked = item => !!currentUser && (item.likes || []).includes(String(currentUser.id));
 
 function formatDate(value) {
@@ -740,7 +740,7 @@ function postCard(post) {
     `;
 }
 
-function homeShortCard(video) {
+function homeReelCard(video) {
     return `
         <article class="home-short-card">
             <button class="home-short-open" data-open-reel-id="${esc(video.id)}">
@@ -780,8 +780,8 @@ function getHomeFeedData() {
     };
 
     return {
-        regularVideos: videos.filter(v => !isShort(v) && topicOK(v) && matches(v, "video")).sort((a, b) => score(b) - score(a)),
-        shorts: videos.filter(v => isShort(v) && topicOK(v) && matches(v, "video")).sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
+        regularVideos: videos.filter(v => !isReel(v) && topicOK(v) && matches(v, "video")).sort((a, b) => score(b) - score(a)),
+        shorts: videos.filter(v => isReel(v) && topicOK(v) && matches(v, "video")).sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
         communityPosts: posts.filter(p => matches(p, "post")).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     };
 }
@@ -811,11 +811,11 @@ function buildHomeFeedCycles() {
                     <div class="home-feed-heading">
                         <div class="home-shelf-title">
                             <span class="shorts-logo">${icon("shorts")}</span>
-                            <h2>Shorts</h2>
+                            <h2>Reels</h2>
                         </div>
                         <button class="text-btn" data-go-page="reels">See all</button>
                     </div>
-                    <div class="home-shorts-shelf">${group.map(homeShortCard).join("")}</div>
+                    <div class="home-shorts-shelf">${group.map(homeReelCard).join("")}</div>
                 </section>`);
         }
 
@@ -1124,7 +1124,7 @@ function checkSharedVideoLink() {
     const video = videos.find(v => String(v.id) === String(videoId));
     if (!video) return showToast("That video could not be found.");
 
-    if (isShort(video)) {
+    if (isReel(video)) {
         openSpecificReel(video.id);
     } else {
         openPage("home");
@@ -1157,16 +1157,16 @@ function renderReels() {
     const container = $("reelsFeed");
     if (!container) return;
 
-    const allReels = videos.filter(isShort);
+    const allReels = videos.filter(isReel);
     const page = allReels.slice(0, reelsVisible);
 
     if (!allReels.length) {
         container.innerHTML = `
             <div class="reel-empty">
                 <div>
-                    <h2>No Shorts yet</h2>
+                    <h2>No Reels yet</h2>
                     <p>Be the first to publish one.</p>
-                    <button class="primary-btn" data-create-short>Create Short</button>
+                    <button class="primary-btn" data-create-short>Create Reel</button>
                 </div>
             </div>`;
         $("reelsLoadMoreWrap")?.classList.add("hidden");
@@ -1227,8 +1227,8 @@ function applyReelAudioPreference(video) {
 function updateReelSoundButtons() {
     document.querySelectorAll("[data-reel-sound]").forEach(button => {
         button.innerHTML = icon(settings.muted ? "mute" : "volume");
-        button.setAttribute("aria-label", settings.muted ? "Turn Shorts sound on" : "Mute Shorts");
-        button.title = settings.muted ? "Turn sound on for all Shorts" : "Mute all Shorts";
+        button.setAttribute("aria-label", settings.muted ? "Turn Reels sound on" : "Mute Reels");
+        button.title = settings.muted ? "Turn sound on for all Reels" : "Mute all Reels";
     });
 }
 
@@ -1255,7 +1255,7 @@ function observeReels() {
 listen("reelsLoadMore", "click", () => { reelsVisible += PAGE_SIZE; renderReels(); });
 
 function openSpecificReel(videoId) {
-    const index = videos.filter(isShort).findIndex(v => String(v.id) === String(videoId));
+    const index = videos.filter(isReel).findIndex(v => String(v.id) === String(videoId));
     if (index >= 0) reelsVisible = Math.max(reelsVisible, index + 1);
 
     openPage("reels");
@@ -1278,7 +1278,7 @@ listen("reelsFeed", "click", function (event) {
     document.querySelectorAll(".reel-video").forEach(applyReelAudioPreference);
     updateReelSoundButtons();
     if ($("settingMuted")) $("settingMuted").checked = settings.muted;
-    showToast(settings.muted ? "Shorts muted" : "Shorts sound on");
+    showToast(settings.muted ? "Reels muted" : "Reels sound on");
 });
 
 
@@ -1319,13 +1319,13 @@ function renderExplore() {
         getUsername(v.owner_id).toLowerCase().includes(query);
 
     if (exploreMode === "videos" || exploreMode === "reels") {
-        const wantShorts = exploreMode === "reels";
-        const found = videos.filter(v => isShort(v) === wantShorts && videoMatch(v));
+        const wantReels = exploreMode === "reels";
+        const found = videos.filter(v => isReel(v) === wantReels && videoMatch(v));
         const container = $("exploreVideos");
 
-        container.className = wantShorts ? "shorts-grid" : "video-grid";
+        container.className = wantReels ? "shorts-grid" : "video-grid";
         container.innerHTML = found.length
-            ? found.slice(0, exploreVisible).map(wantShorts ? homeShortCard : videoCard).join("")
+            ? found.slice(0, exploreVisible).map(wantReels ? homeReelCard : videoCard).join("")
             : "<div class='empty-card' style='grid-column:1/-1'><h3>No results</h3><p>Try a different search.</p></div>";
 
         updateExploreMore(found.length);
@@ -1375,7 +1375,7 @@ function renderFollowing() {
         .filter(f => String(f.follower_id) === String(currentUser.id))
         .map(f => String(f.following_id));
 
-    const selected = videos.filter(v => ids.includes(String(v.owner_id)) && !isShort(v));
+    const selected = videos.filter(v => ids.includes(String(v.owner_id)) && !isReel(v));
 
     if ($("followingFeed")) $("followingFeed").innerHTML = selected.map(videoCard).join("");
     $("followingEmpty")?.classList.toggle("hidden", selected.length > 0);
@@ -1405,15 +1405,15 @@ function setUploadMode(mode) {
     });
 
     const isS = uploadMode === "short";
-    if ($("uploadTitle")) $("uploadTitle").textContent = isS ? "Create a Short" : "Upload video";
+    if ($("uploadTitle")) $("uploadTitle").textContent = isS ? "Create a Reel" : "Upload video";
     if ($("uploadDescription")) $("uploadDescription").textContent = isS
         ? "Edit and publish a vertical video."
         : "Publish a video to your GoCat channel.";
-    if ($("publishVideoBtn")) $("publishVideoBtn").textContent = isS ? "Publish Short" : "Publish video";
+    if ($("publishVideoBtn")) $("publishVideoBtn").textContent = isS ? "Publish Reel" : "Publish video";
 }
 
 function openUpload(mode = "video") {
-    if (!requireAuth("upload videos and Shorts")) return;
+    if (!requireAuth("upload videos and Reels")) return;
     resetUploadForm();
     setUploadMode(mode);
     showModal("uploadModal");
@@ -1523,7 +1523,7 @@ function prepareReelEditor(file) {
     preview.playbackRate = 1;
 
     if ($("editorProjectStatus")) $("editorProjectStatus").textContent = file.name;
-    if ($("editorStatus")) $("editorStatus").textContent = "Choose your edits, then export your Short.";
+    if ($("editorStatus")) $("editorStatus").textContent = "Choose your edits, then export your Reel.";
     ["previewTextOne", "previewTextTwo", "previewSticker"].forEach(id => { if ($(id)) $(id).textContent = ""; });
 
     showModal("editorModal");
@@ -1994,11 +1994,11 @@ listen("exportReelBtn", "click", async function () {
         if ($("editorStatus")) {
             $("editorStatus").textContent = tooBig
                 ? "Export finished but exceeds 50 MB. Lower the resolution or frame rate."
-                : "Your edited Short is ready.";
+                : "Your edited Reel is ready.";
         }
 
         hideModal("editorModal");
-        showToast(tooBig ? "Export exceeds 50 MB. Reduce export quality." : "Short exported");
+        showToast(tooBig ? "Export exceeds 50 MB. Reduce export quality." : "Reel exported");
 
     } catch (error) {
         console.error("Export error:", error);
@@ -2012,7 +2012,7 @@ listen("exportReelBtn", "click", async function () {
         audioMix?.cleanup();
         canvasStream.getTracks().forEach(t => t.stop());
         button.disabled = false;
-        button.textContent = "Export Short";
+        button.textContent = "Export Reel";
     }
 });
 
@@ -2184,12 +2184,12 @@ listen("uploadForm", "submit", async function (event) {
         homeVisibleCycles = 1;
         reelsVisible = Math.max(reelsVisible, PAGE_SIZE);
 
-        addLocalNotification("video", (mode === "short" ? "Short" : "Video") + " published: " + title);
+        addLocalNotification("video", (mode === "short" ? "Reel" : "Video") + " published: " + title);
         renderEverything();
 
         hideModal("uploadModal");
         resetUploadForm();
-        showToast(mode === "short" ? "Short published" : "Video published");
+        showToast(mode === "short" ? "Reel published" : "Video published");
 
     } catch (error) {
         console.error("VIDEO UPLOAD ERROR:", error);
@@ -2213,7 +2213,7 @@ listen("uploadForm", "submit", async function (event) {
 
     } finally {
         button.disabled = false;
-        button.textContent = uploadMode === "short" ? "Publish Short" : "Publish video";
+        button.textContent = uploadMode === "short" ? "Publish Reel" : "Publish video";
     }
 });
 
@@ -2417,13 +2417,13 @@ function renderProfile() {
     }
 
     const mine = videos.filter(v => String(v.owner_id) === String(profileId));
-    const regular = mine.filter(v => !isShort(v));
-    const reels = mine.filter(isShort);
+    const regular = mine.filter(v => !isReel(v));
+    const reels = mine.filter(isReel);
     const myPosts = posts.filter(p => String(p.user_id) === String(profileId));
 
     const set = (id, value) => { if ($(id)) $(id).textContent = value; };
     set("profileVideoCount", regular.length);
-    set("profileShortCount", reels.length);
+    set("profileReelCount", reels.length);
     set("profileFollowerCount", follows.filter(f => String(f.following_id) === String(profileId)).length);
     set("profileFollowingCount", follows.filter(f => String(f.follower_id) === String(profileId)).length);
     set("profilePostCount", myPosts.length);
@@ -2434,13 +2434,13 @@ function renderProfile() {
         $("profileHome").innerHTML = `
             <div class="section-heading"><h2>Latest videos</h2></div>
             ${regular.length ? `<div class="video-grid">${regular.slice(0, 3).map(videoCard).join("")}</div>` : none("No videos yet.")}
-            <div class="section-heading"><h2>Latest Shorts</h2></div>
-            ${reels.length ? `<div class="shorts-grid">${reels.slice(0, 6).map(homeShortCard).join("")}</div>` : none("No Shorts yet.")}
+            <div class="section-heading"><h2>Latest Reels</h2></div>
+            ${reels.length ? `<div class="shorts-grid">${reels.slice(0, 6).map(homeReelCard).join("")}</div>` : none("No Reels yet.")}
             <div class="section-heading"><h2>Community posts</h2></div>
             <div class="posts-column">${myPosts.length ? myPosts.slice(0, 3).map(postCard).join("") : none("No posts yet.")}</div>`;
     }
 
-    if ($("profileReels")) $("profileReels").innerHTML = reels.length ? `<div class="shorts-grid">${reels.map(homeShortCard).join("")}</div>` : none("No Shorts yet.");
+    if ($("profileReels")) $("profileReels").innerHTML = reels.length ? `<div class="shorts-grid">${reels.map(homeReelCard).join("")}</div>` : none("No Reels yet.");
     if ($("profileVideos")) $("profileVideos").innerHTML = regular.length ? `<div class="video-grid">${regular.map(videoCard).join("")}</div>` : none("No videos yet.");
     if ($("profilePosts")) $("profilePosts").innerHTML = `<div class="posts-column">${myPosts.length ? myPosts.map(postCard).join("") : none("No posts yet.")}</div>`;
 
@@ -2523,7 +2523,7 @@ function renderStudio() {
                 </div>
                 <div class="studio-content-details">
                     <strong>${esc(video.title)}</strong>
-                    <small>${isShort(video) ? "Short" : "Video"}, ${Number(video.views || 0)} views, ${video.likes?.length || 0} likes</small>
+                    <small>${isReel(video) ? "Reel" : "Video"}, ${Number(video.views || 0)} views, ${video.likes?.length || 0} likes</small>
                     <small>By ${esc(getUsername(video.owner_id))}, ${formatDate(video.created_at)}</small>
                 </div>
                 <div class="studio-content-actions">
@@ -2533,7 +2533,7 @@ function renderStudio() {
             </div>`).join("")
         : `<div class="empty-card" style="border:0">
                 <h3>No uploads yet</h3>
-                <p>Your published videos and Shorts will appear here.</p>
+                <p>Your published videos and Reels will appear here.</p>
                 <button class="primary-btn" data-open-upload="video">Upload video</button>
            </div>`;
 }
@@ -2581,7 +2581,7 @@ function renderHistory() {
             <div class="history-details">
                 <h3>${esc(video.title)}</h3>
                 <p>${esc(getUsername(video.owner_id))}</p>
-                <p>${formatDate(watched_at)}, ${isShort(video) ? "Short" : "Video"}</p>
+                <p>${formatDate(watched_at)}, ${isReel(video) ? "Reel" : "Video"}</p>
             </div>
             <button class="icon-btn" data-remove-history="${esc(video.id)}" aria-label="Remove">${icon("close")}</button>
         </article>`).join("");
@@ -3086,7 +3086,7 @@ document.addEventListener("click", function (event) {
     if (d.studioWatch) {
         if (!requireAuth("open Creator Studio")) return;
         const video = videos.find(v => String(v.id) === String(d.studioWatch));
-        if (video && isShort(video)) openSpecificReel(video.id);
+        if (video && isReel(video)) openSpecificReel(video.id);
         else { openPage("home"); scrollToVideo(d.studioWatch); }
     }
 });
@@ -3193,7 +3193,7 @@ document.addEventListener("paste", function (event) {
     showToast("Image pasted into your post");
 });
 
-// Keyboard shortcuts: / or Ctrl+K search, M mute Shorts, J/L seek, K/Space play-pause.
+// Keyboard shortcuts: / or Ctrl+K search, M mute Reels, J/L seek, K/Space play-pause.
 document.addEventListener("keydown", function (event) {
     const tag = event.target?.tagName;
     const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(tag) || event.target?.isContentEditable;
@@ -3205,7 +3205,7 @@ document.addEventListener("keydown", function (event) {
         settings.muted = !settings.muted; saveSettings();
         document.querySelectorAll(".reel-video").forEach(applyReelAudioPreference);
         updateReelSoundButtons();
-        showToast(settings.muted ? "Shorts muted" : "Shorts sound on"); return;
+        showToast(settings.muted ? "Reels muted" : "Reels sound on"); return;
     }
     const video = event.target.closest?.("video") || document.querySelector(".reel-item video") || document.querySelector(".video-player");
     if (!video) return;
