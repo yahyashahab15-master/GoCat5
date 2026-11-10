@@ -1157,7 +1157,12 @@ function renderReels() {
     const container = $("reelsFeed");
     if (!container) return;
 
-    const allReels = videos.filter(isReel);
+    const allReels = videos.filter(isReel).sort((a, b) => {
+        const rank = window.gocatRecommendationScore;
+        return typeof rank === "function"
+            ? rank(b, "video") - rank(a, "video")
+            : new Date(b.created_at || 0) - new Date(a.created_at || 0);
+    });
     const page = allReels.slice(0, reelsVisible);
 
     if (!allReels.length) {
@@ -1255,7 +1260,13 @@ function observeReels() {
 listen("reelsLoadMore", "click", () => { reelsVisible += PAGE_SIZE; renderReels(); });
 
 function openSpecificReel(videoId) {
-    const index = videos.filter(isReel).findIndex(v => String(v.id) === String(videoId));
+    const rankedReels = videos.filter(isReel).sort((a, b) => {
+        const rank = window.gocatRecommendationScore;
+        return typeof rank === "function"
+            ? rank(b, "video") - rank(a, "video")
+            : new Date(b.created_at || 0) - new Date(a.created_at || 0);
+    });
+    const index = rankedReels.findIndex(v => String(v.id) === String(videoId));
     if (index >= 0) reelsVisible = Math.max(reelsVisible, index + 1);
 
     openPage("reels");
@@ -1304,9 +1315,9 @@ document.querySelectorAll("[data-explore-tab]").forEach(button => {
 });
 
 function updateExploreMore(total) {
-    $("exploreLoadMoreWrap")?.classList.toggle("hidden", exploreVisible >= total);
+    $("exploreLoadMoreWrap")?.classList.add("hidden");
     if ($("exploreCount")) {
-        $("exploreCount").textContent = "Showing " + Math.min(exploreVisible, total) + " of " + total;
+        $("exploreCount").textContent = "Showing " + total;
     }
 }
 
@@ -1320,12 +1331,19 @@ function renderExplore() {
 
     if (exploreMode === "videos" || exploreMode === "reels") {
         const wantReels = exploreMode === "reels";
-        const found = videos.filter(v => isReel(v) === wantReels && videoMatch(v));
+        const found = videos
+            .filter(v => isReel(v) === wantReels && videoMatch(v))
+            .sort((a, b) => {
+                const rank = window.gocatRecommendationScore;
+                return typeof rank === "function"
+                    ? rank(b, "video") - rank(a, "video")
+                    : new Date(b.created_at || 0) - new Date(a.created_at || 0);
+            });
         const container = $("exploreVideos");
 
         container.className = wantReels ? "shorts-grid" : "video-grid";
         container.innerHTML = found.length
-            ? found.slice(0, exploreVisible).map(wantReels ? homeReelCard : videoCard).join("")
+            ? found.map(wantReels ? homeReelCard : videoCard).join("")
             : "<div class='empty-card' style='grid-column:1/-1'><h3>No results</h3><p>Try a different search.</p></div>";
 
         updateExploreMore(found.length);
@@ -1337,7 +1355,7 @@ function renderExplore() {
             String(u.username || "").toLowerCase().includes(query) ||
             String(u.bio || "").toLowerCase().includes(query)));
 
-        $("explorePeople").innerHTML = found.slice(0, exploreVisible).map(user => `
+        $("explorePeople").innerHTML = found.map(user => `
             <div class="person-card">
                 ${avatar(user.username)}
                 <h3>${esc(user.username)}</h3>
@@ -1354,9 +1372,15 @@ function renderExplore() {
 
     const found = posts.filter(p => !query ||
         String(p.content || "").toLowerCase().includes(query) ||
-        getUsername(p.user_id).toLowerCase().includes(query));
+        getUsername(p.user_id).toLowerCase().includes(query))
+        .sort((a, b) => {
+            const rank = window.gocatRecommendationScore;
+            return typeof rank === "function"
+                ? rank(b, "post") - rank(a, "post")
+                : new Date(b.created_at || 0) - new Date(a.created_at || 0);
+        });
 
-    $("explorePosts").innerHTML = found.slice(0, exploreVisible).map(postCard).join("");
+    $("explorePosts").innerHTML = found.map(postCard).join("");
     updateExploreMore(found.length);
 }
 
