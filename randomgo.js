@@ -664,6 +664,7 @@ function updateUserInterface() {
     $("logoutBtn")?.classList.toggle("hidden", !signedIn);
     $("sidebarSignInBtn")?.classList.toggle("hidden", signedIn);
     $("settingsLogout")?.classList.toggle("hidden", !signedIn);
+    $("adminNavBtn")?.classList.toggle("hidden", !isGoCatAdmin);
 }
 
 
@@ -2937,6 +2938,72 @@ listen("clearNotificationsBtn", "click", function () {
 });
 
 
+
+/* ---------- OWNER ADMIN PANEL ---------- */
+async function renderAdminPanel() {
+    if (!currentUser || !isGoCatAdmin) {
+        showToast("This page is only available to the GoCat owner.");
+        return openPage("home");
+    }
+    const userCount = $("adminUserCount");
+    const videoCount = $("adminVideoCount");
+    const postCount = $("adminPostCount");
+    if (userCount) userCount.textContent = users.length;
+    if (videoCount) videoCount.textContent = videos.length;
+    if (postCount) postCount.textContent = posts.length;
+    const search = ($("adminUserSearch")?.value || "").trim().toLowerCase();
+    const list = $("adminUserList");
+    if (!list) return;
+    const shown = users.filter(u => (u.username || "").toLowerCase().includes(search));
+    list.innerHTML = shown.map(u => {
+        const banned = !!u.is_banned;
+        return '<div class="admin-user-row"><div><strong>' + esc(u.username || "Creator") + '</strong><small>' + (banned ? 'Suspended' : 'Active') + '</small></div><div class="admin-user-actions">' +
+          '<button class="soft-btn" data-admin-edit-user="' + esc(u.id) + '">Edit profile</button>' +
+          (String(u.id) === String(currentUser.id) ? '' : '<button class="' + (banned ? 'soft-btn' : 'danger-outline-btn') + '" data-admin-ban-user="' + esc(u.id) + '" data-ban-state="' + (banned ? 'true' : 'false') + '">' + (banned ? 'Unban' : 'Ban') + '</button>') +
+          '</div></div>';
+    }).join("") || '<p class="muted-text">No creators match that search.</p>';
+}
+listen("adminRefreshBtn", "click", async () => {
+    if (!isGoCatAdmin) return;
+    try { await loadAllData(); renderAdminPanel(); showToast("Admin data refreshed"); }
+    catch (error) { showToast("Refresh failed: " + error.message); }
+});
+listen("adminUserSearch", "input", renderAdminPanel);
+document.addEventListener("click", async event => {
+    const edit = event.target.closest("[data-admin-edit-user]");
+    const ban = event.target.closest("[data-admin-ban-user]");
+    if (!edit && !ban) return;
+    if (!isGoCatAdmin) return showToast("Admin access required.");
+    if (edit) {
+        const user = users.find(u => String(u.id) === String(edit.dataset.adminEditUser));
+        if (!user) return;
+        const username = prompt("Edit creator username:", user.username || "");
+        if (username === null) return;
+        const bio = prompt("Edit creator bio:", user.bio || "");
+        if (bio === null) return;
+        try {
+            const result = await db.from("users").update({ username: username.trim(), bio: bio.trim() }).eq("id", user.id);
+            if (result.error) throw result.error;
+            await loadUsers(); renderEverything(); renderAdminPanel();
+            showToast("Creator profile updated.");
+        } catch (error) { showToast("Profile update failed: " + error.message); }
+    }
+    if (ban) {
+        const user = users.find(u => String(u.id) === String(ban.dataset.adminBanUser));
+        if (!user) return;
+        const shouldBan = ban.dataset.banState !== "true";
+        const reason = shouldBan ? prompt("Reason for suspending " + user.username + " (optional):", "Community guidelines") : null;
+        if (shouldBan && reason === null) return;
+        if (!confirm((shouldBan ? "Suspend " : "Restore ") + user.username + "?")) return;
+        try {
+            const result = await db.rpc("gocat_admin_set_ban", { target_user_id: String(user.id), should_ban: shouldBan, reason });
+            if (result.error) throw result.error;
+            await loadUsers(); renderAdminPanel();
+            showToast(shouldBan ? "Creator suspended." : "Creator restored.");
+        } catch (error) { showToast("Moderation failed: " + error.message); }
+    }
+});
+
 /* ---------- 30 RENDERING AND NAVIGATION ---------- */
 
 function renderEverything() {
@@ -2953,7 +3020,7 @@ function renderEverything() {
     renderHistory();
 }
 
-const allowedPages = ["home", "reels", "explore", "following", "history", "posts", "chats", "notifications", "studio", "profile", "settings"];
+const allowedPages = ["home", "reels", "explore", "following", "history", "posts", "chats", "notifications", "studio", "profile", "settings", "admin"];
 
 function closeSidebar() {
     $("sidebar")?.classList.remove("open");
@@ -3005,6 +3072,7 @@ function renderCurrentPage() {
         notifications: renderNotifications, studio: renderStudio, profile: renderProfile, settings: renderSettings
     };
     map[currentPage]?.();
+    if (currentPage === "admin") renderAdminPanel();
 }
 
 document.addEventListener("click", function (event) {
