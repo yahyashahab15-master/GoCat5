@@ -101,6 +101,29 @@
     return cycles;
   };
 
+  // Add a real recommendation panel after the viewer reaches the last available Reel.
+  // Recommendations use existing public GoCat Reels only; no fake content is generated.
+  const originalRenderReels = window.renderReels;
+  if (typeof originalRenderReels === "function") {
+    window.renderReels = function () {
+      originalRenderReels();
+      const feed = $("reelsFeed");
+      const allReels = videos.filter(isReel);
+      if (!feed || !allReels.length || reelsVisible < allReels.length) return;
+
+      const recentIds = new Set(allReels.slice(Math.max(0, allReels.length - 3)).map(v => String(v.id)));
+      const pool = allReels.filter(v => !recentIds.has(String(v.id)));
+      const source = pool.length ? pool : allReels;
+      const recommendations = source.slice().sort(() => Math.random() - 0.5).slice(0, 3);
+      const panel = document.createElement("section");
+      panel.className = "reels-end-card";
+      panel.innerHTML = '<span aria-hidden="true">✦</span><h2>You reached the end</h2><p>Here are a few more Reels to explore.</p>' +
+        recommendations.map(video => '<button type="button" class="soft-btn" data-open-reel-id="' + esc(video.id) + '">' +
+          esc(video.title || "Watch this Reel") + ' · @' + esc(getUsername(video.owner_id)) + '</button>').join("");
+      feed.appendChild(panel);
+    };
+  }
+
   // Record genuine playback starts as lightweight local preference signals.
   document.addEventListener("play", event => {
     const videoEl = event.target;
