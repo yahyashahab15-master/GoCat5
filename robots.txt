@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://yahyashahab15-master.github.io/GoCat5/sitemap.xml
+Sitemap: https://gocat.vercel.app/sitemap.xml
