@@ -2998,7 +2998,9 @@ async function loadAccountPersistence() {
         saveWatchHistory(mergedHistory);
     }
 
-    if (!notificationResult.error) {
+    if (notificationResult.error) {
+        notifications = safeJSON("gocat_notifications_" + userId, []);
+    } else {
         const cloudRows = notificationResult.data || [];
         const known = new Set(cloudRows.map(row => String(row.id)));
         const localRows = safeJSON("gocat_notifications_" + userId, []);
