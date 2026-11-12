@@ -1,0 +1,24 @@
+{
+  "id": "/",
+  "name": "GoCat — Discover, Create & Connect",
+  "short_name": "GoCat",
+  "description": "Discover videos, explore creators, watch Reels and share with the GoCat community.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#07100d",
+  "theme_color": "#07100d",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/gocat-logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": [
+    "entertainment",
+    "social"
+  ]
+}
