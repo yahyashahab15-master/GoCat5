@@ -2572,7 +2572,7 @@ listen("editProfileForm", "submit", async function (event) {
 
 /* ---------- 26 CREATOR STUDIO ---------- */
 
-function renderStudio() {
+async function renderStudio() {
     if (!currentUser) return;
     const mine = isGoCatAdmin ? videos : videos.filter(v => isOwnContent(v.owner_id));
 
@@ -2606,6 +2606,58 @@ function renderStudio() {
                 <p>Your published videos and Reels will appear here.</p>
                 <button class="primary-btn" data-open-upload="video">Upload video</button>
            </div>`;
+
+    const chart = $("studioViewsChart");
+    if (!chart) return;
+    if (!mine.length) {
+        chart.textContent = "Publish a video or Reel to start collecting view analytics.";
+        set("studioAnalyticsTotal", "0");
+        set("studioAnalyticsSummary", "");
+        return;
+    }
+
+    const dates = Array.from({ length: 14 }, (_, index) =>
+        new Date(Date.now() - (13 - index) * 86400000).toISOString().slice(0, 10)
+    );
+    try {
+        const { data, error } = await db.from("video_views")
+            .select("video_id,view_date")
+            .in("video_id", mine.map(video => String(video.id)))
+            .gte("view_date", dates[0])
+            .lte("view_date", dates[13]);
+        if (error) throw error;
+
+        const counts = new Map(dates.map(date => [date, 0]));
+        (data || []).forEach(row => {
+            const date = String(row.view_date);
+            if (counts.has(date)) counts.set(date, counts.get(date) + 1);
+        });
+        const values = dates.map(date => counts.get(date) || 0);
+        const total = values.reduce((sum, value) => sum + value, 0);
+        const peak = Math.max(1, ...values);
+        chart.innerHTML = `<div class="studio-chart-bars" role="list">${dates.map((date, index) => {
+            const value = values[index];
+            const height = value ? Math.max(8, Math.round(value / peak * 100)) : 3;
+            const label = new Date(date + "T00:00:00").toLocaleDateString(undefined, { weekday: "short" });
+            const accessibleDate = new Date(date + "T00:00:00").toLocaleDateString();
+            return `<div class="studio-chart-day" role="listitem" aria-label="${accessibleDate}: ${value} tracked views">
+                <strong>${value || ""}</strong>
+                <div class="studio-chart-track"><span style="height:${height}%"></span></div>
+                <small>${label}</small>
+            </div>`;
+        }).join("")}</div>`;
+        set("studioAnalyticsTotal", total.toLocaleString() + " views");
+        const average = (total / 14).toFixed(1);
+        const busiest = Math.max(...values);
+        set("studioAnalyticsSummary", total
+            ? "Daily average: " + average + " · Best day: " + busiest + " tracked views"
+            : "No signed-in views have been recorded for your content in the last 14 days.");
+    } catch (error) {
+        console.warn("Creator analytics:", error.message);
+        chart.textContent = "View trend data is temporarily unavailable.";
+        set("studioAnalyticsTotal", "—");
+        set("studioAnalyticsSummary", "Your overall view totals are still shown above.");
+    }
 }
 
 
