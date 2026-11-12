@@ -98,3 +98,37 @@ BEGIN
   END IF;
 END
 $$;
+
+
+-- Make ban checks restrictive so they combine with ownership/admin policies using AND.
+-- Without AS RESTRICTIVE, permissive policies are OR-ed and an ownership policy could
+-- accidentally allow a banned account to continue writing.
+DO $$
+DECLARE
+  target_table text;
+  tables_to_guard text[] := ARRAY[
+    'users','videos','likes','comments','follows','posts',
+    'post_likes','post_comments','messages','video_views',
+    'watch_history','gocat_notifications'
+  ];
+BEGIN
+  FOREACH target_table IN ARRAY tables_to_guard LOOP
+    IF to_regclass(format('public.%I', target_table)) IS NOT NULL THEN
+      EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I',
+        'GoCat banned accounts blocked', target_table);
+      EXECUTE format(
+        'CREATE POLICY %I ON public.%I AS RESTRICTIVE FOR ALL TO authenticated USING (NOT public.is_gocat_banned()) WITH CHECK (NOT public.is_gocat_banned())',
+        'GoCat banned accounts blocked', target_table
+      );
+    END IF;
+  END LOOP;
+
+  IF to_regclass('storage.objects') IS NOT NULL THEN
+    DROP POLICY IF EXISTS "GoCat banned accounts blocked" ON storage.objects;
+    CREATE POLICY "GoCat banned accounts blocked"
+      ON storage.objects AS RESTRICTIVE FOR ALL TO authenticated
+      USING (NOT public.is_gocat_banned())
+      WITH CHECK (NOT public.is_gocat_banned());
+  END IF;
+END
+$$;
