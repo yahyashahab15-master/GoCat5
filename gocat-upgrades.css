@@ -1,0 +1,9 @@
+/* GoCat progressive-web-app and production polish */
+:focus-visible{outline:2px solid #16d28a!important;outline-offset:3px}
+.gocat-install-btn{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(22,210,138,.35);background:rgba(22,210,138,.10);color:var(--text,#eef5f1);border-radius:999px;padding:9px 13px;font:600 13px inherit;cursor:pointer;white-space:nowrap;transition:background .18s,border-color .18s,transform .18s}
+.gocat-install-btn:hover{background:rgba(22,210,138,.18);border-color:#16d28a;transform:translateY(-1px)}
+.gocat-install-btn[hidden]{display:none!important}
+.gocat-offline-status{position:fixed;z-index:9999;left:50%;bottom:22px;transform:translateX(-50%);padding:10px 16px;border-radius:999px;background:#13231c;color:#eef5f1;border:1px solid rgba(22,210,138,.35);box-shadow:0 10px 35px #0005;font-size:13px;pointer-events:none;opacity:0;transition:opacity .2s}
+.gocat-offline-status.is-visible{opacity:1}
+@media(max-width:600px){.gocat-install-btn{padding:8px 10px;font-size:12px}.gocat-install-btn span{display:none}}
+@media(prefers-reduced-motion:reduce){.gocat-install-btn{transition:none}}
