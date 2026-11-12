@@ -1737,7 +1737,10 @@ input:focus, textarea:focus, select:focus {
   border-radius:12px;
   background:var(--surface-2,rgba(128,145,135,.10));
   color:var(--text,#eef5f1);
-  font:600 14px/1.2 inherit;
+  font-family:inherit;
+  font-size:14px;
+  font-weight:600;
+  line-height:1.2;
   cursor:pointer;
   transition:background .18s,border-color .18s,transform .18s;
 }
