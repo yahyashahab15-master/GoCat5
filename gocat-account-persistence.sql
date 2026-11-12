@@ -132,3 +132,21 @@ BEGIN
   END IF;
 END
 $$;
+
+
+-- Creator Studio may read only the video/day columns for videos they own.
+-- Viewer identities remain private.
+REVOKE SELECT ON TABLE public.video_views FROM anon, authenticated;
+GRANT SELECT (video_id, view_date) ON TABLE public.video_views TO authenticated;
+DROP POLICY IF EXISTS "GoCat creators can read their content view dates" ON public.video_views;
+CREATE POLICY "GoCat creators can read their content view dates"
+  ON public.video_views FOR SELECT TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1
+      FROM public.videos v
+      WHERE v.id = video_views.video_id
+        AND v.owner_id = (SELECT auth.uid())::text
+    )
+    OR (SELECT public.is_gocat_admin())
+  );
