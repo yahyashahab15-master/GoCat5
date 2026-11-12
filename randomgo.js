@@ -12,8 +12,8 @@ const SUPABASE_KEY = "sb_publishable_LWIaOaxbzp19lV765vbbQg_kF5apL0O";
 const VIDEO_BUCKET = "videos";
 const POST_BUCKET = "post-media";
 
-const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
-const MAX_VIDEO_DURATION = 300;
+const MAX_VIDEO_BYTES = 500 * 1024 * 1024;
+const MAX_VIDEO_DURATION = 1200;
 const PAGE_SIZE = 5;
 
 const db = window.supabase?.createClient
@@ -331,6 +331,25 @@ listen("loginForm", "submit", async function (event) {
     }
 });
 
+listen("googleLoginBtn", "click", async function () {
+    if (!db) return showAuthMessage("Supabase did not load. Refresh GoCat and try again.");
+    const button = this;
+    button.disabled = true;
+    button.textContent = "Connecting to Google...";
+    try {
+        const { error } = await db.auth.signInWithOAuth({
+            provider: "google",
+            options: { redirectTo: location.origin + location.pathname }
+        });
+        if (error) throw error;
+    } catch (error) {
+        console.error("Google sign-in:", error);
+        showAuthMessage("Google sign-in is not configured yet: " + (error.message || "Check Supabase Auth provider settings."));
+        button.disabled = false;
+        button.textContent = "Continue with Google";
+    }
+});
+
 listen("registerForm", "submit", async function (event) {
     event.preventDefault();
 
@@ -570,6 +589,15 @@ function subscribeToLiveFeed() {
     tables.forEach(table => {
         channel = channel.on("postgres_changes", { event: "*", schema: "public", table }, () => queueLiveRefresh());
     });
+    ["watch_history", "gocat_notifications"].forEach(table => {
+        channel = channel.on("postgres_changes", { event: "*", schema: "public", table }, () => {
+            if (!currentUser) return;
+            loadAccountPersistence().then(() => {
+                if (currentPage === "history") renderHistory();
+                if (currentPage === "notifications") renderNotifications();
+            }).catch(error => console.warn("Account activity sync:", error.message));
+        });
+    });
     feedRealtimeChannel = channel.subscribe(status => { feedRealtimeReady = status === "SUBSCRIBED"; });
 }
 
@@ -588,7 +616,7 @@ async function startGoCat() {
         await loadAdminStatus();
         await loadAllData();
         currentProfileUserId = currentUser.id;
-        notifications = safeJSON("gocat_notifications_" + currentUser.id, []);
+        await loadAccountPersistence();
         updateUserInterface();
         openApp();
         subscribeToLiveFeed();
@@ -1498,7 +1526,7 @@ listen("videoFile", "change", function () {
     }
 
     if (file.size > MAX_VIDEO_BYTES) {
-        showToast("Maximum video size is 50 MB.");
+        showToast("Maximum video size is 500 MB.");
         input.value = "";
         return;
     }
@@ -1518,7 +1546,7 @@ listen("videoFile", "change", function () {
         }
 
         if (duration > MAX_VIDEO_DURATION) {
-            showToast("GoCat videos can be up to 5 minutes.");
+            showToast("GoCat videos can be up to 20 minutes.");
             input.value = "";
             return;
         }
@@ -2035,12 +2063,12 @@ listen("exportReelBtn", "click", async function () {
         const tooBig = blob.size > MAX_VIDEO_BYTES;
         if ($("editorStatus")) {
             $("editorStatus").textContent = tooBig
-                ? "Export finished but exceeds 50 MB. Lower the resolution or frame rate."
+                ? "Export finished but exceeds 500 MB. Lower the resolution or frame rate."
                 : "Your edited Reel is ready.";
         }
 
         hideModal("editorModal");
-        showToast(tooBig ? "Export exceeds 50 MB. Reduce export quality." : "Reel exported");
+        showToast(tooBig ? "Export exceeds 500 MB. Reduce export quality." : "Reel exported");
 
     } catch (error) {
         console.error("Export error:", error);
@@ -2098,7 +2126,7 @@ async function standardUpload(file, path) {
 async function uploadVideoFile(file, path, progress) {
     if (!db) throw new Error("Supabase is not connected.");
     if (!file || !file.size) throw new Error("Invalid video file.");
-    if (file.size > MAX_VIDEO_BYTES) throw new Error("Maximum video size is 50 MB.");
+    if (file.size > MAX_VIDEO_BYTES) throw new Error("Maximum video size is 500 MB.");
 
     const sessionResult = await db.auth.getSession();
     if (sessionResult.error) throw sessionResult.error;
@@ -2174,7 +2202,7 @@ listen("uploadForm", "submit", async function (event) {
     const file = exportedReelFile || selectedVideoFile;
 
     if (!file) return showToast("Select a video first.");
-    if (file.size > MAX_VIDEO_BYTES) return showToast("Your video must be smaller than 50 MB.");
+    if (file.size > MAX_VIDEO_BYTES) return showToast("Your video must be smaller than 500 MB.");
     if (!currentUser) return showToast("Please sign in before uploading.");
 
     const title = $("videoTitle")?.value.trim() || "";
@@ -2544,7 +2572,7 @@ listen("editProfileForm", "submit", async function (event) {
 
 /* ---------- 26 CREATOR STUDIO ---------- */
 
-function renderStudio() {
+async function renderStudio() {
     if (!currentUser) return;
     const mine = isGoCatAdmin ? videos : videos.filter(v => isOwnContent(v.owner_id));
 
@@ -2578,6 +2606,58 @@ function renderStudio() {
                 <p>Your published videos and Reels will appear here.</p>
                 <button class="primary-btn" data-open-upload="video">Upload video</button>
            </div>`;
+
+    const chart = $("studioViewsChart");
+    if (!chart) return;
+    if (!mine.length) {
+        chart.textContent = "Publish a video or Reel to start collecting view analytics.";
+        set("studioAnalyticsTotal", "0");
+        set("studioAnalyticsSummary", "");
+        return;
+    }
+
+    const dates = Array.from({ length: 14 }, (_, index) =>
+        new Date(Date.now() - (13 - index) * 86400000).toISOString().slice(0, 10)
+    );
+    try {
+        const { data, error } = await db.from("video_views")
+            .select("video_id,view_date")
+            .in("video_id", mine.map(video => String(video.id)))
+            .gte("view_date", dates[0])
+            .lte("view_date", dates[13]);
+        if (error) throw error;
+
+        const counts = new Map(dates.map(date => [date, 0]));
+        (data || []).forEach(row => {
+            const date = String(row.view_date);
+            if (counts.has(date)) counts.set(date, counts.get(date) + 1);
+        });
+        const values = dates.map(date => counts.get(date) || 0);
+        const total = values.reduce((sum, value) => sum + value, 0);
+        const peak = Math.max(1, ...values);
+        chart.innerHTML = `<div class="studio-chart-bars" role="list">${dates.map((date, index) => {
+            const value = values[index];
+            const height = value ? Math.max(8, Math.round(value / peak * 100)) : 3;
+            const label = new Date(date + "T00:00:00").toLocaleDateString(undefined, { weekday: "short" });
+            const accessibleDate = new Date(date + "T00:00:00").toLocaleDateString();
+            return `<div class="studio-chart-day" role="listitem" aria-label="${accessibleDate}: ${value} tracked views">
+                <strong>${value || ""}</strong>
+                <div class="studio-chart-track"><span style="height:${height}%"></span></div>
+                <small>${label}</small>
+            </div>`;
+        }).join("")}</div>`;
+        set("studioAnalyticsTotal", total.toLocaleString() + " views");
+        const average = (total / 14).toFixed(1);
+        const busiest = Math.max(...values);
+        set("studioAnalyticsSummary", total
+            ? "Daily average: " + average + " · Best day: " + busiest + " tracked views"
+            : "No signed-in views have been recorded for your content in the last 14 days.");
+    } catch (error) {
+        console.warn("Creator analytics:", error.message);
+        chart.textContent = "View trend data is temporarily unavailable.";
+        set("studioAnalyticsTotal", "—");
+        set("studioAnalyticsSummary", "Your overall view totals are still shown above.");
+    }
 }
 
 
@@ -2597,9 +2677,20 @@ function saveWatchHistory(history) {
 function addToWatchHistory(videoId) {
     if (!settings.history) return;
 
+    const watchedAt = new Date().toISOString();
     const history = getWatchHistory().filter(i => String(i.id) !== String(videoId));
-    history.unshift({ id: String(videoId), watched_at: new Date().toISOString() });
+    history.unshift({ id: String(videoId), watched_at: watchedAt });
     saveWatchHistory(history);
+
+    if (currentUser && db) {
+        db.from("watch_history").upsert({
+            user_id: String(currentUser.id),
+            video_id: String(videoId),
+            watched_at: watchedAt
+        }, { onConflict: "user_id,video_id" }).then(({ error }) => {
+            if (error) console.warn("Cloud watch history could not sync:", error.message);
+        }).catch(error => console.warn("Cloud watch history sync:", error.message));
+    }
 }
 
 function renderHistory() {
@@ -2631,14 +2722,28 @@ function renderHistory() {
 
 function removeHistoryItem(videoId) {
     saveWatchHistory(getWatchHistory().filter(i => String(i.id) !== String(videoId)));
+    if (currentUser && db) {
+        db.from("watch_history").delete()
+            .eq("user_id", String(currentUser.id))
+            .eq("video_id", String(videoId))
+            .then(({ error }) => { if (error) console.warn("Cloud history removal:", error.message); });
+    }
     renderHistory();
 }
 
-function clearHistory() {
-    if (!confirm("Clear all watch history on this device?")) return;
+async function clearHistory() {
+    if (!confirm("Clear all watch history for this account on every device?")) return;
     saveWatchHistory([]);
     renderHistory();
-    showToast("Watch history cleared");
+    if (currentUser && db) {
+        const { error } = await db.from("watch_history").delete().eq("user_id", String(currentUser.id));
+        if (error) {
+            console.warn("Cloud history clear:", error.message);
+            showToast("This device was cleared, but cloud history could not be cleared: " + error.message);
+            return;
+        }
+    }
+    showToast("Watch history cleared on your account");
 }
 
 listen("clearHistoryBtn", "click", clearHistory);
@@ -2906,13 +3011,105 @@ listen("chatForm", "submit", async function (event) {
 
 /* ---------- 29 NOTIFICATIONS ---------- */
 
+async function loadAccountPersistence() {
+    if (!currentUser || !db) return;
+
+    const userId = String(currentUser.id);
+    const [historyResult, notificationResult] = await Promise.all([
+        db.from("watch_history").select("video_id,watched_at")
+            .eq("user_id", userId).order("watched_at", { ascending: false }).limit(300),
+        db.from("gocat_notifications").select("id,icon,message,created_at,is_read")
+            .eq("user_id", userId).order("created_at", { ascending: false }).limit(100)
+    ]);
+
+    if (historyResult.error) console.warn("Cloud history load:", historyResult.error.message);
+    if (notificationResult.error) console.warn("Cloud notifications load:", notificationResult.error.message);
+
+    if (!historyResult.error) {
+        const cloudRows = historyResult.data || [];
+        const known = new Map(cloudRows.map(row => [String(row.video_id), row]));
+        const localRows = getWatchHistory().filter(row =>
+            row && row.id && videos.some(video => String(video.id) === String(row.id))
+        );
+
+        for (const row of localRows) {
+            const key = String(row.id);
+            const cloud = known.get(key);
+            if (!cloud || new Date(row.watched_at || 0).getTime() > new Date(cloud.watched_at || 0).getTime()) {
+                const merged = { user_id: userId, video_id: key, watched_at: row.watched_at || new Date().toISOString() };
+                known.set(key, merged);
+                const { error } = await db.from("watch_history").upsert(merged, { onConflict: "user_id,video_id" });
+                if (error) console.warn("Legacy watch history migration:", error.message);
+            }
+        }
+
+        const mergedHistory = Array.from(known.values())
+            .sort((a, b) => new Date(b.watched_at) - new Date(a.watched_at))
+            .slice(0, 300)
+            .map(row => ({ id: String(row.video_id), watched_at: row.watched_at }));
+        saveWatchHistory(mergedHistory);
+    }
+
+    if (notificationResult.error) {
+        notifications = safeJSON("gocat_notifications_" + userId, []);
+    } else {
+        const cloudRows = notificationResult.data || [];
+        const known = new Set(cloudRows.map(row => String(row.id)));
+        const localRows = safeJSON("gocat_notifications_" + userId, []);
+        for (const item of localRows.slice(0, 100)) {
+            if (!item?.id || known.has(String(item.id))) continue;
+            const { error } = await db.from("gocat_notifications").insert({
+                id: item.id,
+                user_id: userId,
+                icon: item.icon || "bell",
+                message: item.text || "",
+                created_at: item.created_at || new Date().toISOString(),
+                is_read: !!item.is_read
+            });
+            if (error && error.code !== "23505") console.warn("Legacy notification migration:", error.message);
+        }
+
+        const byId = new Map();
+        cloudRows.forEach(item => byId.set(String(item.id), {
+            id: String(item.id), icon: item.icon || "bell",
+            text: item.message || "", created_at: item.created_at, is_read: !!item.is_read
+        }));
+        localRows.forEach(item => {
+            if (item?.id && !byId.has(String(item.id))) byId.set(String(item.id), item);
+        });
+        notifications = Array.from(byId.values())
+            .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+            .slice(0, 100);
+        try { localStorage.setItem("gocat_notifications_" + userId, JSON.stringify(notifications)); } catch {}
+    }
+}
+
 function addLocalNotification(iconName, text) {
     if (!currentUser) return;
 
-    notifications.unshift({ id: crypto.randomUUID(), icon: iconName, text, created_at: new Date().toISOString() });
+    const item = {
+        id: crypto.randomUUID(),
+        icon: iconName,
+        text,
+        created_at: new Date().toISOString(),
+        is_read: false
+    };
+    notifications.unshift(item);
     notifications = notifications.slice(0, 100);
-
     try { localStorage.setItem("gocat_notifications_" + currentUser.id, JSON.stringify(notifications)); } catch {}
+
+    if (db) {
+        db.from("gocat_notifications").insert({
+            id: item.id,
+            user_id: String(currentUser.id),
+            icon: iconName,
+            message: text,
+            created_at: item.created_at,
+            is_read: false
+        }).then(({ error }) => {
+            if (error) console.warn("Cloud notification could not sync:", error.message);
+        }).catch(error => console.warn("Cloud notification sync:", error.message));
+    }
 }
 
 function renderNotifications() {
@@ -2931,10 +3128,13 @@ function renderNotifications() {
         : "<div class='empty-card'><h3>Nothing new</h3><p>Your activity will show up here.</p></div>";
 }
 
-listen("clearNotificationsBtn", "click", function () {
+listen("clearNotificationsBtn", "click", async function () {
+    if (!currentUser) return;
     notifications = [];
     try { localStorage.setItem("gocat_notifications_" + currentUser.id, "[]"); } catch {}
     renderNotifications();
+    const { error } = await db.from("gocat_notifications").delete().eq("user_id", String(currentUser.id));
+    if (error) showToast("Notifications cleared here, but cloud sync failed: " + error.message);
 });
 
 
