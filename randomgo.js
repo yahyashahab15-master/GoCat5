@@ -449,9 +449,14 @@ async function loadAdminStatus() {
 }
 
 async function loadUsers() {
+    // Only fetch the moderation flag for the verified owner/admin session.
+    // Regular visitors do not need this private account-management field.
+    const columns = isGoCatAdmin
+        ? "id,username,bio,avatar_path,created_at,is_banned"
+        : "id,username,bio,avatar_path,created_at";
     const result = await db
         .from("users")
-        .select("id,username,bio,avatar_path,created_at")
+        .select(columns)
         .order("created_at", { ascending: false });
 
     if (result.error) throw result.error;
