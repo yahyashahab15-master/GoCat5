@@ -42,10 +42,12 @@
 <link rel="stylesheet" href="random go.css">
 <link rel="stylesheet" href="/gocat-upgrades.css">
 <link rel="stylesheet" href="/gocat-mobile-polish.css">
+<link rel="stylesheet" href="/gocat-commercial-polish.css">
 
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script defer src="randomgo.js"></script>
 <script defer src="gocat-enhancements.js"></script>
+<script defer src="/gocat-commercial-polish.js"></script>
 <script defer src="/gocat-pwa.js"></script>
 </head>
 
@@ -171,6 +173,24 @@
 
             <!-- HOME -->
             <section id="page-home" class="page-section">
+                <div class="home-welcome" aria-labelledby="homeWelcomeTitle">
+                    <div class="home-welcome-copy">
+                        <span class="home-welcome-kicker">DISCOVER · CREATE · CONNECT</span>
+                        <h1 id="homeWelcomeTitle">Find something worth watching.</h1>
+                        <p>Explore videos, discover new creators, and find your next favorite Reel. Then share something of your own with the GoCat community.</p>
+                        <div class="home-welcome-actions">
+                            <button class="primary-btn" type="button" data-page="explore">Explore videos</button>
+                            <button class="soft-btn" type="button" data-open-upload="video">Start creating</button>
+                        </div>
+                    </div>
+                    <div class="home-welcome-art" aria-hidden="true">
+                        <div class="home-welcome-orbit">
+                            <span class="home-welcome-play">▶</span>
+                            <i class="home-welcome-dot one"></i>
+                            <i class="home-welcome-dot two"></i>
+                        </div>
+                    </div>
+                </div>
                 <div class="chips-bar">
                 <div id="topicChips" class="topic-chips">
                     <button class="topic-chip active" data-topic="All">All</button>
@@ -379,7 +399,12 @@
                         <div><h2 id="studioAnalyticsTitle">Views over time</h2><p>Tracked views from signed-in accounts · Last 14 days</p></div>
                         <strong id="studioAnalyticsTotal">—</strong>
                     </div>
-                    <div id="studioViewsChart" class="studio-views-chart" role="status" aria-live="polite">Loading view analytics…</div>
+                    <div id="studioViewsChart" class="studio-views-chart" role="status" aria-live="polite">
+                        <div class="studio-chart-skeleton" aria-hidden="true">
+                            <span style="--bar-height:28%"></span><span style="--bar-height:54%"></span><span style="--bar-height:38%"></span><span style="--bar-height:72%"></span><span style="--bar-height:46%"></span><span style="--bar-height:62%"></span><span style="--bar-height:35%"></span><span style="--bar-height:82%"></span><span style="--bar-height:50%"></span><span style="--bar-height:66%"></span><span style="--bar-height:40%"></span><span style="--bar-height:74%"></span><span style="--bar-height:48%"></span><span style="--bar-height:58%"></span>
+                        </div>
+                        <span class="gocat-visually-hidden">Loading view analytics…</span>
+                    </div>
                     <p id="studioAnalyticsSummary" class="studio-analytics-summary"></p>
                 </section>
                 <div class="section-heading"><h2>Your content</h2></div>
@@ -602,14 +627,23 @@
 
                 <div class="editor-panel hidden" data-editor-panel="effects">
                     <h3>Visual effects</h3>
-                    <label>Filter
-                        <select id="reelFilter">
+                    <label class="editor-filter-label">Filter
+                        <select id="reelFilter" class="editor-filter-native" aria-label="Choose a video filter">
                             <option value="none">Original</option><option value="warm">Warm</option>
                             <option value="cool">Cool</option><option value="mono">Black and white</option>
                             <option value="vivid">Vivid</option><option value="cinema">Cinema</option>
                             <option value="fade">Soft fade</option>
                         </select>
                     </label>
+                    <div class="editor-filter-grid" role="group" aria-label="Filter previews">
+                        <button class="editor-filter-choice active" type="button" data-editor-filter="none" aria-pressed="true"><span class="editor-filter-swatch" data-filter-preview="none"></span><small>Original</small></button>
+                        <button class="editor-filter-choice" type="button" data-editor-filter="warm" aria-pressed="false"><span class="editor-filter-swatch" data-filter-preview="warm"></span><small>Warm</small></button>
+                        <button class="editor-filter-choice" type="button" data-editor-filter="cool" aria-pressed="false"><span class="editor-filter-swatch" data-filter-preview="cool"></span><small>Cool</small></button>
+                        <button class="editor-filter-choice" type="button" data-editor-filter="mono" aria-pressed="false"><span class="editor-filter-swatch" data-filter-preview="mono"></span><small>Mono</small></button>
+                        <button class="editor-filter-choice" type="button" data-editor-filter="vivid" aria-pressed="false"><span class="editor-filter-swatch" data-filter-preview="vivid"></span><small>Vivid</small></button>
+                        <button class="editor-filter-choice" type="button" data-editor-filter="cinema" aria-pressed="false"><span class="editor-filter-swatch" data-filter-preview="cinema"></span><small>Cinema</small></button>
+                        <button class="editor-filter-choice" type="button" data-editor-filter="fade" aria-pressed="false"><span class="editor-filter-swatch" data-filter-preview="fade"></span><small>Soft fade</small></button>
+                    </div>
                     <label>Brightness<input id="reelBrightness" type="range" min="50" max="160" value="100"><output id="brightnessValue">100%</output></label>
                     <label>Contrast<input id="reelContrast" type="range" min="50" max="160" value="100"><output id="contrastValue">100%</output></label>
                     <label>Saturation<input id="reelSaturation" type="range" min="0" max="200" value="100"><output id="saturationValue">100%</output></label>
