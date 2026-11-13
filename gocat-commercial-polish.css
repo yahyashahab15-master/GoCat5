@@ -240,3 +240,23 @@ body.light{
   .channel-actions{width:100%;justify-content:flex-start}
   .channel-actions button{flex:1 1 auto}
 }
+
+
+.creator-profile-btn{
+  display:flex;
+  flex:1 1 auto;
+  align-items:center;
+  gap:11px;
+  min-width:0;
+  padding:0;
+  border:0;
+  background:transparent;
+  color:inherit;
+  text-align:left;
+  cursor:pointer;
+}
+.creator-profile-btn .avatar{flex:0 0 auto}
+.creator-profile-btn .creator-info{display:flex;flex:1 1 auto;flex-direction:column;min-width:0}
+.creator-profile-btn .creator-info strong,
+.creator-profile-btn .creator-info small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.creator-profile-btn:focus-visible{outline:2px solid var(--accent,#16d28a);outline-offset:4px;border-radius:8px}
