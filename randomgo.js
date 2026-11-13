@@ -331,21 +331,46 @@ listen("loginForm", "submit", async function (event) {
     }
 });
 
+function googleSignInErrorMessage(error) {
+    const message = String(error?.message || error || "Unknown Google sign-in error.");
+    if (/provider is not enabled/i.test(message)) {
+        return "Google sign-in is disabled in GoCat's Supabase Auth settings. Enable the Google provider, then try again.";
+    }
+    if (/redirect_to|redirect url|not allowed/i.test(message)) {
+        return "GoCat's return URL is not allowed in Supabase Auth. Add this website address to the Auth redirect URL allow-list: " + location.origin + location.pathname;
+    }
+    if (/invalid client|client secret|unauthorized_client/i.test(message)) {
+        return "Google OAuth credentials are not valid. Check the Web OAuth Client ID and Client Secret in Supabase.";
+    }
+    return "Google sign-in failed: " + message;
+}
+
 listen("googleLoginBtn", "click", async function () {
     if (!db) return showAuthMessage("Supabase did not load. Refresh GoCat and try again.");
     const button = this;
+    if (button.dataset.googleBusy === "true") return;
+    button.dataset.googleBusy = "true";
     button.disabled = true;
     button.textContent = "Connecting to Google...";
+    showAuthMessage("");
+
     try {
-        const { error } = await db.auth.signInWithOAuth({
+        const redirectTo = new URL(location.pathname || "/", location.origin).toString();
+        const { data, error } = await db.auth.signInWithOAuth({
             provider: "google",
-            options: { redirectTo: location.origin + location.pathname }
+            options: {
+                redirectTo,
+                queryParams: { prompt: "select_account" }
+            }
         });
         if (error) throw error;
+        if (!data?.url) throw new Error("Supabase did not return a Google authorization URL.");
+        // Supabase redirects the browser to Google. Keep the button locked during navigation.
     } catch (error) {
         console.error("Google sign-in:", error);
-        showAuthMessage("Google sign-in is not configured yet: " + (error.message || "Check Supabase Auth provider settings."));
+        showAuthMessage(googleSignInErrorMessage(error));
         button.disabled = false;
+        button.dataset.googleBusy = "false";
         button.textContent = "Continue with Google";
     }
 });
@@ -769,7 +794,7 @@ function postCard(post) {
     const isOwnPost = String(post.user_id) === String(currentUser?.id);
 
     return `
-        <article class="post-card">
+        <article class="post-card" data-post-id="${esc(post.id)}">
             <div class="post-head">
                 ${avatar(username, "", getUser(post.user_id)?.avatar_path || "")}
                 <div class="post-meta">
@@ -785,7 +810,8 @@ function postCard(post) {
 
             <div class="post-actions">
                 ${pill("heart", post.likes?.length || 0, `data-like-post="${esc(post.id)}"`, liked ? "liked" : "")}
-                ${pill("message", post.comments?.length || 0, `data-comments-post="${esc(post.id)}"`)}
+                ${pill("message", post.comments?.length || 0, `data-comments-post="${esc(post.id)}`)}
+                ${pill("share", "Share", `data-share-post="${esc(post.id)}"`)}
             </div>
         </article>
     `;
@@ -855,7 +881,7 @@ function buildHomeFeedCycles() {
         }
 
         if (si < data.shorts.length) {
-            const group = data.shorts.slice(si, si + 6);
+            const group = data.shorts.slice(si, si + 4);
             si += group.length;
             sections.push(`
                 <section class="home-feed-section">
@@ -1144,22 +1170,56 @@ function beginCommentReply(commentId) {
 
 /* ---------- 13 SHARE AND DELETE VIDEO ---------- */
 
-async function shareVideo(videoId) {
-    const url = location.origin + location.pathname + "?video=" + encodeURIComponent(videoId);
-
+async function shareGoCatLink(url, title, text) {
     try {
         if (navigator.share) {
-            await navigator.share({ title: "GoCat video", text: "Watch this on GoCat.", url });
-        } else if (navigator.clipboard) {
+            await navigator.share({ title, text, url });
+        } else if (navigator.clipboard?.writeText) {
             await navigator.clipboard.writeText(url);
-            showToast("Link copied");
+            showToast("GoCat link copied");
         } else {
-            showToast("Sharing is not supported here.");
+            window.prompt("Copy this GoCat link:", url);
         }
     } catch (error) {
-        if (error.name !== "AbortError") showToast("Sharing failed.");
+        if (error?.name !== "AbortError") {
+            console.warn("GoCat share:", error);
+            showToast("Sharing could not be completed.");
+        }
     }
 }
+
+async function shareVideo(videoId) {
+    const video = videos.find(item => String(item.id) === String(videoId));
+    const url = new URL(location.pathname || "/", location.origin);
+    url.searchParams.set("video", String(videoId));
+    await shareGoCatLink(url.toString(), video?.title || "GoCat video", "Watch this video on GoCat.");
+}
+
+async function shareProfile(profileId) {
+    const profile = getUser(profileId);
+    const url = new URL(location.pathname || "/", location.origin);
+    url.searchParams.set("creator", String(profileId));
+    await shareGoCatLink(url.toString(), (profile?.username || "Creator") + " on GoCat", "Discover this creator on GoCat.");
+}
+
+async function sharePost(postId) {
+    const url = new URL(location.pathname || "/", location.origin);
+    url.searchParams.set("post", String(postId));
+    await shareGoCatLink(url.toString(), "GoCat community post", "Open this post on GoCat.");
+}
+
+listen("inviteCreatorsBtn", "click", () => {
+    const url = new URL(location.pathname || "/", location.origin);
+    shareGoCatLink(url.toString(), "Join GoCat", "Discover creators, share videos and build your community on GoCat.");
+});
+
+document.addEventListener("click", event => {
+    const button = event.target.closest("[data-share-post]");
+    if (!button) return;
+    event.preventDefault();
+    event.stopPropagation();
+    sharePost(button.getAttribute("data-share-post"));
+});
 
 function scrollToVideo(videoId) {
     setTimeout(() => {
@@ -1169,7 +1229,29 @@ function scrollToVideo(videoId) {
 }
 
 function checkSharedVideoLink() {
-    const videoId = new URLSearchParams(location.search).get("video");
+    const params = new URLSearchParams(location.search);
+
+    const creatorId = params.get("creator");
+    if (creatorId) {
+        const creator = users.find(user => String(user.id) === String(creatorId));
+        if (!creator) return showToast("That GoCat creator could not be found.");
+        openOtherProfile(creator.id);
+        return;
+    }
+
+    const postId = params.get("post");
+    if (postId) {
+        const post = posts.find(item => String(item.id) === String(postId));
+        if (!post) return showToast("That GoCat post could not be found.");
+        openPage("posts");
+        setTimeout(() => {
+            document.querySelector('[data-post-id="' + CSS.escape(String(postId)) + '"]')
+                ?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 300);
+        return;
+    }
+
+    const videoId = params.get("video");
     if (!videoId) return;
 
     const video = videos.find(v => String(v.id) === String(videoId));
@@ -2476,6 +2558,11 @@ function renderProfile() {
     if ($("profileBio")) $("profileBio").textContent = profile.bio || "Welcome to GoCat.";
     paintAvatar("profileAvatar", profile.username, profile.avatar_path || "");
 
+    if ($("profileShareBtn")) {
+        $("profileShareBtn").onclick = () => shareProfile(profileId);
+        $("profileShareBtn").disabled = false;
+    }
+
     if ($("profileActionBtn")) {
         $("profileActionBtn").textContent = own ? "Edit channel" : isFollowing(profileId) ? "Following" : "Follow";
         $("profileActionBtn").onclick = function () {
@@ -2586,6 +2673,29 @@ async function renderStudio() {
     set("studioViews", mine.reduce((s, v) => s + Number(v.views || 0), 0).toLocaleString());
     set("studioLikes", mine.reduce((s, v) => s + (v.likes?.length || 0), 0).toLocaleString());
     set("studioFollowers", follows.filter(f => String(f.following_id) === String(currentUser.id)).length.toLocaleString());
+
+    const ownVideos = videos.filter(video => String(video.owner_id) === String(currentUser.id));
+    const ownReels = ownVideos.filter(isReel).length;
+    const ownPosts = posts.filter(post => String(post.user_id) === String(currentUser.id)).length;
+    const ownFollowers = follows.filter(f => String(f.following_id) === String(currentUser.id)).length;
+    const milestoneData = [
+        { title: "GoCat Starter", detail: "Publish your first video or Reel", value: ownVideos.length, target: 1 },
+        { title: "Reel Maker", detail: "Publish 3 Reels", value: ownReels, target: 3 },
+        { title: "Community Voice", detail: "Share 3 community posts", value: ownPosts, target: 3 },
+        { title: "Audience Builder", detail: "Reach 10 followers", value: ownFollowers, target: 10 }
+    ];
+    const milestoneBox = $("creatorMilestones");
+    if (milestoneBox) {
+        milestoneBox.innerHTML = milestoneData.map(item => {
+            const progress = Math.max(0, Math.min(100, Math.round(item.value / item.target * 100)));
+            const earned = item.value >= item.target;
+            return `<article class="creator-milestone ${earned ? "is-earned" : ""}">
+                <div class="creator-milestone-top"><strong>${item.title}</strong><span>${earned ? "Badge earned" : item.value + " / " + item.target}</span></div>
+                <p>${item.detail}</p>
+                <div class="creator-milestone-track"><span style="width:${progress}%"></span></div>
+            </article>`;
+        }).join("");
+    }
 
     const container = $("studioContent");
     if (!container) return;
@@ -3479,6 +3589,14 @@ const withTimeout = (promise, ms, message) => Promise.race([
 
 async function initializeGoCat() {
     const loader = $("loader");
+    const callbackUrl = new URL(window.location.href);
+    const oauthCallbackError = callbackUrl.searchParams.get("error_description") || callbackUrl.searchParams.get("error") || "";
+    if (oauthCallbackError) {
+        callbackUrl.searchParams.delete("error");
+        callbackUrl.searchParams.delete("error_description");
+        callbackUrl.searchParams.delete("error_code");
+        history.replaceState({}, document.title, callbackUrl.pathname + callbackUrl.search + callbackUrl.hash);
+    }
 
     try {
         if (!db) throw new Error("The Supabase library failed to load. Check your internet connection.");
@@ -3511,6 +3629,10 @@ async function initializeGoCat() {
 
     } finally {
         loader?.classList.add("hide");
+    }
+
+    if (oauthCallbackError) {
+        openLoginScreen("Google sign-in was not completed: " + oauthCallbackError);
     }
 }
 
