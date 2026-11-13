@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#07100d">
+<meta name="theme-color" content="#000000">
 <meta name="application-name" content="GoCat">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -41,6 +41,7 @@
 <link rel="icon" type="image/svg+xml" href="gocat-logo.svg">
 <link rel="stylesheet" href="random go.css">
 <link rel="stylesheet" href="/gocat-upgrades.css">
+<link rel="stylesheet" href="/gocat-mobile-polish.css">
 
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script defer src="randomgo.js"></script>
@@ -151,7 +152,7 @@
     <main class="main-area">
 
         <header class="topbar">
-            <button id="mobileMenuBtn" class="icon-btn mobile-menu-btn" type="button" aria-label="Menu"><i data-icon="menu"></i></button>
+            <button id="mobileMenuBtn" class="icon-btn mobile-menu-btn" type="button" aria-label="Menu" aria-controls="sidebar" aria-expanded="false"><i data-icon="menu"></i></button>
             <a href="#" class="mobile-brand" data-page="home"><span class="brand-symbol"><svg viewBox="0 0 32 32"><use href="#logo"/></svg></span></a>
 
             <div class="search-box">
@@ -486,12 +487,12 @@
         </div>
     </main>
 
-    <nav class="mobile-nav">
-        <button class="mobile-nav-btn active" data-page="home"><i data-icon="home"></i><small>Home</small></button>
-        <button class="mobile-nav-btn" data-page="reels"><i data-icon="shorts"></i><small>Reels</small></button>
-        <button class="mobile-nav-btn" data-page="explore"><i data-icon="compass"></i><small>Explore</small></button>
-        <button class="mobile-nav-btn" data-page="history"><i data-icon="clock"></i><small>History</small></button>
-        <button class="mobile-nav-btn" data-page="profile"><i data-icon="user"></i><small>Channel</small></button>
+    <nav id="mobileNav" class="mobile-nav" aria-label="Primary navigation">
+        <button type="button" class="mobile-nav-btn active" data-page="home" aria-label="Home"><i data-icon="home"></i><small>Home</small></button>
+        <button type="button" class="mobile-nav-btn" data-page="reels" aria-label="Reels"><i data-icon="shorts"></i><small>Reels</small></button>
+        <button type="button" class="mobile-nav-btn mobile-nav-create" data-open-upload="video" aria-label="Create a video"><i data-icon="plus"></i><small>Create</small></button>
+        <button type="button" class="mobile-nav-btn" data-page="explore" aria-label="Explore"><i data-icon="compass"></i><small>Explore</small></button>
+        <button type="button" class="mobile-nav-btn" data-page="profile" aria-label="Your channel"><i data-icon="user"></i><small>Profile</small></button>
     </nav>
 </div>
 
@@ -516,7 +517,7 @@
             <input id="videoFile" type="file" accept="video/*" hidden>
             <span class="dropzone-icon"><i data-icon="upload"></i></span>
             <strong>Select a video file</strong>
-            <small>MP4, MOV or WebM. Up to 50 MB and 5 minutes.</small>
+            <small>MP4, MOV or WebM. Up to 500 MB and 20 minutes, subject to storage limits.</small>
             <span id="selectedVideoName" class="selected-file"></span>
         </label>
 
