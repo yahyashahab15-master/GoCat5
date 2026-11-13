@@ -2,7 +2,7 @@ name: Validate GoCat
 
 on:
   push:
-    branches: ["main", "gocat-live-functionality-upgrades", "gocat-mobile-ui-polish"]
+    branches: ["main", "gocat-live-functionality-upgrades", "gocat-mobile-ui-polish", "gocat-commercial-polish"]
   pull_request:
     branches: ["main"]
 
@@ -23,6 +23,7 @@ jobs:
         run: |
           node --check randomgo.js
           node --check gocat-enhancements.js
+          node --check gocat-commercial-polish.js
           node --check gocat-pwa.js
           node --check sw.js
       - name: Validate Vercel and PWA JSON files
