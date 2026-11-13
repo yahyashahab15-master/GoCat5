@@ -9,6 +9,30 @@
   const seen = new Set(Array.isArray(preferences.seen) ? preferences.seen.map(String) : []);
   const topicCounts = preferences.topicCounts && typeof preferences.topicCounts === "object" ? preferences.topicCounts : {};
 
+  // Keep recommendation calculations efficient while giving small channels a fair start.
+  let creatorMetricsCache = null;
+  function getCreatorMetrics(ownerId) {
+    if (!creatorMetricsCache || creatorMetricsCache.videosRef !== videos || creatorMetricsCache.followsRef !== follows) {
+      const metrics = new Map();
+      (videos || []).forEach(video => {
+        const key = String(video.owner_id || "");
+        if (!key) return;
+        const entry = metrics.get(key) || { uploads: 0, followers: 0 };
+        entry.uploads += 1;
+        metrics.set(key, entry);
+      });
+      (follows || []).forEach(follow => {
+        const key = String(follow.following_id || "");
+        if (!key) return;
+        const entry = metrics.get(key) || { uploads: 0, followers: 0 };
+        entry.followers += 1;
+        metrics.set(key, entry);
+      });
+      creatorMetricsCache = { videosRef: videos, followsRef: follows, metrics };
+    }
+    return creatorMetricsCache.metrics.get(String(ownerId || "")) || { uploads: 0, followers: 0 };
+  }
+
   function saveSignals() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify({
       seen: Array.from(seen).slice(-300), topicCounts: topicCounts
@@ -31,6 +55,13 @@
     let value = Math.log1p(likes) * 2 + Math.log1p(comments) * 1.6 + Math.log1p(views) * 0.55;
     value += 5 * Math.exp(-ageHours / 120);
     if (typeof isFollowing === "function" && isFollowing(owner)) value += 5;
+    if (kind === "video") {
+      const creator = getCreatorMetrics(owner);
+      // A modest cold-start boost helps new creators surface without overpowering relevance.
+      if (creator.followers < 10) value += 2.2;
+      else if (creator.followers < 50) value += 1.1;
+      if (creator.uploads > 0 && creator.uploads <= 3) value += 0.7;
+    }
     if (kind === "video" && seen.has(String(item.id))) value -= 6;
     if (item.topic) value += Math.min(4, (topicCounts[item.topic] || 0) * 0.6);
     // Small stable variation keeps feeds from being identical without hiding relevance.
