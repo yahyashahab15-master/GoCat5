@@ -3225,6 +3225,7 @@ const allowedPages = ["home", "reels", "explore", "following", "history", "posts
 function closeSidebar() {
     $("sidebar")?.classList.remove("open");
     $("sidebarScrim")?.classList.remove("show");
+    $("mobileMenuBtn")?.setAttribute("aria-expanded", "false");
 }
 
 function openPage(page) {
@@ -3294,8 +3295,9 @@ listen("topProfileBtn", "click", function () {
 });
 
 listen("mobileMenuBtn", "click", () => {
-    $("sidebar")?.classList.toggle("open");
-    $("sidebarScrim")?.classList.toggle("show");
+    const isOpen = $("sidebar")?.classList.toggle("open") || false;
+    $("sidebarScrim")?.classList.toggle("show", isOpen);
+    $("mobileMenuBtn")?.setAttribute("aria-expanded", String(isOpen));
 });
 listen("sidebarScrim", "click", closeSidebar);
 
