@@ -57,6 +57,19 @@
     return true;
   }
 
+  async function copyCreatorChannel(id) {
+    if (!id) {
+      if (typeof openLoginScreen === "function") openLoginScreen("Sign in to copy your creator link.");
+      return;
+    }
+    try {
+      await copyText(creatorUrl(id));
+      toast("Channel link copied. Add it to your social bio or share it in a chat.");
+    } catch (_) {
+      toast("Could not copy the channel link in this browser.");
+    }
+  }
+
   async function shareCreator(id, preferNative = true) {
     if (!id) {
       if (typeof openLoginScreen === "function") openLoginScreen("Sign in to share your creator page.");
@@ -66,7 +79,7 @@
     const url = creatorUrl(id);
     const shareData = {
       title: name + " on GoCat",
-      text: "Discover " + name + " on GoCat.",
+      text: "Discover " + name + " on GoCat. Share this channel with someone who might enjoy it.",
       url
     };
     try {
@@ -134,6 +147,7 @@
           <p>Share your channel link in WhatsApp, your social bio, or a group where people already know you.</p>
           <div class="gocat-launchpad-actions">
             <button class="gocat-launch-primary" type="button" data-gocat-share-channel>Share my channel</button>
+            <button class="gocat-launch-secondary" type="button" data-gocat-copy-channel>Copy channel link</button>
             <button class="gocat-launch-secondary" type="button" data-gocat-invite-whatsapp>Invite on WhatsApp</button>
           </div>
         </article>
@@ -156,6 +170,13 @@
     button.textContent = "Share channel";
     button.setAttribute("data-gocat-share-profile", "");
     action.insertAdjacentElement("afterend", button);
+    const copyButton = document.createElement("button");
+    copyButton.id = "gocatProfileCopyBtn";
+    copyButton.type = "button";
+    copyButton.className = "soft-btn gocat-profile-share";
+    copyButton.textContent = "Copy link";
+    copyButton.setAttribute("data-gocat-copy-profile", "");
+    button.insertAdjacentElement("afterend", copyButton);
   }
 
   function milestoneMarkup(title, detail, current, target) {
@@ -201,7 +222,10 @@
       <div class="gocat-milestone-heading">
         <div><span class="gocat-launchpad-kicker">CREATOR PROGRESS</span><h2>Your milestones</h2>
         <p>Earn profile achievements as your real uploads, views and followers grow. These are platform badges, not cash payouts.</p></div>
-        <button type="button" class="gocat-launch-primary" data-gocat-share-channel>Share channel</button>
+        <div class="gocat-launchpad-actions">
+          <button type="button" class="gocat-launch-primary" data-gocat-share-channel>Share channel</button>
+          <button type="button" class="gocat-launch-secondary" data-gocat-copy-channel>Copy channel link</button>
+        </div>
       </div>
       <div id="gocatMilestones"></div>`;
     stats.insertAdjacentElement("afterend", panel);
@@ -228,6 +252,15 @@
   }
 
   document.addEventListener("click", async function (event) {
+    const copy = event.target.closest("[data-gocat-copy-channel], [data-gocat-copy-profile]");
+    if (copy) {
+      event.preventDefault();
+      const id = copy.hasAttribute("data-gocat-copy-profile") ? currentCreatorId()
+        : (typeof currentUser !== "undefined" ? currentUser?.id : null);
+      await copyCreatorChannel(id);
+      return;
+    }
+
     const share = event.target.closest("[data-gocat-share-channel], [data-gocat-share-profile]");
     if (share) {
       event.preventDefault();
@@ -279,7 +312,6 @@
     new MutationObserver(mountProfileShare).observe(profileAction, { attributes: true, attributeFilter: ["class", "style"] });
   }
 
-  const stats = ["studioVideos", "studioViews", "studioFollowers"].map(id => $(id)).filter(Boolean);
   // The app can render its profile and studio after the initial script execution.
   const appObserver = new MutationObserver(() => {
     mountProfileShare();
