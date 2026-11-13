@@ -215,7 +215,7 @@
     }
   }
 
-  function openSharedCreator(attempt = 0) {
+  function openSharedCreator() {
     const id = new URLSearchParams(location.search).get("creator");
     if (!id || window.__gocatSharedCreatorOpened) return;
     const list = (typeof users !== "undefined" && Array.isArray(users)) ? users : [];
@@ -224,13 +224,6 @@
       window.__gocatSharedCreatorOpened = true;
       currentProfileUserId = profile.id;
       openPage("profile");
-      return;
-    }
-    if (attempt < 36) {
-      window.setTimeout(() => openSharedCreator(attempt + 1), 350);
-    } else {
-      // Do not interrupt the normal home screen if the shared creator was removed.
-      window.__gocatSharedCreatorOpened = true;
     }
   }
 
@@ -287,11 +280,6 @@
   }
 
   const stats = ["studioVideos", "studioViews", "studioFollowers"].map(id => $(id)).filter(Boolean);
-  if (stats.length && "MutationObserver" in window) {
-    const observer = new MutationObserver(updateMilestones);
-    stats.forEach(node => observer.observe(node, { childList: true, characterData: true, subtree: true }));
-  }
-
   // The app can render its profile and studio after the initial script execution.
   const appObserver = new MutationObserver(() => {
     mountProfileShare();
