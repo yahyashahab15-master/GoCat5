@@ -955,18 +955,28 @@ function renderSuggestedCreators() {
     const container = $("suggestedCreators");
     if (!container) return;
 
-    const suggestions = users.filter(u => !isOwnContent(u.id) && !isFollowing(u.id)).slice(0, 15);
+    // loadUsers already orders profiles newest-first, so new channels get a fair first look.
+    const suggestions = users.filter(user => !isOwnContent(user.id) && !isFollowing(user.id)).slice(0, 15);
 
     container.innerHTML = suggestions.length
-        ? suggestions.map(user => `
-            <div class="creator-card">
-                ${avatar(user.username, "lg")}
-                <div class="creator-info">
-                    <strong>${esc(user.username)}</strong>
-                    <small>GoCat creator</small>
-                </div>
-                <button class="mini-follow" data-follow-user="${esc(user.id)}">Follow</button>
-            </div>`).join("")
+        ? suggestions.map(user => {
+            const uploads = videos.filter(video => String(video.owner_id) === String(user.id)).length;
+            const audience = follows.filter(follow => String(follow.following_id) === String(user.id)).length;
+            const created = Number(user.created_at) || Date.parse(user.created_at || "");
+            const isNew = Number.isFinite(created) && created > 0 && Date.now() - created < 30 * 86400000;
+            const detail = isNew ? "New on GoCat" : uploads + " uploads · " + audience + " followers";
+            return `
+                <div class="creator-card">
+                    <button type="button" class="creator-profile-btn" data-profile-user="${esc(user.id)}" aria-label="Open ${esc(user.username)}'s channel">
+                        ${avatar(user.username, "lg", user.avatar_path || "")}
+                        <span class="creator-info">
+                            <strong>${esc(user.username)}</strong>
+                            <small>${esc(detail)}</small>
+                        </span>
+                    </button>
+                    <button class="mini-follow" data-follow-user="${esc(user.id)}">Follow</button>
+                </div>`;
+        }).join("")
         : "<p class='muted-text'>You are following everyone here.</p>";
 }
 
