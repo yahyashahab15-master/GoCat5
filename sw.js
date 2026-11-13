@@ -1,5 +1,5 @@
 "use strict";
-const CACHE_NAME = "gocat-shell-v2";
+const CACHE_NAME = "gocat-shell-v3";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -8,8 +8,10 @@ const APP_SHELL = [
   "/random%20go.css",
   "/gocat-upgrades.css",
   "/gocat-mobile-polish.css",
+  "/gocat-commercial-polish.css",
   "/randomgo.js",
   "/gocat-enhancements.js",
+  "/gocat-commercial-polish.js",
   "/gocat-pwa.js"
 ];
 self.addEventListener("install", event => {
