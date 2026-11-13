@@ -134,7 +134,7 @@ body.light{
 /* The loader logo is a standalone image asset, with a visible fallback. */
 .gocat-loader-mark img{
   display:block;width:64px;height:64px;max-width:100%;object-fit:contain;
-  filter:none!important;opacity:1;visibility:visible;
+  filter:brightness(0) invert(1)!important;opacity:1;visibility:visible;
 }
 .gocat-loader-mark .gocat-loader-logo-fallback{
   position:static;inset:auto;display:grid;place-items:center;
