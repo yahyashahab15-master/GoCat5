@@ -143,3 +143,100 @@ body.light{
   font:900 43px/1 Geist,system-ui,sans-serif;animation:none;
 }
 .gocat-loader-mark .gocat-loader-logo-fallback[hidden]{display:none!important}
+
+
+/* GoCat growth tools: creator sharing and achievement milestones. */
+.channel-actions{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+}
+.creator-rewards-card{
+  margin:22px 0;
+  padding:22px;
+  border:1px solid var(--border,rgba(255,255,255,.1));
+  border-radius:20px;
+  background:linear-gradient(145deg,rgba(22,210,138,.09),rgba(255,255,255,.025));
+}
+.creator-rewards-heading{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  margin-bottom:18px;
+}
+.creator-rewards-heading h2{margin:0 0 6px}
+.creator-rewards-heading p,.creator-milestone p{
+  margin:0;
+  color:var(--muted,#9aa8a1);
+  font-size:13px;
+  line-height:1.5;
+}
+.creator-rewards-mark{
+  display:grid;
+  place-items:center;
+  flex:0 0 44px;
+  width:44px;
+  height:44px;
+  border-radius:14px;
+  background:rgba(22,210,138,.16);
+  color:var(--accent,#16d28a);
+  font-size:24px;
+}
+.creator-milestones{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+}
+.creator-milestone{
+  min-width:0;
+  padding:15px;
+  border:1px solid var(--border,rgba(255,255,255,.1));
+  border-radius:14px;
+  background:rgba(0,0,0,.12);
+}
+.creator-milestone.is-earned{
+  border-color:rgba(22,210,138,.48);
+  background:rgba(22,210,138,.08);
+}
+.creator-milestone-top{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:7px;
+}
+.creator-milestone-top strong{font-size:14px}
+.creator-milestone-top span{
+  flex:0 0 auto;
+  color:var(--accent,#16d28a);
+  font-size:11px;
+  font-weight:700;
+}
+.creator-milestone-track{
+  height:7px;
+  margin-top:12px;
+  overflow:hidden;
+  border-radius:99px;
+  background:rgba(127,127,127,.2);
+}
+.creator-milestone-track span{
+  display:block;
+  height:100%;
+  border-radius:inherit;
+  background:var(--accent,#16d28a);
+  transition:width .25s ease;
+}
+.creator-rewards-note{
+  margin:14px 0 0;
+  color:var(--muted,#9aa8a1);
+  font-size:11px;
+}
+@media(max-width:620px){
+  .creator-rewards-card{padding:16px;margin:16px 0}
+  .creator-milestones{grid-template-columns:minmax(0,1fr)}
+  .channel-actions{width:100%;justify-content:flex-start}
+  .channel-actions button{flex:1 1 auto}
+}
