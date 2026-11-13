@@ -130,3 +130,5 @@ body.light{
   .home-welcome-orbit:after,.studio-chart-skeleton span{animation:none}
   .primary-btn,.soft-btn,.danger-outline-btn,.icon-btn,.topic-chip,.tab-btn,.profile-tab,.video-card,.post-card,.person-card,.creator-card,.studio-stat-card,.settings-card{transition:none}
 }
+
+.gocat-visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
