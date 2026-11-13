@@ -810,7 +810,7 @@ function postCard(post) {
 
             <div class="post-actions">
                 ${pill("heart", post.likes?.length || 0, `data-like-post="${esc(post.id)}"`, liked ? "liked" : "")}
-                ${pill("message", post.comments?.length || 0, `data-comments-post="${esc(post.id)}`)}
+                ${pill("message", post.comments?.length || 0, `data-comments-post="${esc(post.id)}"`)}
                 ${pill("share", "Share", `data-share-post="${esc(post.id)}"`)}
             </div>
         </article>
