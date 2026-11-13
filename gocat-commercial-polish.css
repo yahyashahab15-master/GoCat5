@@ -130,3 +130,16 @@ body.light{
   .home-welcome-orbit:after,.studio-chart-skeleton span{animation:none}
   .primary-btn,.soft-btn,.danger-outline-btn,.icon-btn,.topic-chip,.tab-btn,.profile-tab,.video-card,.post-card,.person-card,.creator-card,.studio-stat-card,.settings-card{transition:none}
 }
+
+/* The loader logo is a standalone image asset, with a visible fallback. */
+.gocat-loader-mark img{
+  display:block;width:64px;height:64px;max-width:100%;object-fit:contain;
+  filter:none!important;opacity:1;visibility:visible;
+}
+.gocat-loader-mark .gocat-loader-logo-fallback{
+  position:static;inset:auto;display:grid;place-items:center;
+  width:64px;height:64px;border:1px solid rgba(22,210,138,.35);
+  border-radius:17px;background:#000;color:#16d28a;
+  font:900 43px/1 Geist,system-ui,sans-serif;animation:none;
+}
+.gocat-loader-mark .gocat-loader-logo-fallback[hidden]{display:none!important}
