@@ -92,8 +92,7 @@
     }
 
     byId("communityPostForm")?.classList.toggle("hidden", !isMember);
-    byId("communityGuestPrompt")?.classList.toggle("hidden", !!isMember);
-    if (!currentUser) byId("communityGuestPrompt")?.classList.remove("hidden");
+    byId("communityGuestPrompt")?.classList.toggle("hidden", !!currentUser || isMember);
 
     const feed = byId("communityPostsFeed");
     if (!feed) return;
