@@ -45,10 +45,12 @@
 <link rel="stylesheet" href="/gocat-commercial-polish.css">
 <link rel="stylesheet" href="/gocat-creator-launchpad.css">
 <link rel="stylesheet" href="/gocat-communities.css">
+<link rel="stylesheet" href="/gocat-stories.css">
 
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script defer src="randomgo.js"></script>
 <script defer src="gocat-communities.js"></script>
+<script defer src="gocat-stories.js"></script>
 <script defer src="gocat-enhancements.js"></script>
 <script defer src="/gocat-commercial-polish.js"></script>
 <script defer src="/gocat-creator-launchpad.js"></script>
@@ -211,6 +213,16 @@
                 </div>
                 <button id="refreshFeedBtn" class="icon-btn" title="Refresh feed" aria-label="Refresh feed"><i data-icon="refresh"></i></button>
                 </div>
+
+                <section class="stories-section" aria-labelledby="storiesHeading">
+                    <div class="stories-heading">
+                        <div><h2 id="storiesHeading">Stories</h2><p>Little moments, here for 24 hours.</p></div>
+                        <button id="storyCreateBtn" class="soft-btn" type="button" data-story-create>+ Add story</button>
+                    </div>
+                    <div id="storiesTray" class="stories-tray" aria-live="polite">
+                        <div class="gocat-stories-empty">Loading stories…</div>
+                    </div>
+                </section>
 
                 <div class="home-creators-section">
                     <div class="section-heading">
@@ -585,6 +597,43 @@
                 </div>
             </section>
 
+        </div>
+
+        <div id="storyComposer" class="story-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="storyComposerTitle">
+            <section class="story-composer-card">
+                <div class="story-composer-heading">
+                    <div><h2 id="storyComposerTitle">Create a story</h2><p>Your story disappears from GoCat after 24 hours.</p></div>
+                    <button class="icon-btn" type="button" data-story-composer-close aria-label="Close story composer">×</button>
+                </div>
+                <form id="storyUploadForm" class="story-composer-form">
+                    <div id="storyUploadPreview" class="story-upload-preview"><span>Choose an image or short video to preview it here.</span></div>
+                    <label class="story-file-picker">Choose photo or video
+                        <input id="storyMediaFile" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" required>
+                    </label>
+                    <textarea id="storyCaption" maxlength="180" placeholder="Add a caption (optional)…"></textarea>
+                    <div class="story-composer-actions">
+                        <span class="story-composer-note">JPG, PNG, WebP, MP4 or WebM · Up to 25 MB</span>
+                        <button id="storyPublishBtn" class="primary-btn" type="submit">Share story</button>
+                    </div>
+                </form>
+            </section>
+        </div>
+
+        <div id="storyViewer" class="story-modal story-viewer hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-label="Story viewer">
+            <section class="story-viewer-card">
+                <div class="story-viewer-top">
+                    <div class="story-viewer-user"><strong id="storyViewerName">Creator</strong><small id="storyViewerTime">Just now</small></div>
+                    <div class="story-viewer-actions">
+                        <button id="storyDeleteBtn" class="hidden" type="button" aria-label="Delete your story">Delete</button>
+                        <button type="button" data-story-close aria-label="Close story viewer">×</button>
+                    </div>
+                </div>
+                <div id="storyViewerStage" class="story-viewer-stage"></div>
+                <div class="story-viewer-nav">
+                    <button id="storyPreviousBtn" type="button" disabled>Previous</button>
+                    <button id="storyNextBtn" type="button">Next</button>
+                </div>
+            </section>
         </div>
     </main>
 
