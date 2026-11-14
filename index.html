@@ -48,6 +48,7 @@
 <link rel="stylesheet" href="/gocat-stories.css">
 
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script defer src="/gocat-media.js"></script>
 <script defer src="randomgo.js"></script>
 <script defer src="gocat-communities.js"></script>
 <script defer src="gocat-stories.js"></script>
@@ -395,8 +396,15 @@
                         <button class="primary-btn" type="button" data-login-trigger>Sign in</button>
                     </div>
                     <form id="communityPostForm" class="community-post-form hidden">
-                        <textarea id="communityPostContent" maxlength="2000" rows="3" placeholder="Share something with this community…" required></textarea>
-                        <div><span class="muted-text">Keep it helpful and respectful.</span><button class="primary-btn" type="submit">Publish post</button></div>
+                        <textarea id="communityPostContent" maxlength="2000" rows="3" placeholder="Share an update, photo, or video with this community…"></textarea>
+                        <div class="community-media-compose-row">
+                            <label class="file-pill community-media-picker"><i data-icon="image"></i>Add photo or video
+                                <input id="communityPostMedia" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" hidden>
+                            </label>
+                            <span id="communityPostMediaName" class="muted-text"></span>
+                            <button class="primary-btn" type="submit">Publish post</button>
+                        </div>
+                        <small class="muted-text">ImageKit free plan: images up to 25 MB, videos up to 100 MB. Existing GoCat media remains available.</small>
                     </form>
                     <div id="communityPostsFeed" class="community-posts-feed"></div>
                 </section>
