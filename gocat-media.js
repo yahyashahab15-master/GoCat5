@@ -135,9 +135,55 @@
     }
   }
 
+  async function checkStatus() {
+    try {
+      const response = await fetch("/api/imagekit-auth", {
+        method: "GET",
+        headers: { "Accept": "application/json" },
+        cache: "no-store"
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Storage status unavailable.");
+      return {
+        provider: payload.provider || "ImageKit",
+        configured: payload.configured === true
+      };
+    } catch (error) {
+      console.warn("GoCat external storage status:", error.message);
+      return { provider: "ImageKit", configured: false, unavailable: true };
+    }
+  }
+
   function isRemoteUrl(value) {
     return typeof value === "string" && /^https?:\/\//i.test(value);
   }
 
-  window.GoCatMedia = { upload, uploadOrFallback, isRemoteUrl };
+  async function renderStorageStatus() {
+    const label = document.getElementById("gocatStorageStatusLabel");
+    const detail = document.getElementById("gocatStorageStatusText");
+    const note = document.getElementById("gocatStorageStatusDetails");
+    if (!label || !detail || !note) return;
+
+    label.textContent = "Checking…";
+    const status = await checkStatus();
+
+    if (status.configured) {
+      label.textContent = "ImageKit connected";
+      label.dataset.state = "connected";
+      detail.textContent = "New videos, Reels, post images, Stories and community media can use your external media storage.";
+      note.textContent = "Check the ImageKit dashboard for your exact remaining storage and monthly bandwidth.";
+    } else {
+      label.textContent = status.unavailable ? "Status unavailable" : "Not connected";
+      label.dataset.state = "inactive";
+      detail.textContent = "New uploads are still using GoCat’s existing Supabase storage. Your available storage has not increased yet.";
+      note.textContent = "Add IMAGEKIT_PUBLIC_KEY and IMAGEKIT_PRIVATE_KEY to Vercel → Project Settings → Environment Variables, then redeploy.";
+    }
+  }
+
+  window.GoCatMedia = { upload, uploadOrFallback, isRemoteUrl, checkStatus, renderStorageStatus };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", renderStorageStatus, { once: true });
+  } else {
+    renderStorageStatus();
+  }
 })();
