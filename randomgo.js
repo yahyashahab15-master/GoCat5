@@ -128,13 +128,44 @@ function paintAvatar(id, name, avatarPath = "") {
 }
 
 const initial = name => String(name || "?").trim().charAt(0).toUpperCase();
-const getUser = id => users.find(u => String(u.id) === String(id));
+const getUser = id => {
+    const key = id && typeof id === "object" ? id.id : id;
+    if (key == null || String(key).trim() === "") return null;
+    return users.find(user => String(user.id) === String(key)) || null;
+};
+
+function getCurrentAccountName() {
+    const metadata = currentUser?.user_metadata || {};
+    const emailName = String(currentUser?.email || "").split("@")[0].replace(/[._-]+/g, " ");
+    const candidates = [
+        currentProfile?.username,
+        metadata.username,
+        metadata.full_name,
+        metadata.name,
+        emailName
+    ];
+    const name = candidates.find(value => typeof value === "string" && value.trim());
+    return name ? name.trim() : "Creator";
+}
 
 function getUsername(id) {
-    const user = getUser(id);
-    if (user) return user.username || "Creator";
-    if (currentProfile && String(currentProfile.id) === String(id)) return currentProfile.username || "Creator";
-    return "GoCat creator";
+    const key = id && typeof id === "object" ? id.id : id;
+    if (key == null || String(key).trim() === "") return "Creator";
+
+    if (currentProfile && String(currentProfile.id) === String(key)) {
+        const ownName = String(currentProfile.username || "").trim();
+        if (ownName) return ownName;
+    }
+
+    const user = getUser(key);
+    const username = String(user?.username || "").trim();
+    if (username) return username;
+
+    if (currentUser && String(currentUser.id) === String(key)) {
+        return getCurrentAccountName();
+    }
+
+    return "Creator";
 }
 
 const isOwnContent = id => !!currentUser && String(id) === String(currentUser.id);
@@ -692,7 +723,7 @@ async function startGuestGoCat() {
 
 function updateUserInterface() {
     const signedIn = !!currentUser;
-    const username = signedIn ? (currentProfile?.username || "Creator") : "Guest";
+    const username = signedIn ? getCurrentAccountName() : "Guest";
     if ($("welcomeName")) $("welcomeName").textContent = username;
     if ($("sidebarUsername")) $("sidebarUsername").textContent = username;
     if ($("settingsUsername")) $("settingsUsername").textContent = username;
@@ -2487,7 +2518,7 @@ function renderProfile() {
 
     const own = isOwnContent(profileId);
 
-    if ($("profileUsername")) $("profileUsername").textContent = profile.username || "Creator";
+    if ($("profileUsername")) $("profileUsername").textContent = profile.username || getUsername(profileId);
     if ($("profileEmail")) $("profileEmail").textContent = own ? (currentUser?.email || "") : "";
     if ($("profileBio")) $("profileBio").textContent = profile.bio || "Welcome to GoCat.";
     paintAvatar("profileAvatar", profile.username, profile.avatar_path || "");
@@ -3357,9 +3388,9 @@ function renderSettings() {
     if ($("settingAutoplay")) $("settingAutoplay").checked = settings.autoplay;
     if ($("settingMuted")) $("settingMuted").checked = settings.muted;
     if ($("settingHistory")) $("settingHistory").checked = settings.history;
-    if ($("settingsUsername")) $("settingsUsername").textContent = currentProfile?.username || "Creator";
+    if ($("settingsUsername")) $("settingsUsername").textContent = currentUser ? getCurrentAccountName() : "Guest";
     if ($("settingsEmail")) $("settingsEmail").textContent = currentUser?.email || "";
-    paintAvatar("settingsAvatar", currentProfile?.username, currentProfile?.avatar_path || "");
+    paintAvatar("settingsAvatar", currentUser ? getCurrentAccountName() : "Guest", currentProfile?.avatar_path || "");
     if ($("settingAutoplay")) $("settingAutoplay").checked = settings.autoplay;
     if ($("settingMuted")) $("settingMuted").checked = settings.muted;
     if ($("settingHistory")) $("settingHistory").checked = settings.history;
