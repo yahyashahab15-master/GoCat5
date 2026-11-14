@@ -3241,7 +3241,7 @@ function renderEverything() {
     renderHistory();
 }
 
-const allowedPages = ["home", "reels", "explore", "following", "history", "posts", "chats", "notifications", "studio", "profile", "settings", "admin"];
+const allowedPages = ["home", "reels", "explore", "following", "history", "posts", "communities", "chats", "notifications", "studio", "profile", "settings", "admin"];
 
 function closeSidebar() {
     $("sidebar")?.classList.remove("open");
@@ -3290,8 +3290,8 @@ function openPage(page) {
 function renderCurrentPage() {
     const map = {
         home: renderHomeFeed, reels: renderReels, explore: renderExplore, following: renderFollowing,
-        history: renderHistory, posts: renderPosts, chats: renderChatFriends,
-        notifications: renderNotifications, studio: renderStudio, profile: renderProfile, settings: renderSettings
+        history: renderHistory, posts: renderPosts, communities: () => window.renderGoCatCommunities?.(),
+        chats: renderChatFriends, notifications: renderNotifications, studio: renderStudio, profile: renderProfile, settings: renderSettings
     };
     map[currentPage]?.();
     if (currentPage === "admin") renderAdminPanel();

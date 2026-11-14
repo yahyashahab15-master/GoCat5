@@ -44,9 +44,11 @@
 <link rel="stylesheet" href="/gocat-mobile-polish.css">
 <link rel="stylesheet" href="/gocat-commercial-polish.css">
 <link rel="stylesheet" href="/gocat-creator-launchpad.css">
+<link rel="stylesheet" href="/gocat-communities.css">
 
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script defer src="randomgo.js"></script>
+<script defer src="gocat-communities.js"></script>
 <script defer src="gocat-enhancements.js"></script>
 <script defer src="/gocat-commercial-polish.js"></script>
 <script defer src="/gocat-creator-launchpad.js"></script>
@@ -133,6 +135,7 @@
         <div class="sidebar-caption">Community</div>
         <nav class="side-nav">
             <button class="nav-link" data-page="posts"><i data-icon="post"></i><span>Posts</span></button>
+            <button class="nav-link" data-page="communities"><i data-icon="users"></i><span>Communities</span></button>
             <button class="nav-link" data-page="chats"><i data-icon="message"></i><span>Messages</span></button>
             <button class="nav-link" data-page="notifications"><i data-icon="bell"></i><span>Notifications</span></button>
         </nav>
@@ -314,6 +317,77 @@
                         <button id="postsLoadMore" class="soft-btn">Show more posts</button>
                     </div>
                 </div>
+            </section>
+
+            <!-- COMMUNITIES -->
+            <section id="page-communities" class="page-section hidden">
+                <div class="page-title-row community-page-heading">
+                    <div>
+                        <h1>Communities</h1>
+                        <p>Find people who share your interests, join a community, and post together.</p>
+                    </div>
+                    <button id="openCommunityCreate" class="primary-btn" type="button"><i data-icon="plus"></i><span>Create community</span></button>
+                </div>
+
+                <section id="communityCreatePanel" class="settings-card community-create-panel hidden">
+                    <div class="section-heading">
+                        <div><h2>Create a community</h2><p>Start a public place around a topic you care about.</p></div>
+                        <button id="closeCommunityCreate" class="icon-btn" type="button" aria-label="Close community form"><i data-icon="close"></i></button>
+                    </div>
+                    <form id="communityCreateForm" class="community-create-form">
+                        <label>Community name
+                            <input id="communityName" type="text" minlength="3" maxlength="50" placeholder="Example: Gaming Corner" required>
+                        </label>
+                        <label>Category
+                            <select id="communityCategory">
+                                <option>Gaming</option><option>Technology</option><option>Education</option>
+                                <option>Sports</option><option>Music</option><option>Art</option>
+                                <option>Cooking</option><option>Entertainment</option><option>Other</option>
+                            </select>
+                        </label>
+                        <label class="community-description-field">Description
+                            <textarea id="communityDescription" maxlength="500" rows="3" placeholder="What is this community about?"></textarea>
+                        </label>
+                        <div class="community-form-actions">
+                            <button class="primary-btn" type="submit">Create community</button>
+                            <span class="muted-text">Public communities are visible to everyone.</span>
+                        </div>
+                    </form>
+                </section>
+
+                <div id="communityDirectory">
+                    <div class="community-directory-toolbar">
+                        <div><h2>Explore communities</h2><p>Join the conversations that interest you.</p></div>
+                        <label class="community-filter-label">Category
+                            <select id="communityCategoryFilter">
+                                <option value="All">All categories</option>
+                                <option>Gaming</option><option>Technology</option><option>Education</option>
+                                <option>Sports</option><option>Music</option><option>Art</option>
+                                <option>Cooking</option><option>Entertainment</option><option>Other</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div id="communityGrid" class="community-grid">
+                        <div class="empty-card">Loading communities…</div>
+                    </div>
+                </div>
+
+                <section id="communityDetail" class="community-detail hidden">
+                    <button class="soft-btn community-back-btn" type="button" data-community-back>← All communities</button>
+                    <div id="communityDetailHeader" class="community-detail-header"></div>
+                    <div id="communityMembershipAction" class="community-membership-action"></div>
+                    <div class="community-posts-heading"><div><h2>Community posts</h2><p>Updates from members of this community.</p></div></div>
+                    <div id="communityGuestPrompt" class="empty-card guest-action-prompt hidden">
+                        <strong>Join the conversation</strong>
+                        <p>Sign in and join this community to publish a post.</p>
+                        <button class="primary-btn" type="button" data-login-trigger>Sign in</button>
+                    </div>
+                    <form id="communityPostForm" class="community-post-form hidden">
+                        <textarea id="communityPostContent" maxlength="2000" rows="3" placeholder="Share something with this community…" required></textarea>
+                        <div><span class="muted-text">Keep it helpful and respectful.</span><button class="primary-btn" type="submit">Publish post</button></div>
+                    </form>
+                    <div id="communityPostsFeed" class="community-posts-feed"></div>
+                </section>
             </section>
 
             <!-- MESSAGES -->
