@@ -71,6 +71,9 @@
       const prepared = await Promise.all((result.data || []).map(async row => {
         const remaining = Math.floor((new Date(row.expires_at).getTime() - Date.now()) / 1000);
         if (remaining <= 0) return null;
+        if (window.GoCatMedia?.isRemoteUrl(row.media_path)) {
+          return Object.assign({}, row, { media_url: row.media_path });
+        }
         const signed = await db.storage.from(BUCKET).createSignedUrl(row.media_path, Math.max(30, Math.min(86400, remaining)));
         if (signed.error || !signed.data?.signedUrl) return null;
         return Object.assign({}, row, { media_url: signed.data.signedUrl });
@@ -175,12 +178,21 @@
     const button = $("storyPublishBtn");
     if (button) { button.disabled = true; button.textContent = "Uploading…"; }
     let uploaded = false;
+    let storyMediaPath = path;
+    let storyProvider = "supabase";
     try {
-      const upload = await db.storage.from(BUCKET).upload(path, file, { cacheControl: "3600", contentType: file.type, upsert: false });
-      if (upload.error) throw upload.error;
+      const asset = await window.GoCatMedia.uploadOrFallback(file, {
+        folder: "/gocat/stories/" + userId
+      }, async () => {
+        const upload = await db.storage.from(BUCKET).upload(path, file, { cacheControl: "3600", contentType: file.type, upsert: false });
+        if (upload.error) throw upload.error;
+        return { provider: "supabase", path };
+      });
       uploaded = true;
+      storyProvider = asset.provider || "supabase";
+      storyMediaPath = storyProvider === "imagekit" ? asset.url : asset.path;
       const insert = await db.from("stories").insert({
-        user_id: userId, media_path: path,
+        user_id: userId, media_path: storyMediaPath,
         media_type: imageTypes.includes(file.type) ? "image" : "video",
         caption
       });
@@ -191,8 +203,8 @@
       toast("Your story is live for 24 hours.");
     } catch (error) {
       console.error("GoCat story publish:", error);
-      if (uploaded) {
-        const cleanup = await db.storage.from(BUCKET).remove([path]);
+      if (uploaded && storyProvider === "supabase") {
+        const cleanup = await db.storage.from(BUCKET).remove([storyMediaPath]);
         if (cleanup.error) console.warn("Story media cleanup:", cleanup.error);
       }
       toast("Could not publish story: " + (error.message || "Please try again."));
@@ -209,8 +221,10 @@
     try {
       const removed = await db.from("stories").delete().eq("id", story.id);
       if (removed.error) throw removed.error;
-      const mediaRemoved = await db.storage.from(BUCKET).remove([story.media_path]);
-      if (mediaRemoved.error) console.warn("GoCat story media removal:", mediaRemoved.error);
+      if (!window.GoCatMedia?.isRemoteUrl(story.media_path)) {
+        const mediaRemoved = await db.storage.from(BUCKET).remove([story.media_path]);
+        if (mediaRemoved.error) console.warn("GoCat story media removal:", mediaRemoved.error);
+      }
       const previousIndex = activeIndex;
       await loadStories();
       const refreshed = groups.find(item => item.userId === activeUserId);
