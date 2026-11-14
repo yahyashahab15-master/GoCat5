@@ -449,22 +449,36 @@ async function loadAdminStatus() {
 }
 
 async function loadUsers() {
-    // Only fetch the moderation flag for the verified owner/admin session.
-    // Regular visitors do not need this private account-management field.
-    const columns = isGoCatAdmin
-        ? "id,username,bio,avatar_path,created_at,is_banned"
-        : "id,username,bio,avatar_path,created_at";
+    // Public creator data only. Private fields such as email, password_hash,
+    // and moderation flags are never selected by the public profile query.
     const result = await db
         .from("users")
-        .select(columns)
+        .select("id,username,bio,avatar_path,created_at")
         .order("created_at", { ascending: false });
 
     if (result.error) throw result.error;
 
     users = result.data || [];
 
-    if (currentProfile && !users.some(u => String(u.id) === String(currentUser.id))) {
+    if (currentProfile && !users.some(u => String(u.id) === String(currentProfile.id))) {
         users.unshift(currentProfile);
+    }
+
+    // Moderation status comes from a database function that verifies the
+    // caller against public.gocat_admins before returning any status values.
+    if (isGoCatAdmin) {
+        const moderation = await db.rpc("gocat_admin_list_ban_status");
+        if (moderation.error) {
+            console.warn("Admin moderation status could not load:", moderation.error.message);
+        } else {
+            const bannedById = new Map(
+                (moderation.data || []).map(row => [String(row.user_id), row.is_banned === true])
+            );
+            users = users.map(user => ({
+                ...user,
+                is_banned: bannedById.get(String(user.id)) === true
+            }));
+        }
     }
 
     currentProfile = users.find(u => String(u.id) === String(currentUser.id)) || currentProfile;
