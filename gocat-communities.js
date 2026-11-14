@@ -291,13 +291,13 @@
       if (file) {
         const fallbackPath = String(currentUser.id) + "/community/" + Date.now() + "-" + file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
         const asset = await window.GoCatMedia.uploadOrFallback(file, {
-          folder: "/gocat/community/" + String(currentUser.id)
+          purpose: "community"
         }, async () => {
           if (file.type.startsWith("video/")) {
-            throw new Error("Connect the free ImageKit media account to upload community videos.");
+            throw new Error("Vercel Blob storage is unavailable, so community videos cannot be uploaded right now.");
           }
           if (file.size > 5 * 1024 * 1024) {
-            throw new Error("Without ImageKit connected, community photos are limited to 5 MB.");
+            throw new Error("Without Vercel Blob, community photos are limited to 5 MB.");
           }
           const upload = await db.storage.from("post-media").upload(fallbackPath, file, {
             upsert: false, contentType: file.type
@@ -305,7 +305,7 @@
           if (upload.error) throw upload.error;
           return { provider: "supabase", path: fallbackPath };
         });
-        mediaUrl = asset.provider === "imagekit" ? asset.url : asset.path;
+        mediaUrl = asset.provider === "vercel-blob" ? asset.url : asset.path;
         mediaType = file.type.startsWith("video/") ? "video" : "image";
       }
 
