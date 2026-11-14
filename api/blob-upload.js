@@ -48,6 +48,10 @@ module.exports = async function blobUpload(req, res) {
     return res.status(405).json({ code: "METHOD_NOT_ALLOWED", error: "Use GET or POST." });
   }
 
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    return res.status(503).json({ code: "BLOB_NOT_CONFIGURED", error: "Vercel Blob is not connected to this deployment." });
+  }
+
   try {
     const { handleUpload } = await import("@vercel/blob/client");
     const body = jsonBody(req.body);
