@@ -53,8 +53,14 @@ CREATE POLICY "GoCat public communities read"
 DROP POLICY IF EXISTS "GoCat owners update communities" ON public.communities;
 CREATE POLICY "GoCat owners update communities"
   ON public.communities FOR UPDATE TO authenticated
-  USING (created_by = (SELECT auth.uid())::text)
-  WITH CHECK (created_by = (SELECT auth.uid())::text);
+  USING (
+    created_by = (SELECT auth.uid())::text
+    AND NOT public.is_gocat_banned()
+  )
+  WITH CHECK (
+    created_by = (SELECT auth.uid())::text
+    AND NOT public.is_gocat_banned()
+  );
 
 DROP POLICY IF EXISTS "GoCat public community members read" ON public.community_members;
 CREATE POLICY "GoCat public community members read"
