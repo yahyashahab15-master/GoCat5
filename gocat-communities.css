@@ -70,3 +70,12 @@
   .community-post-form>div .primary-btn{width:100%}
 }
 @media(prefers-reduced-motion:reduce){.community-card{transition:none}.community-card:hover{transform:none}}
+
+/* Community post media */
+.community-media-compose-row{display:flex;align-items:center;flex-wrap:wrap;gap:10px}
+.community-media-picker{display:inline-flex;align-items:center;gap:7px;padding:9px 12px;border:1px solid var(--border);border-radius:999px;background:var(--bg2);color:var(--text);font-size:12px;font-weight:700;cursor:pointer}
+.community-media-picker:hover{border-color:rgba(22,210,138,.55);color:#16d28a}
+.community-post-media{display:block;width:100%;max-height:520px;margin:13px 0 4px;border:1px solid var(--border);border-radius:13px;object-fit:contain;background:#050807}
+.community-post-card video.community-post-media{aspect-ratio:16/9}
+.community-post-card img.community-post-media{object-fit:cover}
+@media(max-width:620px){.community-media-compose-row{align-items:stretch;flex-direction:column}.community-media-picker{justify-content:center}.community-media-compose-row .primary-btn{width:100%}}
