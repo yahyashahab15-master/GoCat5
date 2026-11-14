@@ -182,7 +182,7 @@
     let storyProvider = "supabase";
     try {
       const asset = await window.GoCatMedia.uploadOrFallback(file, {
-        folder: "/gocat/stories/" + userId
+        purpose: "story"
       }, async () => {
         const upload = await db.storage.from(BUCKET).upload(path, file, { cacheControl: "3600", contentType: file.type, upsert: false });
         if (upload.error) throw upload.error;
@@ -190,7 +190,7 @@
       });
       uploaded = true;
       storyProvider = asset.provider || "supabase";
-      storyMediaPath = storyProvider === "imagekit" ? asset.url : asset.path;
+      storyMediaPath = storyProvider === "vercel-blob" ? asset.url : asset.path;
       const insert = await db.from("stories").insert({
         user_id: userId, media_path: storyMediaPath,
         media_type: imageTypes.includes(file.type) ? "image" : "video",
