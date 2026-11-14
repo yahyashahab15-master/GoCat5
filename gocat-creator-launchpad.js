@@ -36,7 +36,7 @@
     if (!home) return;
     const creators = home.querySelector(".home-creators-section");
     const launchpad = $("gocatCreatorLaunchpad");
-    if (creators && home.lastElementChild !== creators && home.lastElementChild !== launchpad) {
+    if (creators && creators.nextElementSibling !== launchpad) {
       home.appendChild(creators);
     }
     if (launchpad && home.lastElementChild !== launchpad) {
