@@ -32,6 +32,7 @@
 .story-composer-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .story-composer-note{color:var(--muted);font-size:10px;line-height:1.5}
 .story-viewer{background:rgba(0,0,0,.94)}
+.story-viewer-stage{position:relative;display:flex;flex:1;min-height:0;background:#020403}
 .story-viewer-card{position:relative;display:flex;flex-direction:column;width:min(100%,440px);height:min(88vh,820px);min-height:420px;overflow:hidden;border:1px solid rgba(255,255,255,.1);border-radius:22px;background:#080d0b;box-shadow:0 25px 100px rgba(0,0,0,.5)}
 .story-viewer-top{position:absolute;z-index:3;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:18px 14px 14px;background:linear-gradient(180deg,rgba(0,0,0,.7),transparent);color:#fff}
 .story-viewer-user{display:flex;flex-direction:column;gap:3px;min-width:0}
