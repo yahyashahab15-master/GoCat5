@@ -167,4 +167,8 @@ $function$;
 REVOKE ALL ON FUNCTION public.gocat_create_community(text, text, text, text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.gocat_create_community(text, text, text, text) TO authenticated;
 
+-- Enable Supabase Realtime for community directory, membership, and posts.
+ALTER PUBLICATION supabase_realtime
+  ADD TABLE public.communities, public.community_members, public.community_posts;
+
 COMMIT;
