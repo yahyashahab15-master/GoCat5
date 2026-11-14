@@ -481,7 +481,9 @@ async function loadUsers() {
         }
     }
 
-    currentProfile = users.find(u => String(u.id) === String(currentUser.id)) || currentProfile;
+    if (currentUser) {
+        currentProfile = users.find(u => String(u.id) === String(currentUser.id)) || currentProfile;
+    }
 }
 
 async function loadVideos() {
