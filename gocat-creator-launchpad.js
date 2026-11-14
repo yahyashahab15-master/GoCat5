@@ -5,6 +5,45 @@
   "use strict";
 
   const $ = (id) => document.getElementById(id);
+
+  function mountHomePageSections() {
+    const home = $("page-home");
+    const hero = home?.querySelector(".home-welcome");
+    if (!home || !hero || $("gocatHomePages")) return;
+
+    const section = document.createElement("section");
+    section.id = "gocatHomePages";
+    section.className = "gocat-home-pages";
+    section.setAttribute("aria-label", "GoCat sections");
+    section.innerHTML = `
+      <div class="gocat-home-pages-heading">
+        <div><span>EXPLORE GOCAT</span><strong>Jump to a section</strong></div>
+        <small>Everything in one place</small>
+      </div>
+      <nav class="gocat-home-page-links" aria-label="GoCat pages">
+        <button type="button" class="gocat-home-page-link" data-page="reels"><span aria-hidden="true">▶</span><strong>Reels</strong></button>
+        <button type="button" class="gocat-home-page-link" data-page="explore"><span aria-hidden="true">⌕</span><strong>Explore</strong></button>
+        <button type="button" class="gocat-home-page-link" data-page="following"><span aria-hidden="true">♡</span><strong>Following</strong></button>
+        <button type="button" class="gocat-home-page-link" data-page="posts"><span aria-hidden="true">▤</span><strong>Posts</strong></button>
+        <button type="button" class="gocat-home-page-link" data-page="chats"><span aria-hidden="true">✉</span><strong>Messages</strong></button>
+        <button type="button" class="gocat-home-page-link" data-page="studio"><span aria-hidden="true">▥</span><strong>Studio</strong></button>
+      </nav>`;
+    hero.insertAdjacentElement("afterend", section);
+  }
+
+  function moveHomeExtrasBelowFeed() {
+    const home = $("page-home");
+    if (!home) return;
+    const creators = home.querySelector(".home-creators-section");
+    const launchpad = $("gocatCreatorLaunchpad");
+    if (creators && creators.nextElementSibling !== launchpad) {
+      home.appendChild(creators);
+    }
+    if (launchpad && home.lastElementChild !== launchpad) {
+      home.appendChild(launchpad);
+    }
+  }
+
   const missions = [
     "Teach one useful trick in 30 seconds.",
     "Show the before-and-after of something you made.",
@@ -156,7 +195,7 @@
         <span><i aria-hidden="true">✦</i> Discovery is designed to give smaller channels a fairer starting chance.</span>
         <button type="button" data-page="studio">Open Creator Studio <span aria-hidden="true">→</span></button>
       </div>`;
-    hero.insertAdjacentElement("afterend", section);
+    home.appendChild(section);
     $("gocatWeeklyMission").textContent = getWeeklyMission();
   }
 
@@ -288,7 +327,9 @@
   });
 
   function boot() {
+    mountHomePageSections();
     mountHomeLaunchpad();
+    moveHomeExtrasBelowFeed();
     mountProfileShare();
     mountStudioMilestones();
     openSharedCreator();
