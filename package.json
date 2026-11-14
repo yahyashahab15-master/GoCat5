@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "GoCat static frontend and Vercel serverless upload endpoints",
+  "dependencies": {
+    "@vercel/blob": "2.9.0"
+  }
+}
