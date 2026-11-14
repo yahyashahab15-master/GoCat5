@@ -7,13 +7,20 @@ module.exports = async function imageKitAuth(req, res) {
   res.setHeader("Cache-Control", "no-store, max-age=0");
   res.setHeader("X-Content-Type-Options", "nosniff");
 
+  const publicKey = process.env.IMAGEKIT_PUBLIC_KEY;
+  const privateKey = process.env.IMAGEKIT_PRIVATE_KEY;
+
+  if (req.method === "GET") {
+    return res.status(200).json({
+      provider: "ImageKit",
+      configured: Boolean(publicKey && privateKey)
+    });
+  }
+
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).json({ code: "METHOD_NOT_ALLOWED", error: "Use POST." });
   }
-
-  const publicKey = process.env.IMAGEKIT_PUBLIC_KEY;
-  const privateKey = process.env.IMAGEKIT_PRIVATE_KEY;
 
   if (!publicKey || !privateKey) {
     return res.status(503).json({
