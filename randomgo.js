@@ -2176,61 +2176,71 @@ async function standardUpload(file, path) {
 }
 
 async function uploadVideoFile(file, path, progress) {
-    if (!db) throw new Error("Supabase is not connected.");
+    if (!db) throw new Error("GoCat database is unavailable.");
     if (!file || !file.size) throw new Error("Invalid video file.");
     if (file.size > MAX_VIDEO_BYTES) throw new Error("Maximum video size is 500 MB.");
 
-    const sessionResult = await db.auth.getSession();
-    if (sessionResult.error) throw sessionResult.error;
-
-    const session = sessionResult.data.session;
-    if (!session?.access_token) throw new Error("Your session expired. Sign in again.");
-
-    progress(0);
-
-    try {
-        await loadTusLibrary();
-    } catch (error) {
-        console.warn("TUS unavailable, using standard upload:", error.message);
-        const data = await standardUpload(file, path);
-        progress(100);
-        return data;
+    if (!window.GoCatMedia?.uploadOrFallback) {
+        throw new Error("GoCat media uploader did not load. Refresh the page and try again.");
     }
 
-    const projectId = new URL(SUPABASE_URL).hostname.split(".")[0];
-    const endpoint = `https://${projectId}.storage.supabase.co/storage/v1/upload/resumable`;
+    const result = await window.GoCatMedia.uploadOrFallback(file, {
+        folder: "/gocat/videos/" + String(currentUser.id),
+        onProgress: progress
+    }, async () => {
+        const sessionResult = await db.auth.getSession();
+        if (sessionResult.error) throw sessionResult.error;
+        const session = sessionResult.data.session;
+        if (!session?.access_token) throw new Error("Your session expired. Sign in again.");
 
-    try {
-        return await new Promise((resolve, reject) => {
-            const upload = new window.tus.Upload(file, {
-                endpoint,
-                retryDelays: [0, 3000, 5000, 10000],
-                headers: { authorization: "Bearer " + session.access_token, apikey: SUPABASE_KEY },
-                uploadDataDuringCreation: true,
-                removeFingerprintOnSuccess: true,
-                chunkSize: 6 * 1024 * 1024,
-                metadata: {
-                    bucketName: VIDEO_BUCKET,
-                    objectName: path,
-                    contentType: file.type || "video/mp4",
-                    cacheControl: "3600"
-                },
-                onError: reject,
-                onProgress: (done, total) => progress(Math.max(0, Math.min(99, Math.round(done / total * 100)))),
-                onSuccess: () => { progress(100); resolve({ path, uploadURL: upload.url }); }
-            });
-
-            upload.start();
-        });
-
-    } catch (tusError) {
-        // The resumable endpoint can fail for network or policy reasons. Try the standard route once.
-        console.warn("TUS upload failed, retrying with standard upload:", tusError);
         progress(0);
-        const data = await standardUpload(file, path);
-        progress(100);
-        return data;
+        try {
+            await loadTusLibrary();
+        } catch (error) {
+            console.warn("TUS unavailable, using standard upload:", error.message);
+            await standardUpload(file, path);
+            progress(100);
+            return { provider: "supabase", path };
+        }
+
+        const projectId = new URL(SUPABASE_URL).hostname.split(".")[0];
+        const endpoint = `https://${projectId}.storage.supabase.co/storage/v1/upload/resumable`;
+
+        try {
+            await new Promise((resolve, reject) => {
+                const upload = new window.tus.Upload(file, {
+                    endpoint,
+                    retryDelays: [0, 3000, 5000, 10000],
+                    headers: { authorization: "Bearer " + session.access_token, apikey: SUPABASE_KEY },
+                    uploadDataDuringCreation: true,
+                    removeFingerprintOnSuccess: true,
+                    chunkSize: 6 * 1024 * 1024,
+                    metadata: {
+                        bucketName: VIDEO_BUCKET,
+                        objectName: path,
+                        contentType: file.type || "video/mp4",
+                        cacheControl: "3600"
+                    },
+                    onError: reject,
+                    onProgress: (done, total) => progress(Math.max(0, Math.min(99, Math.round(done / total * 100)))),
+                    onSuccess: () => { progress(100); resolve(); }
+                });
+                upload.start();
+            });
+            return { provider: "supabase", path };
+        } catch (tusError) {
+            console.warn("TUS upload failed, retrying with standard upload:", tusError);
+            progress(0);
+            await standardUpload(file, path);
+            progress(100);
+            return { provider: "supabase", path };
+        }
+    });
+
+    if (result.provider === "imagekit") {
+        return { provider: "imagekit", path: result.url, fileId: result.fileId };
     }
+    return result;
 }
 
 
@@ -2278,14 +2288,18 @@ listen("uploadForm", "submit", async function (event) {
     const mode = uploadMode;
 
     let uploaded = false;
+    let uploadedProvider = "supabase";
+    let uploadedPath = path;
 
     try {
-        await uploadVideoFile(file, path, percent => {
+        const uploadResult = await uploadVideoFile(file, path, percent => {
             if ($("uploadProgressBar")) $("uploadProgressBar").style.width = percent + "%";
             if ($("uploadStatus")) $("uploadStatus").textContent = "Uploading: " + percent + "%";
         });
 
         uploaded = true;
+        uploadedProvider = uploadResult.provider || "supabase";
+        uploadedPath = uploadResult.path || path;
 
         if ($("uploadStatus")) $("uploadStatus").textContent = "Saving details...";
 
@@ -2294,7 +2308,7 @@ listen("uploadForm", "submit", async function (event) {
             title,
             description,
             topic,
-            storage_path: path,
+            storage_path: uploadedPath,
             views: 0,
             is_short: mode === "short"
         });
@@ -2317,8 +2331,8 @@ listen("uploadForm", "submit", async function (event) {
         console.error("VIDEO UPLOAD ERROR:", error);
 
         // Remove the orphaned file if the database record could not be saved.
-        if (uploaded) {
-            const removal = await db.storage.from(VIDEO_BUCKET).remove([path]);
+        if (uploaded && uploadedProvider === "supabase") {
+            const removal = await db.storage.from(VIDEO_BUCKET).remove([uploadedPath]);
             if (removal.error) console.error("Could not remove failed upload:", removal.error);
         }
 
@@ -2363,12 +2377,17 @@ listen("createPostForm", "submit", async function (event) {
 
     try {
         if (imageFile) {
-            storagePath = currentUser.id + "/" + Date.now() + "-" + imageFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-
-            const upload = await db.storage.from(POST_BUCKET).upload(storagePath, imageFile, {
-                upsert: false, contentType: imageFile.type
+            const fallbackPath = currentUser.id + "/" + Date.now() + "-" + imageFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+            const asset = await window.GoCatMedia.uploadOrFallback(imageFile, {
+                folder: "/gocat/posts/" + String(currentUser.id)
+            }, async () => {
+                const upload = await db.storage.from(POST_BUCKET).upload(fallbackPath, imageFile, {
+                    upsert: false, contentType: imageFile.type
+                });
+                if (upload.error) throw upload.error;
+                return { provider: "supabase", path: fallbackPath };
             });
-            if (upload.error) throw upload.error;
+            storagePath = asset.provider === "imagekit" ? asset.url : asset.path;
         }
 
         // posts.created_at is TIMESTAMPTZ in the live database.
@@ -2392,7 +2411,7 @@ listen("createPostForm", "submit", async function (event) {
     } catch (error) {
         console.error("Post error:", error);
 
-        if (storagePath) {
+        if (storagePath && !window.GoCatMedia?.isRemoteUrl(storagePath)) {
             const removal = await db.storage.from(POST_BUCKET).remove([storagePath]);
             if (removal.error) console.warn("Post cleanup:", removal.error);
         }
@@ -2470,7 +2489,7 @@ async function deletePost(postId) {
         const result = await db.from("posts").delete().eq("id", postId);
         if (result.error) throw result.error;
 
-        if (post.media_path) {
+        if (post.media_path && !window.GoCatMedia?.isRemoteUrl(post.media_path)) {
             const removal = await db.storage.from(POST_BUCKET).remove([post.media_path]);
             if (removal.error) console.warn("Media cleanup:", removal.error);
         }
