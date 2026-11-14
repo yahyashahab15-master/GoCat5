@@ -118,7 +118,10 @@
             <div><strong>${esc(username)}</strong><small>${esc(formatDate(post.created_at))}</small></div>
             ${canDelete ? '<button class="community-delete-post" type="button" data-community-delete-post="' + esc(post.id) + '" aria-label="Delete post">Delete</button>' : ''}
           </div>
-          <p class="community-post-content">${esc(post.content)}</p>
+          ${post.media_url ? (post.media_type === "video"
+            ? '<video class="community-post-media" src="' + esc(window.GoCatMedia?.isRemoteUrl(post.media_url) ? post.media_url : storageURL("post-media", post.media_url)) + '" controls playsinline preload="metadata"></video>'
+            : '<img class="community-post-media" src="' + esc(window.GoCatMedia?.isRemoteUrl(post.media_url) ? post.media_url : storageURL("post-media", post.media_url)) + '" alt="Community post media" loading="lazy">') : ''}
+          ${post.content ? '<p class="community-post-content">' + esc(post.content) + '</p>' : ''}
         </article>`;
     }).join("");
   }
@@ -149,7 +152,7 @@
       const [communityResult, memberResult, postResult] = await Promise.all([
         db.from("communities").select("id,name,slug,description,category,created_by,created_at").order("created_at", { ascending: false }),
         db.from("community_members").select("community_id,user_id"),
-        db.from("community_posts").select("id,community_id,user_id,content,created_at").order("created_at", { ascending: false }).limit(250)
+        db.from("community_posts").select("id,community_id,user_id,content,media_url,media_type,created_at").order("created_at", { ascending: false }).limit(250)
       ]);
       if (communityResult.error) throw communityResult.error;
       if (memberResult.error) throw memberResult.error;
@@ -262,21 +265,61 @@
   async function publishCommunityPost(form) {
     if (!requireAuth("post in this community")) return;
     const content = byId("communityPostContent")?.value.trim() || "";
-    if (!content) return;
+    const file = byId("communityPostMedia")?.files?.[0] || null;
+    if (!content && !file) {
+      showToast("Write something or attach a photo or video.");
+      return;
+    }
     if (!activeCommunityId || !isCommunityMember(activeCommunityId)) {
       showToast("Join the community before posting.");
       return;
     }
+    if (file && !["image/jpeg","image/png","image/webp","video/mp4","video/webm"].includes(file.type)) {
+      showToast("Use JPG, PNG, WebP, MP4 or WebM.");
+      return;
+    }
+    if (file && file.size > 100 * 1024 * 1024) {
+      showToast("Community media must be 100 MB or smaller.");
+      return;
+    }
+
     const button = form.querySelector('button[type="submit"]');
-    if (button) { button.disabled = true; button.textContent = "Publishing…"; }
+    if (button) { button.disabled = true; button.textContent = "Uploading…"; }
     try {
+      let mediaUrl = null;
+      let mediaType = null;
+      if (file) {
+        const fallbackPath = String(currentUser.id) + "/community/" + Date.now() + "-" + file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const asset = await window.GoCatMedia.uploadOrFallback(file, {
+          folder: "/gocat/community/" + String(currentUser.id)
+        }, async () => {
+          if (file.type.startsWith("video/")) {
+            throw new Error("Connect the free ImageKit media account to upload community videos.");
+          }
+          if (file.size > 5 * 1024 * 1024) {
+            throw new Error("Without ImageKit connected, community photos are limited to 5 MB.");
+          }
+          const upload = await db.storage.from("post-media").upload(fallbackPath, file, {
+            upsert: false, contentType: file.type
+          });
+          if (upload.error) throw upload.error;
+          return { provider: "supabase", path: fallbackPath };
+        });
+        mediaUrl = asset.provider === "imagekit" ? asset.url : asset.path;
+        mediaType = file.type.startsWith("video/") ? "video" : "image";
+      }
+
       const { error } = await db.from("community_posts").insert({
         community_id: activeCommunityId,
         user_id: currentUser.id,
-        content
+        content,
+        media_url: mediaUrl,
+        media_type: mediaType
       });
       if (error) throw error;
       form.reset();
+      const mediaName = byId("communityPostMediaName");
+      if (mediaName) mediaName.textContent = "";
       communitiesLoaded = false;
       await loadCommunities();
       renderCommunityDetail();
@@ -371,6 +414,10 @@
   });
 
   byId("communityCategoryFilter")?.addEventListener("change", renderCommunityDirectory);
+  byId("communityPostMedia")?.addEventListener("change", event => {
+    const label = byId("communityPostMediaName");
+    if (label) label.textContent = event.target.files?.[0]?.name || "";
+  });
 
   if (db) {
     communityRealtimeChannel = db.channel("gocat-communities-live")
