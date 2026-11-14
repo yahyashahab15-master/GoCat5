@@ -34,7 +34,7 @@
       const member = isCommunityMember(item.id);
       const owner = !!currentUser && String(item.created_by) === String(currentUser.id);
       return `
-        <article class="community-card">
+        <article class="community-card" data-community-card="${esc(item.id)}" tabindex="0" aria-label="Open ${esc(item.name)}">
           <div class="community-card-top">
             <span class="community-category">${esc(item.category || "Other")}</span>
             <span class="community-member-count">${communityMemberCount(item.id).toLocaleString()} members</span>
@@ -134,7 +134,12 @@
       return;
     }
     renderCommunityDirectory();
-    if (activeCommunityId) renderCommunityDetail();
+    if (activeCommunityId) {
+      renderCommunityDetail();
+    } else {
+      byId("communityDirectory")?.classList.remove("hidden");
+      byId("communityDetail")?.classList.add("hidden");
+    }
   }
 
   async function loadCommunities() {
@@ -317,7 +322,9 @@
     if (event.target.closest("[data-community-back]")) {
       event.preventDefault();
       activeCommunityId = null;
-      renderCommunities();
+      byId("communityDirectory")?.classList.remove("hidden");
+      byId("communityDetail")?.classList.add("hidden");
+      renderCommunityDirectory();
       return;
     }
     if (event.target.closest("[data-community-refresh]")) {
@@ -332,9 +339,25 @@
       renderCommunityDetail();
       return;
     }
+    const card = event.target.closest("[data-community-card]");
+    if (card && !event.target.closest("button, a, input, select, textarea")) {
+      event.preventDefault();
+      activeCommunityId = card.dataset.communityCard;
+      renderCommunityDetail();
+      return;
+    }
     if (join) { event.preventDefault(); joinCommunity(join.dataset.communityJoin); return; }
     if (leave) { event.preventDefault(); leaveCommunity(leave.dataset.communityLeave); return; }
     if (remove) { event.preventDefault(); deleteCommunityPost(remove.dataset.communityDeletePost); }
+  });
+
+  document.addEventListener("keydown", event => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const card = event.target.closest("[data-community-card]");
+    if (!card || event.target !== card) return;
+    event.preventDefault();
+    activeCommunityId = card.dataset.communityCard;
+    renderCommunityDetail();
   });
 
   document.addEventListener("submit", event => {
