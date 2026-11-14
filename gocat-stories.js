@@ -71,7 +71,7 @@
       const prepared = await Promise.all((result.data || []).map(async row => {
         const remaining = Math.floor((new Date(row.expires_at).getTime() - Date.now()) / 1000);
         if (remaining <= 0) return null;
-        const signed = await db.storage.from(BUCKET).createSignedUrl(row.media_path, Math.max(30, Math.min(3600, remaining)));
+        const signed = await db.storage.from(BUCKET).createSignedUrl(row.media_path, Math.max(30, Math.min(86400, remaining)));
         if (signed.error || !signed.data?.signedUrl) return null;
         return Object.assign({}, row, { media_url: signed.data.signedUrl });
       }));
