@@ -232,8 +232,8 @@ function storageURL(bucket, path) {
     if (/^https?:\/\//i.test(String(path))) return path;
     return db.storage.from(bucket).getPublicUrl(path).data.publicUrl;
 }
-const getVideoURL = path => storageURL(VIDEO_BUCKET, path);
-const getPostImageURL = path => storageURL(POST_BUCKET, path);
+const getVideoURL = path => window.GoCatMedia?.isRemoteUrl(path) ? path : storageURL(VIDEO_BUCKET, path);
+const getPostImageURL = path => window.GoCatMedia?.isRemoteUrl(path) ? path : storageURL(POST_BUCKET, path);
 
 /* Insert a row whose text column might be "content" or "text". */
 async function insertWithTextFallback(table, base, text, firstKey, secondKey) {
@@ -2185,7 +2185,7 @@ async function uploadVideoFile(file, path, progress) {
     }
 
     const result = await window.GoCatMedia.uploadOrFallback(file, {
-        folder: "/gocat/videos/" + String(currentUser.id),
+        purpose: uploadMode === "short" ? "reel" : "video",
         onProgress: progress
     }, async () => {
         const sessionResult = await db.auth.getSession();
@@ -2237,8 +2237,8 @@ async function uploadVideoFile(file, path, progress) {
         }
     });
 
-    if (result.provider === "imagekit") {
-        return { provider: "imagekit", path: result.url, fileId: result.fileId };
+    if (result.provider === "vercel-blob") {
+        return { provider: "vercel-blob", path: result.url, pathname: result.pathname };
     }
     return result;
 }
@@ -2379,7 +2379,7 @@ listen("createPostForm", "submit", async function (event) {
         if (imageFile) {
             const fallbackPath = currentUser.id + "/" + Date.now() + "-" + imageFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
             const asset = await window.GoCatMedia.uploadOrFallback(imageFile, {
-                folder: "/gocat/posts/" + String(currentUser.id)
+                purpose: "post"
             }, async () => {
                 const upload = await db.storage.from(POST_BUCKET).upload(fallbackPath, imageFile, {
                     upsert: false, contentType: imageFile.type
@@ -2387,7 +2387,7 @@ listen("createPostForm", "submit", async function (event) {
                 if (upload.error) throw upload.error;
                 return { provider: "supabase", path: fallbackPath };
             });
-            storagePath = asset.provider === "imagekit" ? asset.url : asset.path;
+            storagePath = asset.provider === "vercel-blob" ? asset.url : asset.path;
         }
 
         // posts.created_at is TIMESTAMPTZ in the live database.
