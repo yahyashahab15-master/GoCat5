@@ -131,7 +131,9 @@
     const name = typeof getUsername === "function" ? getUsername(group.userId) : "Creator";
     $("storyViewerName").textContent = name;
     $("storyViewerTime").textContent = storyAge(story.created_at);
-    $("storyDeleteBtn")?.classList.toggle("hidden", !own(story.user_id));
+    const canDeleteStory = own(story.user_id) ||
+      (!!currentUser && typeof isGoCatAdmin !== "undefined" && isGoCatAdmin);
+    $("storyDeleteBtn")?.classList.toggle("hidden", !canDeleteStory);
     const bars = group.items.map((item, i) =>
       '<span class="gocat-story-progress-track"><i class="' + (i < activeIndex ? "complete" : i === activeIndex ? "current" : "") + '"></i></span>'
     ).join("");
@@ -218,10 +220,11 @@
   }
 
   async function deleteCurrentStory() {
-    if (!own(activeUserId)) return;
+    const isAdmin = !!currentUser && typeof isGoCatAdmin !== "undefined" && isGoCatAdmin;
+    if (!own(activeUserId) && !isAdmin) return;
     const group = groups.find(item => item.userId === activeUserId);
     const story = group?.items?.[activeIndex];
-    if (!story || !window.confirm("Delete this story?")) return;
+    if (!story || !window.confirm("Delete this story permanently?")) return;
     try {
       const removed = await db.from("stories").delete().eq("id", story.id);
       if (removed.error) throw removed.error;
