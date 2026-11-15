@@ -764,6 +764,7 @@ function videoCard(video) {
         <article class="video-card">
             <div class="video-player-wrap">
                 <video class="video-player" src="${esc(getVideoURL(video.storage_path))}#t=0.1"
+                    ${video.thumbnail_path ? 'poster="' + esc(getVideoURL(video.thumbnail_path)) + '"' : ""}
                     controls playsinline preload="metadata" data-play-video="${esc(video.id)}"></video>
             </div>
 
@@ -1283,6 +1284,7 @@ function renderReels() {
         return `
             <article class="reel-item" data-reel-item="${esc(video.id)}">
                 <video class="reel-video" src="${esc(getVideoURL(video.storage_path))}"
+                    ${video.thumbnail_path ? 'poster="' + esc(getVideoURL(video.thumbnail_path)) + '"' : ""}
                     playsinline loop ${settings.muted ? "muted" : ""} preload="metadata"
                     data-play-video="${esc(video.id)}"></video>
 
@@ -2244,6 +2246,73 @@ async function uploadVideoFile(file, path, progress) {
 }
 
 
+/* Create a lightweight preview image from the selected local video.
+   This is best-effort: publishing must still work when a browser codec cannot
+   decode a particular file or canvas thumbnail export is unavailable. */
+async function generateVideoThumbnail(file) {
+    if (!file || !String(file.type || "").startsWith("video/")) return null;
+    const objectUrl = URL.createObjectURL(file);
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "metadata";
+    video.src = objectUrl;
+
+    const waitFor = (eventName, timeoutMs = 10000) => new Promise((resolve, reject) => {
+        const cleanup = () => {
+            video.removeEventListener(eventName, onSuccess);
+            video.removeEventListener("error", onError);
+            clearTimeout(timer);
+        };
+        const onSuccess = () => { cleanup(); resolve(); };
+        const onError = () => { cleanup(); reject(new Error("The browser could not read this video.")); };
+        const timer = setTimeout(() => {
+            cleanup();
+            reject(new Error("Video preview generation timed out."));
+        }, timeoutMs);
+        video.addEventListener(eventName, onSuccess, { once: true });
+        video.addEventListener("error", onError, { once: true });
+    });
+
+    try {
+        await waitFor("loadedmetadata");
+        const targetTime = Number.isFinite(video.duration) && video.duration > 0
+            ? Math.min(1, video.duration * 0.15)
+            : 0;
+        if (targetTime > 0) {
+            const seeked = waitFor("seeked", 8000);
+            video.currentTime = targetTime;
+            await seeked;
+        } else {
+            await waitFor("loadeddata", 8000);
+        }
+
+        const width = video.videoWidth || 0;
+        const height = video.videoHeight || 0;
+        if (!width || !height) throw new Error("This video has no readable preview frame.");
+
+        const scale = Math.min(1, 1280 / width, 720 / height);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(width * scale));
+        canvas.height = Math.max(1, Math.round(height * scale));
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("Canvas preview is unavailable.");
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.82));
+        if (!blob || !blob.size) throw new Error("The preview image could not be generated.");
+        return new File([blob], "gocat-video-thumbnail.jpg", {
+            type: "image/jpeg",
+            lastModified: Date.now()
+        });
+    } finally {
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+        URL.revokeObjectURL(objectUrl);
+    }
+}
+
 /* ---------- 23 PUBLISH VIDEO OR SHORT ---------- */
 
 async function insertVideoRecord(record) {
@@ -2290,6 +2359,7 @@ listen("uploadForm", "submit", async function (event) {
     let uploaded = false;
     let uploadedProvider = "supabase";
     let uploadedPath = path;
+    let uploadedThumbnailPath = null;
 
     try {
         const uploadResult = await uploadVideoFile(file, path, percent => {
@@ -2301,6 +2371,25 @@ listen("uploadForm", "submit", async function (event) {
         uploadedProvider = uploadResult.provider || "supabase";
         uploadedPath = uploadResult.path || path;
 
+        // Save preview images in the same public videos bucket. The existing
+        // storage policy checks the first folder against the signed-in user ID.
+        try {
+            const thumbnailFile = await generateVideoThumbnail(file);
+            if (thumbnailFile) {
+                const thumbnailObjectPath = currentUser.id + "/thumbnails/" +
+                    Date.now() + "-" + Math.random().toString(36).slice(2, 9) + ".jpg";
+                const thumbnailUpload = await db.storage.from(VIDEO_BUCKET).upload(
+                    thumbnailObjectPath,
+                    thumbnailFile,
+                    { cacheControl: "31536000", contentType: "image/jpeg", upsert: false }
+                );
+                if (thumbnailUpload.error) throw thumbnailUpload.error;
+                uploadedThumbnailPath = thumbnailUpload.data?.path || thumbnailObjectPath;
+            }
+        } catch (thumbnailError) {
+            console.warn("GoCat video thumbnail skipped:", thumbnailError);
+        }
+
         if ($("uploadStatus")) $("uploadStatus").textContent = "Saving details...";
 
         const insert = await insertVideoRecord({
@@ -2309,6 +2398,7 @@ listen("uploadForm", "submit", async function (event) {
             description,
             topic,
             storage_path: uploadedPath,
+            thumbnail_path: uploadedThumbnailPath,
             views: 0,
             is_short: mode === "short"
         });
@@ -2330,10 +2420,14 @@ listen("uploadForm", "submit", async function (event) {
     } catch (error) {
         console.error("VIDEO UPLOAD ERROR:", error);
 
-        // Remove the orphaned file if the database record could not be saved.
+        // Remove local-storage uploads if the database record could not be saved.
         if (uploaded && uploadedProvider === "supabase") {
             const removal = await db.storage.from(VIDEO_BUCKET).remove([uploadedPath]);
             if (removal.error) console.error("Could not remove failed upload:", removal.error);
+        }
+        if (uploadedThumbnailPath) {
+            const removal = await db.storage.from(VIDEO_BUCKET).remove([uploadedThumbnailPath]);
+            if (removal.error) console.error("Could not remove failed thumbnail:", removal.error);
         }
 
         let message = error?.message || error?.error_description || "Unknown upload error.";
