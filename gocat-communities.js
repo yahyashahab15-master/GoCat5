@@ -132,7 +132,8 @@
     feed.innerHTML = posts.map(post => {
       const username = getUsername(post.user_id);
       const canDelete = !!currentUser && (
-        String(post.user_id) === String(currentUser.id) || isOwner
+        String(post.user_id) === String(currentUser.id) || isOwner ||
+        (typeof isGoCatAdmin !== "undefined" && isGoCatAdmin)
       );
       const author = typeof getUser === "function" ? getUser(post.user_id) : null;
       return `
@@ -362,9 +363,27 @@
 
   async function deleteCommunityPost(id) {
     if (!requireAuth("manage this post")) return;
+    const post = communityPosts.find(item => String(item.id) === String(id));
+    const community = post && communities.find(item => String(item.id) === String(post.community_id));
+    const isOwner = !!community && String(community.created_by) === String(currentUser.id);
+    const isAuthor = !!post && String(post.user_id) === String(currentUser.id);
+    const isAdmin = typeof isGoCatAdmin !== "undefined" && isGoCatAdmin;
+    if (!post || (!isAuthor && !isOwner && !isAdmin)) {
+      return showToast("You do not have permission to remove this community post.");
+    }
+    if (!window.confirm("Delete this community post permanently?")) return;
     try {
       const { error } = await db.from("community_posts").delete().eq("id", id);
       if (error) throw error;
+
+      // Only the file owner or a GoCat admin can remove the corresponding
+      // Storage object. Community owners may moderate the database post row.
+      if ((isAuthor || isAdmin) && post.media_url &&
+          !window.GoCatMedia?.isRemoteUrl(post.media_url)) {
+        const removal = await db.storage.from("post-media").remove([post.media_url]);
+        if (removal.error) console.warn("Community media cleanup:", removal.error.message);
+      }
+
       communitiesLoaded = false;
       await loadCommunities();
       renderCommunityDetail();
