@@ -1293,6 +1293,9 @@ function renderReels() {
     if (!container) return;
 
     const allReels = videos.filter(isReel).sort((a, b) => {
+        if (window.gocatFeedMode?.() === "latest") {
+            return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+        }
         const rank = window.gocatRecommendationScore;
         return typeof rank === "function"
             ? rank(b, "video") - rank(a, "video")
@@ -1397,6 +1400,9 @@ listen("reelsLoadMore", "click", () => { reelsVisible += PAGE_SIZE; renderReels(
 
 function openSpecificReel(videoId) {
     const rankedReels = videos.filter(isReel).sort((a, b) => {
+        if (window.gocatFeedMode?.() === "latest") {
+            return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+        }
         const rank = window.gocatRecommendationScore;
         return typeof rank === "function"
             ? rank(b, "video") - rank(a, "video")
