@@ -11,6 +11,9 @@ const SUPABASE_KEY = "sb_publishable_LWIaOaxbzp19lV765vbbQg_kF5apL0O";
 
 const VIDEO_BUCKET = "videos";
 const POST_BUCKET = "post-media";
+const CHAT_BUCKET = "chat-media";
+const MAX_CHAT_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+const CHAT_ALLOWED_TYPES = new Set(["image/jpeg","image/png","image/webp","image/gif","image/avif","video/mp4","video/webm","video/quicktime","audio/mpeg","audio/mp4","audio/ogg","audio/wav","audio/webm","application/pdf","text/plain","text/csv","application/msword","application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.ms-excel","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/vnd.ms-powerpoint","application/vnd.openxmlformats-officedocument.presentationml.presentation"]);
 
 const MAX_VIDEO_BYTES = 500 * 1024 * 1024;
 const MAX_VIDEO_DURATION = 1200;
@@ -26,9 +29,10 @@ const db = window.supabase?.createClient
 let currentUser = null, currentProfile = null, isGoCatAdmin = false;
 let currentProfileUserId = null, currentCommentVideoId = null, currentCommentPostId = null, currentCommentParentId = null, currentChatUserId = null;
 let chatRealtimeChannel = null, commentRealtimeChannel = null, feedRealtimeChannel = null;
+let currentChatMessages = [], chatSignedUrls = new Map(), selectedChatAttachment = null;
 let liveRefreshTimer = null, chatTypingTimer = null, feedRealtimeReady = false;
 let activePlaybackVideoId = null, liveRenderPending = false;
-let users = [], videos = [], posts = [], follows = [], notifications = [];
+let users = [], videos = [], posts = [], follows = [], notifications = [], featuredCreators = [];
 let currentPage = "home", activeHomeTopic = "All", exploreMode = "videos", profileMode = "home";
 let homeVisibleCycles = 1, exploreVisible = 6, postsVisible = 5, reelsVisible = 5;
 let uploadMode = "video", selectedVideoFile = null, exportedReelFile = null;
