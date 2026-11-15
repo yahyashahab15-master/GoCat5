@@ -26,3 +26,45 @@
   .community-discovery-filters{display:grid;grid-template-columns:1fr 1fr}
   .community-filter-label{min-width:0}
 }
+
+.gocat-starter-library{
+  margin-top:16px;border:1px solid var(--border);border-radius:16px;
+  background:rgba(22,210,138,.035);overflow:hidden;
+}
+.gocat-starter-library>summary{
+  display:flex;align-items:center;justify-content:space-between;gap:14px;
+  padding:15px 17px;cursor:pointer;list-style:none;
+}
+.gocat-starter-library>summary::-webkit-details-marker{display:none}
+.gocat-starter-library>summary>span:first-child{display:grid;gap:4px}
+.gocat-starter-library>summary strong{color:var(--text);font-size:13px}
+.gocat-starter-library>summary small{color:var(--muted);font-size:11px;line-height:1.4}
+.gocat-starter-library-toggle{display:inline-flex;align-items:center;gap:8px;color:#16d28a;font-size:11px;font-weight:800;white-space:nowrap}
+.gocat-starter-library[open] .gocat-starter-library-toggle b{transform:rotate(180deg)}
+.gocat-starter-library-toggle b{display:inline-block;transition:transform .18s}
+.gocat-starter-idea-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr));
+  gap:10px;padding:0 12px 12px;
+}
+.gocat-starter-idea{
+  display:flex;flex-direction:column;min-width:0;padding:13px;
+  border:1px solid var(--border);border-radius:13px;background:var(--panel);
+}
+.gocat-starter-idea-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.gocat-starter-idea-top span{color:#16d28a;font-size:10px;font-weight:850;letter-spacing:.04em;text-transform:uppercase}
+.gocat-starter-idea-top small{color:var(--muted);font-size:10px;font-variant-numeric:tabular-nums}
+.gocat-starter-idea h4{margin:9px 0 6px;color:var(--text);font-size:13px;line-height:1.35}
+.gocat-starter-idea p{margin:0 0 12px;color:var(--muted);font-size:11px;line-height:1.5;flex:1}
+.gocat-starter-idea-actions{display:flex;gap:7px;flex-wrap:wrap}
+.gocat-starter-idea-actions button{
+  min-height:30px;padding:6px 10px;border:1px solid var(--border);
+  border-radius:9px;background:var(--bg2);color:var(--text);
+  font:inherit;font-size:10px;font-weight:750;cursor:pointer;
+}
+.gocat-starter-idea-actions button:last-child{
+  border-color:rgba(22,210,138,.35);background:rgba(22,210,138,.1);color:#16d28a;
+}
+.gocat-starter-idea-actions button:focus-visible{outline:2px solid #16d28a;outline-offset:2px}
+@media(max-width:600px){
+  .gocat-starter-library>summary{align-items:flex-start;flex-direction:column}
+}
