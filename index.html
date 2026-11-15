@@ -10,6 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="stylesheet" href="/gocat-growth.css">
+<link rel="stylesheet" href="/gocat-chat-admin.css">
 <title>GoCat — Discover Videos, Explore Creators & Share</title>
 <meta name="description" content="GoCat is a video-sharing platform where you can discover videos, explore creators, watch Reels, and share your own content.">
 <meta name="robots" content="index, follow, max-image-preview:large">
@@ -477,9 +478,16 @@
                             <button type="button" data-chat-emoji="😂" aria-label="Add laugh">😂</button>
                             <button type="button" data-chat-emoji="🎉" aria-label="Add celebration">🎉</button>
                         </div>
+                        <div id="chatAttachmentPreview" class="chat-attachment-preview hidden">
+                            <span id="chatAttachmentName"></span>
+                            <button id="chatClearAttachment" type="button" aria-label="Remove attachment">×</button>
+                        </div>
+                        <div id="chatUploadStatus" class="chat-upload-status">Photos, videos, audio and documents · Max 50 MB</div>
                         <form id="chatForm" class="chat-compose">
+                            <button id="chatAttachBtn" class="chat-attach-btn" type="button" disabled aria-label="Attach a file" title="Attach a photo, video, audio clip or document">＋</button>
+                            <input id="chatAttachmentFile" type="file" hidden accept="image/jpeg,image/png,image/webp,image/gif,image/avif,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/mp4,audio/ogg,audio/wav,audio/webm,application/pdf,text/plain,text/csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx">
                             <div class="chat-compose-field">
-                                <textarea id="messageInput" maxlength="2000" rows="1" placeholder="Write a message…" aria-label="Write a message. Press Enter to send." disabled required></textarea>
+                                <textarea id="messageInput" maxlength="2000" rows="1" placeholder="Write a message…" aria-label="Write a message. Press Enter to send." disabled></textarea>
                                 <small>Enter to send <span>·</span> Shift + Enter for a new line</small>
                             </div>
                             <button id="sendMessageBtn" class="primary-btn" type="submit" disabled><span>Send</span><span aria-hidden="true">➤</span></button>
@@ -572,10 +580,16 @@
             <section id="page-admin" class="page-section hidden">
                 <div class="page-title-row"><div><h1>GoCat Admin</h1><p class="muted-text">Owner-only community and content management.</p></div><button class="soft-btn" id="adminRefreshBtn">Refresh</button></div>
                 <div class="settings-layout">
-                    <div class="settings-card"><h2>Community overview</h2><div class="admin-stats"><div><strong id="adminUserCount">—</strong><small>Creators</small></div><div><strong id="adminVideoCount">—</strong><small>Videos & Reels</small></div><div><strong id="adminPostCount">—</strong><small>Posts</small></div></div></div>
+                    <div class="settings-card"><h2>Community overview</h2><div class="admin-stats">
+                        <div><strong id="adminUserCount">—</strong><small>Creators</small></div>
+                        <div><strong id="adminVideoCount">—</strong><small>Videos & Reels</small></div>
+                        <div><strong id="adminPostCount">—</strong><small>Posts</small></div>
+                        <div><strong id="adminFollowerCount">—</strong><small>Real follows</small></div>
+                        <div><strong id="adminFeaturedCount">—</strong><small>Featured</small></div>
+                    </div></div>
                     <div class="settings-card"><h2>Find a creator</h2><input id="adminUserSearch" type="search" placeholder="Search username…"><div id="adminUserList" class="admin-user-list"></div></div>
-                    <div class="settings-card"><h2>Content moderation</h2><p class="muted-text">Remove content that breaks GoCat rules. Use the Delete controls on posts and videos throughout the app; admin permissions apply across creators.</p></div>
-                    <div class="settings-card"><h2>Important</h2><p class="muted-text">Follower totals stay tied to real follows. GoCat does not manufacture followers or engagement.</p></div>
+                    <div class="settings-card"><h2>Content and profile controls</h2><p class="muted-text">As owner, you can edit public creator profiles, edit or remove public posts and videos/Reels, suspend accounts, and feature creators in discovery. Uploads from Studio publish under your own GoCat account.</p></div>
+                    <div class="settings-card"><h2>Account privacy and authentic growth</h2><p class="muted-text">Passwords, login sessions, private messages and private account data remain protected. Follower totals stay tied to real follow relationships. Use Feature to give creators more visibility instead of inventing followers.</p></div>
                 </div>
             </section>
 
