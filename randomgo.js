@@ -812,6 +812,7 @@ function videoCard(video) {
             <div class="video-actions">
                 ${pill("heart", video.likes?.length || 0, `data-like-video="${esc(video.id)}"`, liked ? "liked" : "")}
                 ${pill("message", video.comments?.length || 0, `data-comments-video="${esc(video.id)}"`)}
+                ${canManageContent(video.owner_id) ? pill("edit", "Edit", `data-edit-video="${esc(video.id)}"`) : ""}
                 ${pill("share", "Share", `data-share-video="${esc(video.id)}"`)}
                 ${canManageContent(video.owner_id) ? pill("trash", "Delete", `data-delete-video="${esc(video.id)}"`, "delete-btn") : ""}
             </div>
@@ -837,7 +838,7 @@ function postCard(post) {
     const username = getUsername(post.user_id);
     const liked = hasLiked(post);
     const imageURL = getPostImageURL(post.media_path);
-    const isOwnPost = String(post.user_id) === String(currentUser?.id);
+    const canEditThisPost = canManageContent(post.user_id);
 
     return `
         <article class="post-card" data-post-id="${esc(post.id)}">
@@ -847,7 +848,7 @@ function postCard(post) {
                     <strong>${esc(username)}</strong>
                     <small>${formatDate(post.created_at)}</small>
                 </div>
-                ${isOwnPost ? pill("edit", "Edit", `data-edit-post="${esc(post.id)}"`) : ""}
+                ${canEditThisPost ? pill("edit", "Edit", `data-edit-post="${esc(post.id)}"`) : ""}
                 ${canManageContent(post.user_id) ? pill("trash", "Delete", `data-delete-post="${esc(post.id)}"`, "delete-btn") : ""}
             </div>
 
@@ -2622,9 +2623,13 @@ async function togglePostLike(postId) {
 
 async function editPost(postId) {
     const post = posts.find(p => String(p.id) === String(postId));
-    if (!post || String(post.user_id) !== String(currentUser.id)) return;
+    if (!post || !canManageContent(post.user_id)) return;
 
-    const editedContent = prompt("Edit your post:", post.content || "");
+    const isAdminEdit = isGoCatAdmin && String(post.user_id) !== String(currentUser.id);
+    const editedContent = prompt(
+        isAdminEdit ? "Edit " + getUsername(post.user_id) + "'s public post:" : "Edit your post:",
+        post.content || ""
+    );
     if (editedContent === null) return;
 
     const content = editedContent.trim();
@@ -2634,19 +2639,16 @@ async function editPost(postId) {
     }
 
     try {
-        const result = await db.from("posts")
-            .update({ content })
-            .eq("id", postId)
-            .eq("user_id", currentUser.id)
-            .select("id")
-            .maybeSingle();
+        let query = db.from("posts").update({ content }).eq("id", postId);
+        if (!isAdminEdit) query = query.eq("user_id", currentUser.id);
+        const result = await query.select("id").maybeSingle();
 
         if (result.error) throw result.error;
         if (!result.data) throw new Error("No post was updated. Check your Supabase UPDATE policy.");
 
         await loadPosts();
         renderEverything();
-        showToast("Post updated");
+        showToast(isAdminEdit ? "Creator post updated." : "Post updated");
     } catch (error) {
         console.error("Post edit error:", error);
         showToast("Edit failed: " + error.message);
