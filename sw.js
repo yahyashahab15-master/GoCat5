@@ -1,5 +1,5 @@
 "use strict";
-const CACHE_NAME = "gocat-shell-v11";
+const CACHE_NAME = "gocat-shell-v12";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -20,7 +20,8 @@ const APP_SHELL = [
   "/gocat-commercial-polish.js",
   "/gocat-creator-launchpad.js",
   "/gocat-pwa.js",
-  "/gocat-growth.css"
+  "/gocat-growth.css",
+  "/gocat-chat-admin.css"
 ];
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));
