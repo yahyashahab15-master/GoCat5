@@ -23,7 +23,31 @@
     const grid = byId("communityGrid");
     if (!grid) return;
     const category = byId("communityCategoryFilter")?.value || "All";
-    const visible = communities.filter(item => category === "All" || item.category === category);
+    const sortMode = byId("communitySortFilter")?.value || "active";
+    const activity = new Map();
+    communityMembers.forEach(row => {
+      const key = String(row.community_id);
+      const item = activity.get(key) || { members: 0, posts: 0 };
+      item.members += 1;
+      activity.set(key, item);
+    });
+    communityPosts.forEach(row => {
+      const key = String(row.community_id);
+      const item = activity.get(key) || { members: 0, posts: 0 };
+      item.posts += 1;
+      activity.set(key, item);
+    });
+    const visible = communities
+      .filter(item => category === "All" || item.category === category)
+      .sort((a, b) => {
+        const newest = new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+        if (sortMode === "newest") return newest;
+        const score = item => {
+          const counts = activity.get(String(item.id)) || { members: 0, posts: 0 };
+          return counts.members * 2 + counts.posts * 3;
+        };
+        return score(b) - score(a) || newest;
+      });
 
     if (!visible.length) {
       grid.innerHTML = '<div class="empty-card community-empty"><h3>No communities yet</h3><p>Be the first to create a place for people who share an interest.</p><button class="primary-btn" type="button" data-open-community-create>Start a community</button></div>';
@@ -418,6 +442,7 @@
   });
 
   byId("communityCategoryFilter")?.addEventListener("change", renderCommunityDirectory);
+  byId("communitySortFilter")?.addEventListener("change", renderCommunityDirectory);
   byId("communityPostMedia")?.addEventListener("change", event => {
     const label = byId("communityPostMediaName");
     if (label) label.textContent = event.target.files?.[0]?.name || "";
