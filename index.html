@@ -482,12 +482,12 @@
                             <span id="chatAttachmentName"></span>
                             <button id="chatClearAttachment" type="button" aria-label="Remove attachment">×</button>
                         </div>
-                        <div id="chatUploadStatus" class="chat-upload-status">Photos, videos, audio and documents · Max 50 MB</div>
+                        <div id="chatUploadStatus" class="chat-upload-status">Files from this device or other apps · Max 50 MB</div>
                         <form id="chatForm" class="chat-compose">
                             <button id="chatAttachBtn" class="chat-attach-btn" type="button" disabled aria-label="Attach a file" title="Attach a photo, video, audio clip or document">＋</button>
-                            <input id="chatAttachmentFile" type="file" hidden accept="image/jpeg,image/png,image/webp,image/gif,image/avif,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/mp4,audio/ogg,audio/wav,audio/webm,application/pdf,text/plain,text/csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx">
+                            <input id="chatAttachmentFile" type="file" hidden accept="image/jpeg,image/png,image/webp,image/gif,image/avif,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/mp4,audio/ogg,audio/wav,audio/webm,application/pdf,text/plain,text/csv,application/zip,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx">
                             <div class="chat-compose-field">
-                                <textarea id="messageInput" maxlength="2000" rows="1" placeholder="Write a message…" aria-label="Write a message. Press Enter to send." disabled></textarea>
+                                <textarea id="messageInput" maxlength="10000" rows="1" placeholder="Write a message…" aria-label="Write a message. Press Enter to send." disabled></textarea>
                                 <small>Enter to send <span>·</span> Shift + Enter for a new line</small>
                             </div>
                             <button id="sendMessageBtn" class="primary-btn" type="submit" disabled><span>Send</span><span aria-hidden="true">➤</span></button>
