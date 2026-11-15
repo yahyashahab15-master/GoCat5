@@ -44,6 +44,10 @@
     {
       "source": "/share/video/:id",
       "destination": "/api/share?type=video&id=:id"
+    },
+    {
+      "source": "/share/post/:id",
+      "destination": "/api/share?type=post&id=:id"
     }
   ]
 }
