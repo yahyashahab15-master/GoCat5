@@ -11,6 +11,7 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="stylesheet" href="/gocat-growth.css">
 <link rel="stylesheet" href="/gocat-chat-admin.css">
+<link rel="stylesheet" href="/gocat-followers.css">
 <title>GoCat — Discover Videos, Explore Creators & Share</title>
 <meta name="description" content="GoCat is a video-sharing platform where you can discover videos, explore creators, watch Reels, and share your own content.">
 <meta name="robots" content="index, follow, max-image-preview:large">
@@ -560,8 +561,8 @@
                 <div class="channel-stats">
                     <div><strong id="profileVideoCount">0</strong><span>Videos</span></div>
                     <div><strong id="profileShortCount">0</strong><span>Reels</span></div>
-                    <div><strong id="profileFollowerCount">0</strong><span>Followers</span></div>
-                    <div><strong id="profileFollowingCount">0</strong><span>Following</span></div>
+                    <button type="button" id="profileFollowersOpen" class="channel-stat-button" aria-label="View followers" aria-haspopup="dialog"><strong id="profileFollowerCount">0</strong><span>Followers</span></button>
+                    <button type="button" id="profileFollowingOpen" class="channel-stat-button" aria-label="View following" aria-haspopup="dialog"><strong id="profileFollowingCount">0</strong><span>Following</span></button>
                     <div><strong id="profilePostCount">0</strong><span>Posts</span></div>
                 </div>
                 <div class="profile-tabs">
@@ -924,6 +925,22 @@
             <input id="commentInput" maxlength="500" placeholder="Add a comment" required>
             <button class="primary-btn" type="submit">Post</button>
         </form>
+    </div>
+</div>
+
+<!-- FOLLOWERS AND FOLLOWING -->
+<div id="followListModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="followListTitle">
+    <div class="modal-backdrop" data-close="followListModal"></div>
+    <div class="modal-card follow-list-modal">
+        <div class="modal-heading">
+            <div>
+                <h2 id="followListTitle">Followers</h2>
+                <p id="followListSubtitle" class="muted-text">GoCat creators</p>
+            </div>
+            <button class="icon-btn" type="button" data-close="followListModal" aria-label="Close followers list"><i data-icon="close"></i></button>
+        </div>
+        <input id="followListSearch" class="follow-list-search" type="search" placeholder="Search creators…" aria-label="Search this list" autocomplete="off">
+        <div id="followListBody" class="follow-list-body" aria-live="polite"></div>
     </div>
 </div>
 

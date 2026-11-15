@@ -1,0 +1,106 @@
+/* GoCat follower and following list UI. */
+.channel-stats .channel-stat-button {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 56px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.channel-stats .channel-stat-button:hover strong { color: var(--accent); }
+.channel-stats .channel-stat-button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 5px;
+    border-radius: 5px;
+}
+
+.follow-list-modal {
+    display: flex;
+    flex-direction: column;
+    width: min(520px, 100%);
+    max-height: min(720px, 92vh);
+    overflow: hidden;
+}
+.follow-list-modal .modal-heading { flex: 0 0 auto; margin-bottom: 14px; }
+.follow-list-search {
+    flex: 0 0 auto;
+    width: 100%;
+    min-height: 44px;
+    margin: 0 0 12px;
+    padding: 0 14px;
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    outline: none;
+    background: var(--bg2);
+}
+.follow-list-search:focus { border-color: var(--accent); }
+.follow-list-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 130px;
+    max-height: min(54vh, 540px);
+    overflow-y: auto;
+    padding: 1px 3px 4px;
+    overscroll-behavior: contain;
+}
+.follow-list-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 13px;
+    background: var(--bg2);
+}
+.follow-list-person {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+}
+.follow-list-person:hover strong { color: var(--accent); }
+.follow-list-copy { display: block; min-width: 0; }
+.follow-list-copy strong, .follow-list-copy small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.follow-list-copy strong { font-size: 14px; }
+.follow-list-copy small { max-width: 275px; margin-top: 2px; color: var(--muted); font-size: 12px; }
+.follow-list-action { flex: 0 0 auto; min-width: 96px; min-height: 36px; padding: 0 13px; white-space: nowrap; }
+.follow-list-you { flex: 0 0 auto; color: var(--muted); font-size: 12px; font-weight: 600; }
+.follow-list-empty {
+    display: grid;
+    gap: 5px;
+    place-content: center;
+    min-height: 150px;
+    padding: 20px;
+    border: 1px dashed var(--border);
+    border-radius: 12px;
+    color: var(--muted);
+    text-align: center;
+}
+.follow-list-empty strong { color: var(--text); }
+.follow-list-empty span { font-size: 12px; }
+
+@media (max-width: 520px) {
+    .follow-list-modal { padding: 18px; }
+    .follow-list-row { gap: 8px; padding: 9px; }
+    .follow-list-person { gap: 8px; }
+    .follow-list-person .avatar { width: 42px; height: 42px; flex-basis: 42px; }
+    .follow-list-action { min-width: 82px; padding: 0 10px; }
+}

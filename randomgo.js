@@ -29,6 +29,7 @@ const db = window.supabase?.createClient
 
 let currentUser = null, currentProfile = null, isGoCatAdmin = false;
 let currentProfileUserId = null, currentCommentVideoId = null, currentCommentPostId = null, currentCommentParentId = null, currentChatUserId = null;
+let followListProfileId = null, followListKind = "followers";
 let chatRealtimeChannel = null, commentRealtimeChannel = null, feedRealtimeChannel = null;
 let currentChatMessages = [], chatSignedUrls = new Map(), selectedChatAttachment = null, pendingExternalShare = null;
 let liveRefreshTimer = null, chatTypingTimer = null, feedRealtimeReady = false;
@@ -1051,6 +1052,7 @@ async function toggleFollow(userId) {
         }
 
         renderEverything();
+        if ($("followListModal") && !$("followListModal").classList.contains("hidden")) renderFollowList();
 
     } catch (error) {
         console.error(error);
@@ -2747,6 +2749,7 @@ listen("postsLoadMore", "click", () => { postsVisible += PAGE_SIZE; renderPosts(
 /* ---------- 25 PROFILE ---------- */
 
 function openOtherProfile(userId) {
+    hideModal("followListModal");
     currentProfileUserId = userId;
     profileMode = "home";
     openPage("profile");
@@ -2812,6 +2815,80 @@ function renderProfile() {
 
     renderProfileTab(profileMode);
 }
+
+
+function openFollowList(kind) {
+    const profileId = currentProfileUserId || currentUser?.id;
+    if (!profileId) return;
+
+    followListProfileId = String(profileId);
+    followListKind = kind === "following" ? "following" : "followers";
+
+    const profile = getUser(followListProfileId);
+    const username = profile?.username || getUsername(followListProfileId);
+    const isFollowers = followListKind === "followers";
+
+    if ($("followListTitle")) $("followListTitle").textContent = isFollowers ? "Followers" : "Following";
+    if ($("followListSubtitle")) $("followListSubtitle").textContent = "@" + username;
+    if ($("followListSearch")) $("followListSearch").value = "";
+
+    renderFollowList();
+    showModal("followListModal");
+}
+
+function renderFollowList() {
+    const body = $("followListBody");
+    if (!body || !followListProfileId) return;
+
+    const isFollowers = followListKind === "followers";
+    const ids = [...new Set(follows
+        .filter(f => isFollowers
+            ? String(f.following_id) === String(followListProfileId)
+            : String(f.follower_id) === String(followListProfileId))
+        .map(f => String(isFollowers ? f.follower_id : f.following_id))
+    )];
+
+    const query = ($("followListSearch")?.value || "").trim().toLowerCase();
+    const people = ids
+        .map(id => getUser(id))
+        .filter(Boolean)
+        .filter(user => !query || [user.username, user.bio].join(" ").toLowerCase().includes(query))
+        .sort((a, b) => String(a.username || "").localeCompare(String(b.username || "")));
+
+    if (!people.length) {
+        const message = query
+            ? "No creators match your search."
+            : isFollowers
+                ? "This creator has no followers yet."
+                : "This creator is not following anyone yet.";
+        body.innerHTML = `<div class="follow-list-empty"><strong>${esc(message)}</strong><span>Creator connections will appear here.</span></div>`;
+        return;
+    }
+
+    body.innerHTML = people.map(user => {
+        const username = user.username || getUsername(user.id);
+        const following = isFollowing(user.id);
+        const action = isOwnContent(user.id)
+            ? '<span class="follow-list-you">You</span>'
+            : `<button type="button" class="${following ? "soft-btn" : "primary-btn"} follow-list-action" data-follow-user="${esc(user.id)}">${following ? "Following" : "Follow"}</button>`;
+
+        return `
+            <div class="follow-list-row">
+                <button type="button" class="follow-list-person" data-profile-user="${esc(user.id)}">
+                    ${avatar(username, "lg", user.avatar_path || "")}
+                    <span class="follow-list-copy">
+                        <strong>${esc(username)}</strong>
+                        <small>${esc(user.bio || "GoCat creator")}</small>
+                    </span>
+                </button>
+                ${action}
+            </div>`;
+    }).join("");
+}
+
+listen("profileFollowersOpen", "click", () => openFollowList("followers"));
+listen("profileFollowingOpen", "click", () => openFollowList("following"));
+listen("followListSearch", "input", renderFollowList);
 
 function renderProfileTab(tab) {
     profileMode = tab;
@@ -4141,7 +4218,7 @@ document.querySelectorAll("[data-close]").forEach(button => {
 
 document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
-    ["commentsModal", "editProfileModal", "uploadModal"].forEach(hideModal);
+    ["commentsModal", "editProfileModal", "uploadModal", "followListModal"].forEach(hideModal);
     closeAuthModal();
     closeSidebar();
 });
