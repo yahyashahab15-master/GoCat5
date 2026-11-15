@@ -12,8 +12,9 @@ const SUPABASE_KEY = "sb_publishable_LWIaOaxbzp19lV765vbbQg_kF5apL0O";
 const VIDEO_BUCKET = "videos";
 const POST_BUCKET = "post-media";
 const CHAT_BUCKET = "chat-media";
+const EXTERNAL_SHARE_DB_NAME = "gocat-share-inbox";
 const MAX_CHAT_ATTACHMENT_BYTES = 50 * 1024 * 1024;
-const CHAT_ALLOWED_TYPES = new Set(["image/jpeg","image/png","image/webp","image/gif","image/avif","video/mp4","video/webm","video/quicktime","audio/mpeg","audio/mp4","audio/ogg","audio/wav","audio/webm","application/pdf","text/plain","text/csv","application/msword","application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.ms-excel","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/vnd.ms-powerpoint","application/vnd.openxmlformats-officedocument.presentationml.presentation"]);
+const CHAT_ALLOWED_TYPES = new Set(["image/jpeg","image/png","image/webp","image/gif","image/avif","video/mp4","video/webm","video/quicktime","audio/mpeg","audio/mp4","audio/ogg","audio/wav","audio/webm","application/pdf","text/plain","text/csv","application/msword","application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.ms-excel","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/vnd.ms-powerpoint","application/vnd.openxmlformats-officedocument.presentationml.presentation","application/zip","application/x-zip-compressed"]);
 
 const MAX_VIDEO_BYTES = 500 * 1024 * 1024;
 const MAX_VIDEO_DURATION = 1200;
@@ -29,7 +30,7 @@ const db = window.supabase?.createClient
 let currentUser = null, currentProfile = null, isGoCatAdmin = false;
 let currentProfileUserId = null, currentCommentVideoId = null, currentCommentPostId = null, currentCommentParentId = null, currentChatUserId = null;
 let chatRealtimeChannel = null, commentRealtimeChannel = null, feedRealtimeChannel = null;
-let currentChatMessages = [], chatSignedUrls = new Map(), selectedChatAttachment = null;
+let currentChatMessages = [], chatSignedUrls = new Map(), selectedChatAttachment = null, pendingExternalShare = null;
 let liveRefreshTimer = null, chatTypingTimer = null, feedRealtimeReady = false;
 let activePlaybackVideoId = null, liveRenderPending = false;
 let users = [], videos = [], posts = [], follows = [], notifications = [], featuredCreators = [];
@@ -698,6 +699,7 @@ async function startGoCat() {
         renderEverything();
         openPage("home");
         checkSharedVideoLink();
+        activateIncomingShareInbox();
     } catch (error) {
         console.error("GoCat startup:", error);
         openApp();
@@ -742,6 +744,7 @@ async function startGuestGoCat() {
     }
 
     checkSharedVideoLink();
+    activateIncomingShareInbox();
 }
 
 function updateUserInterface() {
@@ -3104,6 +3107,193 @@ function getMutualFriends() {
     return users.filter(u => !isOwnContent(u.id) && following.includes(String(u.id)) && followers.includes(String(u.id)));
 }
 
+
+function openIncomingShareDatabase() {
+    return new Promise((resolve, reject) => {
+        if (!window.indexedDB) return reject(new Error("This browser cannot open GoCat's share inbox."));
+        const request = window.indexedDB.open(EXTERNAL_SHARE_DB_NAME, 1);
+        request.onupgradeneeded = () => {
+            if (!request.result.objectStoreNames.contains("incoming")) {
+                request.result.createObjectStore("incoming", { keyPath: "id" });
+            }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error("Could not open GoCat's share inbox."));
+    });
+}
+
+async function readIncomingShareRecord() {
+    const database = await openIncomingShareDatabase();
+    return new Promise((resolve, reject) => {
+        const transaction = database.transaction("incoming", "readonly");
+        const request = transaction.objectStore("incoming").get("latest");
+        let record = null;
+        request.onsuccess = () => { record = request.result || null; };
+        transaction.oncomplete = () => { database.close(); resolve(record); };
+        transaction.onerror = () => { database.close(); reject(transaction.error || new Error("Could not read the share inbox.")); };
+    });
+}
+
+async function removeIncomingShareRecord() {
+    const database = await openIncomingShareDatabase();
+    return new Promise((resolve, reject) => {
+        const transaction = database.transaction("incoming", "readwrite");
+        transaction.objectStore("incoming").delete("latest");
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => { database.close(); reject(transaction.error || new Error("Could not clear the share inbox.")); };
+    });
+}
+
+function incomingShareMessage(record) {
+    const title = String(record.title || "").trim();
+    const text = String(record.text || "").trim();
+    const url = String(record.url || "").trim();
+    const parts = [];
+    if (title && text && !text.toLowerCase().includes(title.toLowerCase())) parts.push(title);
+    if (text) parts.push(text);
+    if (url && !text.includes(url)) parts.push(url);
+    return parts.join("\n").slice(0, 10000);
+}
+
+async function activateIncomingShareInbox() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("gocatShareInboxError")) {
+        params.delete("gocatShareInboxError");
+        const cleanUrl = window.location.pathname + (params.toString() ? "?" + params.toString() : "") + window.location.hash;
+        window.history.replaceState({}, "", cleanUrl);
+        showToast("GoCat could not receive that share. Try opening GoCat and attaching the file from your device.");
+        return;
+    }
+
+    try {
+        if (!pendingExternalShare) pendingExternalShare = await readIncomingShareRecord();
+        if (!pendingExternalShare) return;
+
+        const draft = pendingExternalShare;
+        if (draft.error) {
+            await removeIncomingShareRecord();
+            pendingExternalShare = null;
+            return showToast(draft.error);
+        }
+
+        if (draft.file && !draft.fileObject) {
+            const blob = draft.file;
+            const file = new File([blob], draft.fileName || "shared-file", {
+                type: draft.fileType || blob.type || "",
+                lastModified: Number(draft.fileLastModified || Date.now())
+            });
+            if (file.size > MAX_CHAT_ATTACHMENT_BYTES) {
+                await removeIncomingShareRecord();
+                pendingExternalShare = null;
+                return showToast("This file is larger than GoCat's current 50 MB per-file limit.");
+            }
+            if (!chatFileTypeAllowed(file)) {
+                await removeIncomingShareRecord();
+                pendingExternalShare = null;
+                return showToast("This file type is not supported in GoCat chat yet. Try a photo, video, audio file, PDF, ZIP or Office document.");
+            }
+            draft.fileObject = file;
+        }
+
+        if (!currentUser) {
+            showToast("Your shared item is saved. Sign in to send it in a GoCat chat.");
+            return;
+        }
+
+        if (params.has("gocatShareInbox")) {
+            params.delete("gocatShareInbox");
+            const cleanUrl = window.location.pathname + (params.toString() ? "?" + params.toString() : "") + window.location.hash;
+            window.history.replaceState({}, "", cleanUrl);
+        }
+
+        openPage("chats");
+        showToast(draft.notice || "Shared item received. Choose a mutual follower, then tap Send.");
+    } catch (error) {
+        console.warn("GoCat incoming share:", error);
+        showToast("GoCat could not open the shared item. You can still attach it from your device.");
+    }
+}
+
+function applyPendingExternalShare() {
+    if (!pendingExternalShare || !currentChatUserId) return;
+
+    const message = incomingShareMessage(pendingExternalShare);
+    const input = $("messageInput");
+    if (input && message) input.value = message;
+
+    const file = pendingExternalShare.fileObject || null;
+    if (file) {
+        selectedChatAttachment = file;
+        if ($("chatAttachmentPreview")) $("chatAttachmentPreview").classList.remove("hidden");
+        if ($("chatAttachmentName")) $("chatAttachmentName").textContent =
+            file.name + " · " + (file.size / 1048576).toFixed(2) + " MB";
+        if ($("chatUploadStatus")) $("chatUploadStatus").textContent = "Shared item ready · Review it before sending";
+    }
+
+    pendingExternalShare.applied = true;
+    showToast("Shared item ready for " + getUsername(currentChatUserId) + ". Review it, then tap Send.");
+}
+
+async function uploadChatAttachment(file, path, onProgress) {
+    const directUpload = async () => {
+        const result = await db.storage.from(CHAT_BUCKET).upload(path, file, {
+            cacheControl: "3600",
+            contentType: file.type || "application/octet-stream",
+            upsert: false
+        });
+        if (result.error) throw result.error;
+        if (onProgress) onProgress(100);
+        return result.data || { path };
+    };
+
+    if (file.size <= 6 * 1024 * 1024) return directUpload();
+
+    const sessionResult = await db.auth.getSession();
+    if (sessionResult.error) throw sessionResult.error;
+    const session = sessionResult.data.session;
+    if (!session?.access_token) throw new Error("Your session expired. Sign in again.");
+
+    try {
+        await loadTusLibrary();
+    } catch (error) {
+        console.warn("Chat TUS uploader unavailable; using standard upload:", error.message);
+        return directUpload();
+    }
+
+    const projectId = new URL(SUPABASE_URL).hostname.split(".")[0];
+    const endpoint = "https://" + projectId + ".storage.supabase.co/storage/v1/upload/resumable";
+
+    try {
+        await new Promise((resolve, reject) => {
+            const upload = new window.tus.Upload(file, {
+                endpoint,
+                retryDelays: [0, 3000, 5000, 10000],
+                headers: { authorization: "Bearer " + session.access_token, apikey: SUPABASE_KEY },
+                uploadDataDuringCreation: true,
+                removeFingerprintOnSuccess: true,
+                chunkSize: 6 * 1024 * 1024,
+                metadata: {
+                    bucketName: CHAT_BUCKET,
+                    objectName: path,
+                    contentType: file.type || "application/octet-stream",
+                    cacheControl: "3600"
+                },
+                onError: reject,
+                onProgress: (done, total) => {
+                    if (onProgress) onProgress(Math.max(0, Math.min(99, Math.round(done / total * 100))));
+                },
+                onSuccess: resolve
+            });
+            upload.start();
+        });
+        if (onProgress) onProgress(100);
+        return { path };
+    } catch (error) {
+        console.warn("Chat resumable upload failed; retrying with standard upload:", error);
+        return directUpload();
+    }
+}
+
 function renderChatFriends() {
     const container = $("chatFriends");
     if (!container) return;
@@ -3205,6 +3395,7 @@ async function openChat(userId) {
     if ($("chatAttachBtn")) $("chatAttachBtn").disabled = false;
     renderChatFriends();
     await loadMessages();
+    applyPendingExternalShare();
 }
 
 function chatAttachmentMarkup(message, signedUrl) {
@@ -3304,7 +3495,7 @@ function resetChatAttachmentSelection() {
     if ($("chatAttachmentFile")) $("chatAttachmentFile").value = "";
     if ($("chatAttachmentPreview")) $("chatAttachmentPreview").classList.add("hidden");
     if ($("chatAttachmentName")) $("chatAttachmentName").textContent = "";
-    if ($("chatUploadStatus")) $("chatUploadStatus").textContent = "Photos, videos, audio and documents · Max 50 MB";
+    if ($("chatUploadStatus")) $("chatUploadStatus").textContent = "Files from this device or other apps · Max 50 MB";
 }
 
 function chatFileTypeAllowed(file) {
@@ -3312,7 +3503,7 @@ function chatFileTypeAllowed(file) {
     const extension = String(file && file.name || "").split(".").pop().toLowerCase();
     if (mime && CHAT_ALLOWED_TYPES.has(mime)) return true;
     if (mime) return false;
-    return ["jpg","jpeg","png","webp","gif","avif","mp4","webm","mov","mp3","m4a","ogg","wav","pdf","txt","csv","doc","docx","xls","xlsx","ppt","pptx"]
+    return ["jpg","jpeg","png","webp","gif","avif","mp4","webm","mov","mp3","m4a","ogg","wav","pdf","txt","csv","zip","doc","docx","xls","xlsx","ppt","pptx"]
         .includes(extension);
 }
 
@@ -3328,7 +3519,7 @@ listen("chatAttachmentFile", "change", function () {
     if (!file) return resetChatAttachmentSelection();
     if (file.size > MAX_CHAT_ATTACHMENT_BYTES) {
         resetChatAttachmentSelection();
-        return showToast("Chat attachments must be 50 MB or smaller.");
+        return showToast("Chat attachments must be 50 MB or smaller on the current GoCat storage plan.");
     }
     if (!chatFileTypeAllowed(file)) {
         resetChatAttachmentSelection();
@@ -3463,13 +3654,10 @@ listen("chatForm", "submit", async function (event) {
             const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100) || ("attachment." + extension);
             const path = String(currentUser.id) + "/" + Date.now() + "-" +
                 Math.random().toString(36).slice(2, 9) + "-" + safeName;
-            const upload = await db.storage.from(CHAT_BUCKET).upload(path, file, {
-                cacheControl: "3600",
-                contentType: file.type || "application/octet-stream",
-                upsert: false
+            const upload = await uploadChatAttachment(file, path, percentage => {
+                if ($("chatUploadStatus")) $("chatUploadStatus").textContent = "Uploading attachment… " + percentage + "%";
             });
-            if (upload.error) throw upload.error;
-            uploadedPath = upload.data && upload.data.path || path;
+            uploadedPath = upload && upload.path || path;
             row.attachment_path = uploadedPath;
             row.attachment_name = file.name.slice(0, 180);
             row.attachment_mime = file.type || "application/octet-stream";
@@ -3480,6 +3668,10 @@ listen("chatForm", "submit", async function (event) {
         const result = await db.from("messages").insert(row);
         if (result.error) throw result.error;
 
+        if (pendingExternalShare?.applied) {
+            try { await removeIncomingShareRecord(); } catch (shareError) { console.warn("Shared draft cleanup:", shareError); }
+            pendingExternalShare = null;
+        }
         $("messageInput").value = "";
         resetChatAttachmentSelection();
         await loadMessages();
@@ -3499,7 +3691,7 @@ listen("chatForm", "submit", async function (event) {
         if (button) button.disabled = false;
         if ($("chatAttachBtn")) $("chatAttachBtn").disabled = false;
         if ($("chatUploadStatus") && !selectedChatAttachment) {
-            $("chatUploadStatus").textContent = "Photos, videos, audio and documents · Max 50 MB";
+            $("chatUploadStatus").textContent = "Files from this device or other apps · Max 50 MB";
         }
     }
 });
