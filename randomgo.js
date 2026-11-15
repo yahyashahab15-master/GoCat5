@@ -3156,6 +3156,35 @@ async function openChat(userId) {
     await loadMessages();
 }
 
+function chatAttachmentMarkup(message, signedUrl) {
+    if (!message.attachment_path) return "";
+    const name = esc(message.attachment_name || "Shared attachment");
+    const mime = String(message.attachment_mime || "");
+    const size = Number(message.attachment_size || 0);
+    const sizeLabel = size ? (size / 1048576 < 1
+        ? Math.max(1, Math.round(size / 1024)) + " KB"
+        : (size / 1048576).toFixed(1) + " MB") : "File";
+    if (!signedUrl) {
+        return '<div class="chat-file-card"><span>▧</span><div><strong>' + name +
+            '</strong><small>Attachment link unavailable. Refresh the conversation.</small></div></div>';
+    }
+    const safeUrl = esc(signedUrl);
+    if (mime.startsWith("image/")) {
+        return '<a class="chat-image-attachment" href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">' +
+            '<img src="' + safeUrl + '" alt="' + name + '" loading="lazy">' +
+            '<span>' + name + ' · ' + sizeLabel + '</span></a>';
+    }
+    if (mime.startsWith("video/")) {
+        return '<div class="chat-media-attachment"><video controls playsinline preload="metadata" src="' + safeUrl + '"></video>' +
+            '<a href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">' + name + ' · ' + sizeLabel + '</a></div>';
+    }
+    if (mime.startsWith("audio/")) {
+        return '<div class="chat-audio-attachment"><strong>' + name + '</strong><audio controls preload="none" src="' + safeUrl + '"></audio></div>';
+    }
+    return '<a class="chat-file-card" href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">' +
+        '<span>↧</span><div><strong>' + name + '</strong><small>' + sizeLabel + ' · Open file</small></div></a>';
+}
+
 async function loadMessages() {
     if (!currentUser || !currentChatUserId) return;
     const container = $("chatMessages");
@@ -3167,32 +3196,54 @@ async function loadMessages() {
     const result = await db.from("messages").select("*").or(filter).order("created_at", { ascending: true }).limit(200);
     if (result.error) {
         console.error(result.error);
-        container.innerHTML = `
-            <div class="chat-empty-state">
-                <span class="chat-empty-icon">!</span>
-                <strong>Messages could not load</strong>
-                <p>Check the messages table and its access policies, then try again.</p>
-            </div>`;
+        container.innerHTML = '<div class="chat-empty-state"><span class="chat-empty-icon">!</span>' +
+            '<strong>Messages could not load</strong><p>Check the messages table and its access policies, then try again.</p></div>';
         return;
     }
+
     const messages = result.data || [];
-    container.innerHTML = messages.length ? messages.map(m => {
-        const mine = String(m.sender_id) === String(currentUser.id);
-        const body = esc(m.content ?? m.text ?? "").replace(/\n/g, "<br>");
-        return '<div class="chat-bubble ' + (mine ? "mine" : "") + '">' +
-            body + '<time>' + formatDate(m.created_at) + " " + (mine ? (m.is_read ? "· Seen" : "· Sent") : "") + '</time></div>';
-    }).join("") : `
-        <div class="chat-empty-state">
-            <span class="chat-empty-icon">✦</span>
-            <strong>Start the conversation</strong>
-            <p>Send a message to say hello. Only you and this creator can see this chat.</p>
-        </div>`;
+    currentChatMessages = messages;
+    chatSignedUrls = new Map();
+    const attachmentPaths = Array.from(new Set(messages
+        .map(message => message.attachment_path)
+        .filter(path => typeof path === "string" && path.trim())));
+
+    if (attachmentPaths.length) {
+        const signed = await db.storage.from(CHAT_BUCKET).createSignedUrls(attachmentPaths, 3600);
+        if (signed.error) {
+            console.warn("Chat attachment links could not be created:", signed.error.message);
+        } else {
+            (signed.data || []).forEach(item => {
+                if (item.path && item.signedUrl) chatSignedUrls.set(item.path, item.signedUrl);
+            });
+        }
+    }
+
+    container.innerHTML = messages.length ? messages.map(message => {
+        const mine = String(message.sender_id) === String(currentUser.id);
+        const body = esc(message.content ?? message.text ?? "").replace(/\n/g, "<br>");
+        const file = chatAttachmentMarkup(message, chatSignedUrls.get(message.attachment_path));
+        const shareButton = '<button type="button" class="chat-bubble-share" data-chat-share-message="' +
+            esc(message.id) + '" title="Share this message outside GoCat">Share outside ↗</button>';
+        return '<article class="chat-bubble ' + (mine ? "mine" : "") + '">' +
+            (body ? '<div class="chat-message-body">' + body + '</div>' : "") +
+            file +
+            '<div class="chat-bubble-footer"><time>' + formatDate(message.created_at) + " " +
+            (mine ? (message.is_read ? "· Seen" : "· Sent") : "") + '</time>' + shareButton + '</div></article>';
+    }).join("") : '<div class="chat-empty-state"><span class="chat-empty-icon">✦</span>' +
+        '<strong>Start the conversation</strong><p>Send a message, photo, video, audio clip or document. Only you and this creator can see this chat.</p></div>';
+
     if (nearBottom) container.scrollTop = container.scrollHeight;
 
-    const unread = messages.filter(m => String(m.recipient_id) === String(currentUser.id) && !m.is_read).map(m => m.id);
+    const unread = messages.filter(message =>
+        String(message.recipient_id) === String(currentUser.id) && !message.is_read
+    ).map(message => message.id);
+
     if (unread.length) {
-        const readResult = await db.from("messages").update({ is_read: true, read_at: new Date().toISOString() })
-            .in("id", unread).eq("recipient_id", currentUser.id);
+        const readResult = await db.from("messages").update({
+            is_read: true,
+            read_at: new Date().toISOString()
+        }).in("id", unread).eq("recipient_id", currentUser.id);
         if (readResult.error) console.warn("Read receipts:", readResult.error.message);
     }
 }
