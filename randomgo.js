@@ -3637,22 +3637,47 @@ async function renderAdminPanel() {
         showToast("This page is only available to the GoCat owner.");
         return openPage("home");
     }
-    const userCount = $("adminUserCount");
-    const videoCount = $("adminVideoCount");
-    const postCount = $("adminPostCount");
-    if (userCount) userCount.textContent = users.length;
-    if (videoCount) videoCount.textContent = videos.length;
-    if (postCount) postCount.textContent = posts.length;
+    if ($("adminUserCount")) $("adminUserCount").textContent = users.length.toLocaleString();
+    if ($("adminVideoCount")) $("adminVideoCount").textContent = videos.length.toLocaleString();
+    if ($("adminPostCount")) $("adminPostCount").textContent = posts.length.toLocaleString();
+    if ($("adminFollowerCount")) $("adminFollowerCount").textContent = follows.length.toLocaleString();
+    if ($("adminFeaturedCount")) {
+        $("adminFeaturedCount").textContent = featuredCreators.filter(item =>
+            !item.expires_at || new Date(item.expires_at).getTime() > Date.now()
+        ).length.toLocaleString();
+    }
+
     const search = ($("adminUserSearch")?.value || "").trim().toLowerCase();
     const list = $("adminUserList");
     if (!list) return;
-    const shown = users.filter(u => (u.username || "").toLowerCase().includes(search));
-    list.innerHTML = shown.map(u => {
-        const banned = !!u.is_banned;
-        return '<div class="admin-user-row"><div><strong>' + esc(u.username || "Creator") + '</strong><small>' + (banned ? 'Suspended' : 'Active') + '</small></div><div class="admin-user-actions">' +
-          '<button class="soft-btn" data-admin-edit-user="' + esc(u.id) + '">Edit profile</button>' +
-          (String(u.id) === String(currentUser.id) ? '' : '<button class="' + (banned ? 'soft-btn' : 'danger-outline-btn') + '" data-admin-ban-user="' + esc(u.id) + '" data-ban-state="' + (banned ? 'true' : 'false') + '">' + (banned ? 'Unban' : 'Ban') + '</button>') +
-          '</div></div>';
+    const shown = users.filter(user => (user.username || "").toLowerCase().includes(search));
+
+    list.innerHTML = shown.map(user => {
+        const banned = !!user.is_banned;
+        const followerCount = follows.filter(row => String(row.following_id) === String(user.id)).length;
+        const followingCount = follows.filter(row => String(row.follower_id) === String(user.id)).length;
+        const uploadCount = videos.filter(video => String(video.owner_id) === String(user.id)).length;
+        const creatorPostCount = posts.filter(post => String(post.user_id) === String(user.id)).length;
+        const featured = isFeaturedCreator(user.id);
+
+        return '<div class="admin-user-row" data-admin-user-row="' + esc(user.id) + '">' +
+            '<div class="admin-user-main"><strong>' + esc(user.username || "Creator") + '</strong>' +
+            '<small>' + (banned ? "Suspended" : "Active") + (featured ? " · ✦ Featured" : "") + '</small>' +
+            '<small>' + followerCount.toLocaleString() + ' followers · ' +
+                followingCount.toLocaleString() + ' following</small>' +
+            '<small>' + uploadCount.toLocaleString() + ' videos/Reels · ' +
+                creatorPostCount.toLocaleString() + ' posts</small></div>' +
+            '<div class="admin-user-actions">' +
+            '<button class="soft-btn" data-admin-open-profile="' + esc(user.id) + '">View channel</button>' +
+            '<button class="soft-btn" data-admin-edit-user="' + esc(user.id) + '">Edit profile</button>' +
+            (featured
+                ? '<button class="soft-btn" data-admin-feature-user="' + esc(user.id) + '" data-feature-state="true">Unfeature</button>'
+                : '<button class="soft-btn" data-admin-feature-user="' + esc(user.id) + '" data-feature-state="false">Feature</button>') +
+            (String(user.id) === String(currentUser.id) ? "" :
+                '<button class="' + (banned ? "soft-btn" : "danger-outline-btn") +
+                '" data-admin-ban-user="' + esc(user.id) + '" data-ban-state="' +
+                (banned ? "true" : "false") + '">' + (banned ? "Unban" : "Ban") + '</button>') +
+            '</div></div>';
     }).join("") || '<p class="muted-text">No creators match that search.</p>';
 }
 listen("adminRefreshBtn", "click", async () => {
@@ -3695,6 +3720,45 @@ document.addEventListener("click", async event => {
         } catch (error) { showToast("Moderation failed: " + error.message); }
     }
 });
+
+
+document.addEventListener("click", async event => {
+    const openProfile = event.target.closest("[data-admin-open-profile]");
+    const featureButton = event.target.closest("[data-admin-feature-user]");
+    if (!openProfile && !featureButton) return;
+    if (!currentUser || !isGoCatAdmin) return showToast("Admin access required.");
+
+    if (openProfile) {
+        currentProfileUserId = openProfile.dataset.adminOpenProfile;
+        openPage("profile");
+        return;
+    }
+
+    const userId = String(featureButton.dataset.adminFeatureUser || "");
+    const shouldRemove = featureButton.dataset.featureState === "true";
+    const user = users.find(item => String(item.id) === userId);
+    if (!user) return;
+    const username = user.username || "this creator";
+    if (!confirm((shouldRemove ? "Remove " : "Feature ") + username +
+        (shouldRemove ? " from GoCat discovery?" : " in GoCat discovery?"))) return;
+
+    try {
+        const result = shouldRemove
+            ? await db.from("gocat_featured_creators").delete().eq("user_id", userId)
+            : await db.from("gocat_featured_creators").insert({
+                user_id: userId,
+                featured_by: String(currentUser.id)
+            });
+        if (result.error) throw result.error;
+        await loadFeaturedCreators();
+        renderSuggestedCreators();
+        renderAdminPanel();
+        showToast(shouldRemove ? "Creator removed from Featured." : "Creator featured in discovery.");
+    } catch (error) {
+        showToast("Featured status could not be changed: " + error.message);
+    }
+});
+
 
 /* ---------- 30 RENDERING AND NAVIGATION ---------- */
 
