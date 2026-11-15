@@ -52,6 +52,26 @@
     "Make a quick top-three list about something you love.",
     "Show a behind-the-scenes moment from your day."
   ];
+  const starterIdeas = [["Gaming","3 beginner tips for a game you enjoy","Show three simple things you wish you knew when you started."],["Gaming","A favorite moment from your latest game","Tell viewers what made the moment fun, using your own commentary."],["Gaming","One setting that improved your experience","Show a harmless in-game or accessibility setting and explain it."],["Gaming","A game you would recommend to a friend","Explain who might enjoy it and why."],["Technology","A website you made from scratch","Show the idea, one part you built, and what you learned."],["Technology","One browser shortcut worth remembering","Demonstrate a useful shortcut and when it saves time."],["Technology","How you fixed a small coding bug","Explain the problem, the clue you noticed, and the fix."],["Technology","A tool that helps you stay organized","Show how you use it for a project or files."],["Learning","Explain one tricky idea in 30 seconds","Choose a topic you understand and explain it in plain words."],["Learning","Three surprising facts about a topic you like","Share three original facts and explain one of them."],["Learning","A simple way to remember a new word","Give the meaning, an example, and a memory clue."],["Learning","What you learned from a recent project","Show one thing that worked and one thing you would improve."],["Art","Sketch to finished artwork","Record a short process clip and explain one creative choice."],["Art","How you choose a color palette","Show a few colors and describe the mood you wanted."],["Art","Turn three simple shapes into a character","Show the steps and reveal your original design."],["Art","A small detail that changed your artwork","Zoom in on a detail and explain why you added it."],["Music","Create an original 10-second sound","Make a short original melody or rhythm and explain your idea."],["Music","Show how a beat or rhythm is built","Layer a few original sounds one by one."],["Community","Ask your community one interesting question","Invite members to share opinions about your topic."],["Community","Introduce the topic of your new community","Explain what people can share and what you hope to learn together."]];
+
+  function renderStarterIdeas() {
+    const root = $("gocatStarterIdeas");
+    if (!root) return;
+    root.innerHTML = starterIdeas.map((idea, index) => `
+      <article class="gocat-starter-idea">
+        <div class="gocat-starter-idea-top">
+          <span>${idea[0]}</span>
+          <small>${String(index + 1).padStart(2, "0")}</small>
+        </div>
+        <h4>${idea[1]}</h4>
+        <p>${idea[2]}</p>
+        <div class="gocat-starter-idea-actions">
+          <button type="button" data-gocat-copy-starter-idea="${index}">Copy idea</button>
+          <button type="button" data-gocat-use-starter-idea="${index}">Use idea</button>
+        </div>
+      </article>`).join("");
+  }
+
 
   function toast(message) {
     if (typeof showToast === "function") showToast(message);
@@ -191,12 +211,20 @@
           </div>
         </article>
       </div>
+      <details class="gocat-starter-library">
+        <summary>
+          <span><strong>20 original Reel ideas</strong><small>Pick a niche-friendly prompt, copy it, or open the Reel uploader with it.</small></span>
+          <span class="gocat-starter-library-toggle">Browse ideas <b aria-hidden="true">⌄</b></span>
+        </summary>
+        <div id="gocatStarterIdeas" class="gocat-starter-idea-grid"></div>
+      </details>
       <div class="gocat-launchpad-foot">
         <span><i aria-hidden="true">✦</i> Discovery is designed to give smaller channels a fairer starting chance.</span>
         <button type="button" data-page="studio">Open Creator Studio <span aria-hidden="true">→</span></button>
       </div>`;
     home.appendChild(section);
     $("gocatWeeklyMission").textContent = getWeeklyMission();
+    renderStarterIdeas();
   }
 
   function mountProfileShare() {
@@ -323,6 +351,38 @@
       } catch (_) {
         toast("Could not copy the idea in this browser.");
       }
+      return;
+    }
+
+    const copyIdea = event.target.closest("[data-gocat-copy-starter-idea]");
+    if (copyIdea) {
+      event.preventDefault();
+      const idea = starterIdeas[Number(copyIdea.dataset.gocatCopyStarterIdea)];
+      if (!idea) return;
+      try {
+        await copyText(idea[1] + "\\n" + idea[2]);
+        toast("Reel idea copied.");
+      } catch (_) {
+        toast("Could not copy the idea in this browser.");
+      }
+      return;
+    }
+
+    const useIdea = event.target.closest("[data-gocat-use-starter-idea]");
+    if (useIdea) {
+      event.preventDefault();
+      const idea = starterIdeas[Number(useIdea.dataset.gocatUseStarterIdea)];
+      if (!idea) return;
+      if (!currentCreatorId()) {
+        if (typeof openLoginScreen === "function") openLoginScreen("Sign in to create a Reel from this idea.");
+        return;
+      }
+      if (typeof openUpload === "function") openUpload("short");
+      window.setTimeout(() => {
+        if ($("videoTitle")) $("videoTitle").value = idea[1];
+        if ($("videoDescription")) $("videoDescription").value = idea[2];
+      }, 80);
+      return;
     }
   });
 
