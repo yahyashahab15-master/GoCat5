@@ -659,7 +659,7 @@ function queueLiveRefresh(delay = 450) {
 function subscribeToLiveFeed() {
     if (!db) return;
     if (feedRealtimeChannel) db.removeChannel(feedRealtimeChannel);
-    const tables = ["videos", "likes", "comments", "posts", "post_likes", "post_comments", "follows"];
+    const tables = ["videos", "likes", "comments", "posts", "post_likes", "post_comments", "follows", "gocat_featured_creators"];
     let channel = db.channel("gocat-live-feed");
     tables.forEach(table => {
         channel = channel.on("postgres_changes", { event: "*", schema: "public", table }, () => queueLiveRefresh());
@@ -1424,6 +1424,9 @@ function renderReels() {
                     <button class="reel-action" data-comments-video="${esc(video.id)}" aria-label="Comments">${icon("message")}</button>
                     <span class="reel-count">${video.comments?.length || 0}</span>
                     <button class="reel-action" data-share-video="${esc(video.id)}" aria-label="Share">${icon("share")}</button>
+                    ${canManageContent(video.owner_id)
+                        ? `<button class="reel-action" data-edit-video="${esc(video.id)}" aria-label="Edit">${icon("settings")}</button>`
+                        : ""}
                     ${canManageContent(video.owner_id)
                         ? `<button class="reel-action" data-delete-video="${esc(video.id)}" aria-label="Delete">${icon("trash")}</button>`
                         : ""}
