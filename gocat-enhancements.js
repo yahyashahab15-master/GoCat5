@@ -445,7 +445,18 @@
     try {
       const url = new URL(anchor.href, location.href);
       const videoId = url.searchParams.get("video");
-      if (!videoId || url.origin !== location.origin) return;
+      const postId = url.searchParams.get("post");
+      if (url.origin !== location.origin) return;
+      if (postId) {
+        event.preventDefault();
+        const index = posts.findIndex(post => String(post.id) === String(postId));
+        if (index < 0) return showToast("That shared post is no longer available.");
+        postsVisible = Math.max(postsVisible, index + 1);
+        openPage("posts");
+        scrollToPost(posts[index].id);
+        return;
+      }
+      if (!videoId) return;
       event.preventDefault();
       const item = videos.find(v => String(v.id) === String(videoId));
       if (!item) return showToast("That shared video is no longer available.");
