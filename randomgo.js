@@ -3109,6 +3109,7 @@ async function openChat(userId) {
     }
 
     currentChatUserId = userId;
+    resetChatAttachmentSelection();
     if (chatRealtimeChannel) db.removeChannel(chatRealtimeChannel);
     const channelName = "gocat-chat-" + [String(currentUser.id), String(userId)].sort().join("-");
     chatRealtimeChannel = db.channel(channelName, { config: { presence: { key: String(currentUser.id) } } })
@@ -3152,6 +3153,7 @@ async function openChat(userId) {
     if ($("chatTypingStatus")) $("chatTypingStatus").textContent = "";
     if ($("messageInput")) $("messageInput").disabled = false;
     if ($("sendMessageBtn")) $("sendMessageBtn").disabled = false;
+    if ($("chatAttachBtn")) $("chatAttachBtn").disabled = false;
     renderChatFriends();
     await loadMessages();
 }
@@ -3247,6 +3249,112 @@ async function loadMessages() {
         if (readResult.error) console.warn("Read receipts:", readResult.error.message);
     }
 }
+
+function resetChatAttachmentSelection() {
+    selectedChatAttachment = null;
+    if ($("chatAttachmentFile")) $("chatAttachmentFile").value = "";
+    if ($("chatAttachmentPreview")) $("chatAttachmentPreview").classList.add("hidden");
+    if ($("chatAttachmentName")) $("chatAttachmentName").textContent = "";
+    if ($("chatUploadStatus")) $("chatUploadStatus").textContent = "Photos, videos, audio and documents · Max 50 MB";
+}
+
+function chatFileTypeAllowed(file) {
+    const mime = String(file && file.type || "").toLowerCase();
+    const extension = String(file && file.name || "").split(".").pop().toLowerCase();
+    if (mime && CHAT_ALLOWED_TYPES.has(mime)) return true;
+    if (mime) return false;
+    return ["jpg","jpeg","png","webp","gif","avif","mp4","webm","mov","mp3","m4a","ogg","wav","pdf","txt","csv","doc","docx","xls","xlsx","ppt","pptx"]
+        .includes(extension);
+}
+
+listen("chatAttachBtn", "click", () => {
+    if (!requireAuth("send an attachment")) return;
+    if (!currentChatUserId) return showToast("Choose a conversation first.");
+    $("chatAttachmentFile")?.click();
+});
+
+listen("chatAttachmentFile", "change", function () {
+    const file = this.files?.[0] || null;
+    selectedChatAttachment = null;
+    if (!file) return resetChatAttachmentSelection();
+    if (file.size > MAX_CHAT_ATTACHMENT_BYTES) {
+        resetChatAttachmentSelection();
+        return showToast("Chat attachments must be 50 MB or smaller.");
+    }
+    if (!chatFileTypeAllowed(file)) {
+        resetChatAttachmentSelection();
+        return showToast("This file type is not supported in GoCat chat.");
+    }
+    selectedChatAttachment = file;
+    if ($("chatAttachmentPreview")) $("chatAttachmentPreview").classList.remove("hidden");
+    if ($("chatAttachmentName")) $("chatAttachmentName").textContent =
+        file.name + " · " + (file.size / 1048576).toFixed(2) + " MB";
+    if ($("chatUploadStatus")) $("chatUploadStatus").textContent = "Attachment ready to send.";
+});
+
+listen("chatClearAttachment", "click", resetChatAttachmentSelection);
+
+async function shareChatMessageOutside(messageId) {
+    if (!currentUser || !currentChatUserId) return;
+    const message = currentChatMessages.find(item => String(item.id) === String(messageId));
+    if (!message) return showToast("That message is no longer loaded.");
+
+    let shareText = String(message.content || "").trim();
+    let shareUrl = "";
+    if (message.attachment_path) {
+        if (!confirm("This creates a temporary link that anyone with the link can open for up to one hour. Continue?")) return;
+        const signed = await db.storage.from(CHAT_BUCKET).createSignedUrl(message.attachment_path, 3600);
+        if (signed.error) return showToast("Could not create a sharing link: " + signed.error.message);
+        shareUrl = signed.data && signed.data.signedUrl || "";
+        if (!shareUrl) return showToast("GoCat could not create the sharing link.");
+        shareText = [shareText, message.attachment_name || "GoCat attachment"].filter(Boolean).join("\n");
+    }
+
+    if (!shareText && !shareUrl) return showToast("There is nothing to share.");
+    const title = "A message from " + getUsername(message.sender_id) + " on GoCat";
+    const data = {
+        title: title,
+        text: shareText || "Shared from GoCat",
+        ...(shareUrl ? { url: shareUrl } : {})
+    };
+
+    try {
+        if (navigator.share) {
+            await navigator.share(data);
+            return;
+        }
+    } catch (error) {
+        if (error && error.name === "AbortError") return;
+    }
+
+    const copyValue = [shareText, shareUrl].filter(Boolean).join("\n");
+    try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(copyValue);
+        } else {
+            const field = document.createElement("textarea");
+            field.value = copyValue;
+            field.setAttribute("readonly", "");
+            field.style.position = "fixed";
+            field.style.opacity = "0";
+            document.body.appendChild(field);
+            field.select();
+            const copied = document.execCommand("copy");
+            field.remove();
+            if (!copied) throw new Error("Copy is not available in this browser.");
+        }
+        showToast("Message copied. Paste it into another app.");
+    } catch (error) {
+        showToast("Could not share this message: " + error.message);
+    }
+}
+
+document.addEventListener("click", event => {
+    const shareButton = event.target.closest("[data-chat-share-message]");
+    if (!shareButton) return;
+    event.preventDefault();
+    shareChatMessageOutside(shareButton.dataset.chatShareMessage);
+});
 
 listen("chatSearch", "input", renderChatFriends);
 listen("messageInput", "input", function () {
