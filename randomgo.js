@@ -1296,6 +1296,50 @@ function checkSharedVideoLink() {
     }
 }
 
+async function editVideo(videoId) {
+    const video = videos.find(item => String(item.id) === String(videoId));
+    if (!video || !canManageContent(video.owner_id)) return;
+
+    const isAdminEdit = isGoCatAdmin && String(video.owner_id) !== String(currentUser.id);
+    const title = prompt(
+        isAdminEdit ? "Edit " + getUsername(video.owner_id) + "'s video title:" : "Edit video title:",
+        video.title || ""
+    );
+    if (title === null) return;
+    if (!title.trim()) return showToast("A video needs a title.");
+
+    const description = prompt("Edit video description:", video.description || "");
+    if (description === null) return;
+    const topic = prompt("Choose a topic (Gaming, Technology, Education, Sports, Music, Art, Cooking, Entertainment, Other):", video.topic || "Other");
+    if (topic === null) return;
+
+    try {
+        let query = db.from("videos").update({
+            title: title.trim().slice(0, 100),
+            description: description.trim().slice(0, 1000),
+            topic: topic.trim().slice(0, 40) || "Other"
+        }).eq("id", videoId);
+        if (!isAdminEdit) query = query.eq("owner_id", currentUser.id);
+        const result = await query.select("id").maybeSingle();
+        if (result.error) throw result.error;
+        if (!result.data) throw new Error("No video was updated. Check your video update policy.");
+
+        await loadVideos();
+        renderEverything();
+        showToast(isAdminEdit ? "Creator video updated." : "Video updated.");
+    } catch (error) {
+        console.error("Video edit error:", error);
+        showToast("Video edit failed: " + error.message);
+    }
+}
+
+document.addEventListener("click", event => {
+    const edit = event.target.closest("[data-edit-video]");
+    if (!edit) return;
+    event.preventDefault();
+    editVideo(edit.dataset.editVideo);
+});
+
 async function deleteVideo(videoId) {
     const video = videos.find(v => String(v.id) === String(videoId));
     if (!video || !canManageContent(video.owner_id)) return;
