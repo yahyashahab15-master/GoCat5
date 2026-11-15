@@ -4,6 +4,33 @@
   "use strict";
 
   const STORAGE_KEY = "gocat_recommendations_v2";
+  const FEED_MODE_KEY = "gocat_home_feed_mode_v1";
+  let feedMode = "for-you";
+  try {
+    const savedMode = localStorage.getItem(FEED_MODE_KEY);
+    if (savedMode === "latest" || savedMode === "for-you") feedMode = savedMode;
+  } catch (_) {}
+  function syncFeedModeControls() {
+    document.querySelectorAll("[data-feed-mode]").forEach(button => {
+      const selected = button.dataset.feedMode === feedMode;
+      button.classList.toggle("active", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    });
+  }
+  window.gocatFeedMode = () => feedMode;
+  document.addEventListener("click", event => {
+    const button = event.target.closest("[data-feed-mode]");
+    if (!button) return;
+    const nextMode = button.dataset.feedMode;
+    if (nextMode !== "for-you" && nextMode !== "latest") return;
+    if (feedMode === nextMode) return;
+    feedMode = nextMode;
+    try { localStorage.setItem(FEED_MODE_KEY, feedMode); } catch (_) {}
+    syncFeedModeControls();
+    homeVisibleCycles = 1;
+    if (typeof window.renderHomeFeed === "function") window.renderHomeFeed();
+  });
+  syncFeedModeControls();
   let preferences = {};
   try { preferences = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}") || {}; } catch (_) {}
   const seen = new Set(Array.isArray(preferences.seen) ? preferences.seen.map(String) : []);
@@ -87,16 +114,22 @@
   window.getHomeFeedData = function () {
     const query = $("searchInput")?.value.trim().toLowerCase() || "";
     const topicOK = video => activeHomeTopic === "All" || video.topic === activeHomeTopic;
+    const sortVideos = feedMode === "latest"
+      ? newestFirst
+      : (a, b) => score(b, "video") - score(a, "video");
+    const sortPosts = feedMode === "latest"
+      ? newestFirst
+      : (a, b) => score(b, "post") - score(a, "post");
     return {
       regularVideos: videos
         .filter(v => !isReel(v) && topicOK(v) && matches(v, "video", query))
-        .sort((a, b) => score(b, "video") - score(a, "video")),
+        .sort(sortVideos),
       shorts: videos
         .filter(v => isReel(v) && topicOK(v) && matches(v, "video", query))
-        .sort((a, b) => score(b, "video") - score(a, "video")),
+        .sort(sortVideos),
       communityPosts: posts
         .filter(p => matches(p, "post", query))
-        .sort((a, b) => score(b, "post") - score(a, "post"))
+        .sort(sortPosts)
     };
   };
 
@@ -160,6 +193,7 @@
   function renderHomeFeedAutomatically() {
     const container = $("homeFeed");
     if (!container) return;
+    syncFeedModeControls();
 
     if (homeFeedObserver) {
       homeFeedObserver.disconnect();
