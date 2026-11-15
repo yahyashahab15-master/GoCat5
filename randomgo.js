@@ -548,6 +548,24 @@ async function loadFollows() {
     follows = result.data || [];
 }
 
+async function loadFeaturedCreators() {
+    const result = await db.from("gocat_featured_creators")
+        .select("user_id,featured_by,created_at,expires_at");
+    if (result.error) {
+        featuredCreators = [];
+        console.warn("Featured creator placements could not load:", result.error.message);
+        return;
+    }
+    featuredCreators = result.data || [];
+}
+
+function isFeaturedCreator(userId) {
+    return featuredCreators.some(item =>
+        String(item.user_id) === String(userId) &&
+        (!item.expires_at || new Date(item.expires_at).getTime() > Date.now())
+    );
+}
+
 async function loadPosts() {
     const result = await db.from("posts").select("*").order("created_at", { ascending: false });
 
@@ -582,7 +600,8 @@ async function loadAllData() {
         ["creators", loadUsers],
         ["videos", loadVideos],
         ["follows", loadFollows],
-        ["posts", loadPosts]
+        ["posts", loadPosts],
+        ["featured creators", loadFeaturedCreators]
     ];
 
     const results = await Promise.allSettled(jobs.map(([, load]) => load()));
@@ -984,7 +1003,10 @@ function renderSuggestedCreators() {
     const container = $("suggestedCreators");
     if (!container) return;
 
-    const suggestions = users.filter(u => !isOwnContent(u.id) && !isFollowing(u.id)).slice(0, 15);
+    const suggestions = users
+        .filter(u => !isOwnContent(u.id) && !isFollowing(u.id))
+        .sort((a, b) => Number(isFeaturedCreator(b.id)) - Number(isFeaturedCreator(a.id)))
+        .slice(0, 15);
 
     container.innerHTML = suggestions.length
         ? suggestions.map(user => `
@@ -992,7 +1014,7 @@ function renderSuggestedCreators() {
                 ${avatar(user.username, "lg")}
                 <div class="creator-info">
                     <strong>${esc(user.username)}</strong>
-                    <small>GoCat creator</small>
+                    <small>${isFeaturedCreator(user.id) ? "✦ Featured creator" : "GoCat creator"}</small>
                 </div>
                 <button class="mini-follow" data-follow-user="${esc(user.id)}">Follow</button>
             </div>`).join("")
