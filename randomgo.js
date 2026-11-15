@@ -3383,20 +3383,56 @@ listen("chatForm", "submit", async function (event) {
     if (!requireAuth("send messages")) return;
 
     const text = $("messageInput")?.value.trim() || "";
-    if (!text || !currentChatUserId) return;
+    const file = selectedChatAttachment || $("chatAttachmentFile")?.files?.[0] || null;
+    if (!text && !file) return showToast("Write a message or attach a file.");
+    if (!currentChatUserId) return showToast("Choose a conversation first.");
+    if (!getMutualFriends().some(user => String(user.id) === String(currentChatUserId))) {
+        return showToast("Chat is available to mutual followers only.");
+    }
+    if (file && file.size > MAX_CHAT_ATTACHMENT_BYTES) {
+        return showToast("Chat attachments must be 50 MB or smaller.");
+    }
+    if (file && !chatFileTypeAllowed(file)) {
+        return showToast("This file type is not supported in GoCat chat.");
+    }
 
     const button = $("sendMessageBtn");
     if (button) button.disabled = true;
+    if ($("chatAttachBtn")) $("chatAttachBtn").disabled = true;
 
+    let uploadedPath = null;
     try {
-        const result = await insertWithTextFallback(
-            "messages",
-            { sender_id: currentUser.id, recipient_id: currentChatUserId },
-            text, "text", "content"
-        );
+        const row = {
+            sender_id: String(currentUser.id),
+            recipient_id: String(currentChatUserId),
+            content: text
+        };
+
+        if (file) {
+            if ($("chatUploadStatus")) $("chatUploadStatus").textContent = "Uploading attachment…";
+            const extension = (file.name.split(".").pop() || "bin").toLowerCase().replace(/[^a-z0-9]/g, "") || "bin";
+            const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100) || ("attachment." + extension);
+            const path = String(currentUser.id) + "/" + Date.now() + "-" +
+                Math.random().toString(36).slice(2, 9) + "-" + safeName;
+            const upload = await db.storage.from(CHAT_BUCKET).upload(path, file, {
+                cacheControl: "3600",
+                contentType: file.type || "application/octet-stream",
+                upsert: false
+            });
+            if (upload.error) throw upload.error;
+            uploadedPath = upload.data && upload.data.path || path;
+            row.attachment_path = uploadedPath;
+            row.attachment_name = file.name.slice(0, 180);
+            row.attachment_mime = file.type || "application/octet-stream";
+            row.attachment_size = file.size;
+            if ($("chatUploadStatus")) $("chatUploadStatus").textContent = "Sending message…";
+        }
+
+        const result = await db.from("messages").insert(row);
         if (result.error) throw result.error;
 
         $("messageInput").value = "";
+        resetChatAttachmentSelection();
         await loadMessages();
         if (chatRealtimeChannel) chatRealtimeChannel.send({
             type: "broadcast", event: "typing",
@@ -3404,13 +3440,20 @@ listen("chatForm", "submit", async function (event) {
         });
 
     } catch (error) {
+        if (uploadedPath) {
+            const removal = await db.storage.from(CHAT_BUCKET).remove([uploadedPath]);
+            if (removal.error) console.warn("Chat attachment cleanup failed:", removal.error.message);
+        }
         showToast("Message failed: " + error.message);
 
     } finally {
         if (button) button.disabled = false;
+        if ($("chatAttachBtn")) $("chatAttachBtn").disabled = false;
+        if ($("chatUploadStatus") && !selectedChatAttachment) {
+            $("chatUploadStatus").textContent = "Photos, videos, audio and documents · Max 50 MB";
+        }
     }
 });
-
 
 /* ---------- 29 NOTIFICATIONS ---------- */
 
