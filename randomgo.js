@@ -2079,8 +2079,13 @@ listen("exportReelBtn", "click", async function () {
 
     const canvasStream = canvas.captureStream(fps);
 
-    const mimeType = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"]
-        .find(t => MediaRecorder.isTypeSupported(t));
+    const mimeType = [
+        "video/webm;codecs=vp9",
+        "video/webm;codecs=vp8",
+        "video/webm",
+        "video/mp4;codecs=avc1.42E01E",
+        "video/mp4"
+    ].find(type => MediaRecorder.isTypeSupported(type));
 
     if (!mimeType) {
         canvasStream.getTracks().forEach(t => t.stop());
@@ -2152,7 +2157,11 @@ listen("exportReelBtn", "click", async function () {
         const blob = new Blob(chunks, { type: mimeType });
         if (!blob.size) throw new Error("The exported video is empty.");
 
-        exportedReelFile = new File([blob], "gocat-short.webm", { type: mimeType, lastModified: Date.now() });
+        const outputExtension = mimeType.startsWith("video/mp4") ? "mp4" : "webm";
+        exportedReelFile = new File([blob], "gocat-short." + outputExtension, {
+            type: mimeType,
+            lastModified: Date.now()
+        });
 
         if ($("selectedVideoName")) {
             $("selectedVideoName").textContent = exportedReelFile.name + ", " + (blob.size / 1048576).toFixed(2) + " MB";
