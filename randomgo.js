@@ -1249,10 +1249,12 @@ function checkSharedVideoLink() {
     const params = new URLSearchParams(location.search);
     const postId = params.get("post");
     if (postId) {
-        const post = posts.find(item => String(item.id) === String(postId));
-        if (!post) return showToast("That GoCat post could not be found.");
+        const postIndex = posts.findIndex(item => String(item.id) === String(postId));
+        if (postIndex < 0) return showToast("That GoCat post could not be found.");
+        // Shared posts can be older than the first visible batch.
+        postsVisible = Math.max(postsVisible, postIndex + 1);
         openPage("posts");
-        scrollToPost(post.id);
+        scrollToPost(posts[postIndex].id);
         return;
     }
 
