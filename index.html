@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/gocat-growth.css">
 <title>GoCat — Discover Videos, Explore Creators & Share</title>
 <meta name="description" content="GoCat is a video-sharing platform where you can discover videos, explore creators, watch Reels, and share your own content.">
 <meta name="robots" content="index, follow, max-image-preview:large">
@@ -199,6 +200,11 @@
                         </div>
                     </div>
                 </div>
+                <div class="home-feed-mode" role="group" aria-label="Home feed order">
+                    <span class="home-feed-mode-label">Feed</span>
+                    <button type="button" class="feed-mode-btn active" data-feed-mode="for-you" aria-pressed="true">For you</button>
+                    <button type="button" class="feed-mode-btn" data-feed-mode="latest" aria-pressed="false">Latest</button>
+                </div>
                 <div class="chips-bar">
                 <div id="topicChips" class="topic-chips">
                     <button class="topic-chip active" data-topic="All">All</button>
@@ -371,6 +377,7 @@
                 <div id="communityDirectory">
                     <div class="community-directory-toolbar">
                         <div><h2>Explore communities</h2><p>Join the conversations that interest you.</p></div>
+                        <div class="community-discovery-filters">
                         <label class="community-filter-label">Category
                             <select id="communityCategoryFilter">
                                 <option value="All">All categories</option>
@@ -379,6 +386,13 @@
                                 <option>Cooking</option><option>Entertainment</option><option>Other</option>
                             </select>
                         </label>
+                        <label class="community-filter-label">Sort by
+                            <select id="communitySortFilter">
+                                <option value="active">Most active</option>
+                                <option value="newest">Newest</option>
+                            </select>
+                        </label>
+                        </div>
                     </div>
                     <div id="communityGrid" class="community-grid">
                         <div class="empty-card">Loading communities…</div>
