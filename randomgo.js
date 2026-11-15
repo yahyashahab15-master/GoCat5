@@ -1192,7 +1192,7 @@ function beginCommentReply(commentId) {
 /* ---------- 13 SHARE AND DELETE VIDEO ---------- */
 
 async function shareVideo(videoId) {
-    const url = location.origin + location.pathname + "?video=" + encodeURIComponent(videoId);
+    const url = location.origin + "/share/video/" + encodeURIComponent(videoId);
 
     try {
         if (navigator.share) {
