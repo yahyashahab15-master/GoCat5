@@ -28,7 +28,12 @@
     try { localStorage.setItem(FEED_MODE_KEY, feedMode); } catch (_) {}
     syncFeedModeControls();
     homeVisibleCycles = 1;
-    if (typeof window.renderHomeFeed === "function") window.renderHomeFeed();
+    if (currentPage === "reels" && typeof window.renderReels === "function") {
+      reelsVisible = Math.max(PAGE_SIZE, reelsVisible);
+      window.renderReels();
+    } else if (typeof window.renderHomeFeed === "function") {
+      window.renderHomeFeed();
+    }
   });
   syncFeedModeControls();
   let preferences = {};
