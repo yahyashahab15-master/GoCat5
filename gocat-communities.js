@@ -309,10 +309,14 @@
         mediaType = file.type.startsWith("video/") ? "video" : "image";
       }
 
+      // The community_posts.content database constraint requires at least one
+      // character even when the post contains media. Give media-only posts a
+      // small accessible caption instead of letting an allowed form submission fail.
+      const postContent = content || (mediaType === "video" ? "Shared a video" : "Shared a photo");
       const { error } = await db.from("community_posts").insert({
         community_id: activeCommunityId,
         user_id: currentUser.id,
-        content,
+        content: postContent,
         media_url: mediaUrl,
         media_type: mediaType
       });
