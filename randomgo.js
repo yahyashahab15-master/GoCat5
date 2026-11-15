@@ -817,7 +817,7 @@ function postCard(post) {
     const isOwnPost = String(post.user_id) === String(currentUser?.id);
 
     return `
-        <article class="post-card">
+        <article class="post-card" data-post-id="${esc(post.id)}">
             <div class="post-head">
                 ${avatar(username, "", getUser(post.user_id)?.avatar_path || "")}
                 <div class="post-meta">
@@ -834,6 +834,7 @@ function postCard(post) {
             <div class="post-actions">
                 ${pill("heart", post.likes?.length || 0, `data-like-post="${esc(post.id)}"`, liked ? "liked" : "")}
                 ${pill("message", post.comments?.length || 0, `data-comments-post="${esc(post.id)}"`)}
+                ${pill("share", "Share", `data-share-post="${esc(post.id)}"`)}
             </div>
         </article>
     `;
@@ -844,7 +845,9 @@ function homeReelCard(video) {
         <article class="home-short-card">
             <button class="home-short-open" data-open-reel-id="${esc(video.id)}">
                 <div class="home-short-thumb">
-                    <video src="${esc(getVideoURL(video.storage_path))}#t=0.1" muted playsinline preload="metadata"></video>
+                    <video src="${esc(getVideoURL(video.storage_path))}#t=0.1"
+                        ${video.thumbnail_path ? 'poster="' + esc(getVideoURL(video.thumbnail_path)) + '"' : ""}
+                        muted playsinline preload="metadata"></video>
                     <div class="home-short-grad"></div>
                     <strong class="home-short-title">${esc(video.title)}</strong>
                 </div>
@@ -1216,16 +1219,49 @@ function scrollToVideo(videoId) {
     }, 300);
 }
 
-function checkSharedVideoLink() {
-    const videoId = new URLSearchParams(location.search).get("video");
-    if (!videoId) return;
+function scrollToPost(postId) {
+    setTimeout(() => {
+        document.querySelector(`[data-post-id="${CSS.escape(String(postId))}"]`)
+            ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 300);
+}
 
+async function sharePost(postId) {
+    const post = posts.find(item => String(item.id) === String(postId));
+    if (!post) return showToast("That post could not be found.");
+    const url = location.origin + "/share/post/" + encodeURIComponent(post.id);
+    const title = (post.content || "A post on GoCat").trim().slice(0, 120);
+    try {
+        if (navigator.share) {
+            await navigator.share({ title: title, text: "See this post on GoCat.", url });
+        } else if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(url);
+            showToast("Post link copied");
+        } else {
+            showToast("Sharing is not supported here.");
+        }
+    } catch (error) {
+        if (error.name !== "AbortError") showToast("Sharing failed.");
+    }
+}
+
+function checkSharedVideoLink() {
+    const params = new URLSearchParams(location.search);
+    const postId = params.get("post");
+    if (postId) {
+        const post = posts.find(item => String(item.id) === String(postId));
+        if (!post) return showToast("That GoCat post could not be found.");
+        openPage("posts");
+        scrollToPost(post.id);
+        return;
+    }
+
+    const videoId = params.get("video");
+    if (!videoId) return;
     const video = videos.find(v => String(v.id) === String(videoId));
     if (!video) return showToast("That video could not be found.");
-
-    if (isReel(video)) {
-        openSpecificReel(video.id);
-    } else {
+    if (isReel(video)) openSpecificReel(video.id);
+    else {
         openPage("home");
         scrollToVideo(video.id);
     }
@@ -3574,6 +3610,7 @@ document.addEventListener("click", function (event) {
     if (d.chatUser) return openChat(d.chatUser);
     if (d.likePost) return togglePostLike(d.likePost);
     if (d.commentsPost) return openPostComments(d.commentsPost);
+    if (d.sharePost) return sharePost(d.sharePost);
     if (d.replyComment) { if (requireAuth("reply to comments")) beginCommentReply(d.replyComment); return; }
     if (d.deleteComment) { if (requireAuth("delete comments")) deleteComment(d.deleteComment); return; }
     if (d.editPost) { if (requireAuth("edit posts")) editPost(d.editPost); return; }
