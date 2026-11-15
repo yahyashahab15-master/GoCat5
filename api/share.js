@@ -66,6 +66,8 @@ module.exports = async function sharePage(req, res) {
     const image = publicStorageUrl(isPost ? "post-media" : "videos", imageCandidate) ||
       (SITE_URL + "/gocat-logo.svg");
     const mediaUrl = !isPost ? publicStorageUrl("videos", item.storage_path) : "";
+    const mediaExtension = String(item.storage_path || "").split("?")[0].toLowerCase();
+    const mediaMimeType = /\.(webm|ogv)$/.test(mediaExtension) ? "video/webm" : "video/mp4";
     const canonical = SITE_URL + "/share/" + type + "/" + encodeURIComponent(id);
     const appUrl = SITE_URL + "/?" + (isPost ? "post=" : "video=") + encodeURIComponent(id);
     const ogType = isPost ? "article" : "video.other";
@@ -87,7 +89,7 @@ module.exports = async function sharePage(req, res) {
 <meta property="og:image:alt" content="GoCat ${type} preview">
 ${mediaUrl ? `<meta property="og:video" content="${escapeHtml(mediaUrl)}">
 <meta property="og:video:secure_url" content="${escapeHtml(mediaUrl)}">
-<meta property="og:video:type" content="video/mp4">` : ""}
+<meta property="og:video:type" content="${mediaMimeType}">` : ""}
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${escapeHtml(title)}">
 <meta name="twitter:description" content="${escapeHtml(description)}">
