@@ -30,12 +30,13 @@ module.exports = async function sharePage(req, res) {
 
   const type = String(req.query.type || "video");
   const id = String(req.query.id || "").trim();
-  if (type !== "video" || !/^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
+  if ((type !== "video" && type !== "post") || !/^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
     return res.status(400).send("Invalid GoCat share link.");
   }
 
   try {
-    const endpoint = SUPABASE_URL + "/rest/v1/videos?id=eq." +
+    const table = type === "video" ? "videos" : "posts";
+    const endpoint = SUPABASE_URL + "/rest/v1/" + table + "?id=eq." +
       encodeURIComponent(id) + "&select=*&limit=1";
     const response = await fetch(endpoint, {
       headers: {
@@ -45,21 +46,29 @@ module.exports = async function sharePage(req, res) {
     });
 
     if (!response.ok) {
-      return res.status(502).send("GoCat could not load this video right now.");
+      return res.status(502).send("GoCat could not load this " + type + " right now.");
     }
 
     const rows = await response.json();
-    const video = Array.isArray(rows) ? rows[0] : null;
-    if (!video) return res.status(404).send("This GoCat video could not be found.");
+    const item = Array.isArray(rows) ? rows[0] : null;
+    if (!item) return res.status(404).send("This GoCat " + type + " could not be found.");
 
-    const title = String(video.title || "Watch this video on GoCat").slice(0, 180);
-    const description = String(video.description || "Discover videos and creators on GoCat.").slice(0, 300);
-    const imageCandidate = video.thumbnail_path || video.thumbnail_url || video.thumbnail || video.poster_url ||
-      video.cover_url || "";
-    const image = publicStorageUrl("videos", imageCandidate) || (SITE_URL + "/gocat-logo.svg");
-    const mediaUrl = publicStorageUrl("videos", video.storage_path);
-    const canonical = SITE_URL + "/share/video/" + encodeURIComponent(id);
-    const appUrl = SITE_URL + "/?video=" + encodeURIComponent(id);
+    const isPost = type === "post";
+    const title = isPost
+      ? "A post on GoCat"
+      : String(item.title || "Watch this video on GoCat").slice(0, 180);
+    const description = isPost
+      ? String(item.content || "Discover posts and creators on GoCat.").slice(0, 300)
+      : String(item.description || "Discover videos and creators on GoCat.").slice(0, 300);
+    const imageCandidate = isPost
+      ? (item.media_path || "")
+      : (item.thumbnail_path || item.thumbnail_url || item.thumbnail || item.poster_url || item.cover_url || "");
+    const image = publicStorageUrl(isPost ? "post-media" : "videos", imageCandidate) ||
+      (SITE_URL + "/gocat-logo.svg");
+    const mediaUrl = !isPost ? publicStorageUrl("videos", item.storage_path) : "";
+    const canonical = SITE_URL + "/share/" + type + "/" + encodeURIComponent(id);
+    const appUrl = SITE_URL + "/?" + (isPost ? "post=" : "video=") + encodeURIComponent(id);
+    const ogType = isPost ? "article" : "video.other";
 
     const html = `<!doctype html>
 <html lang="en">
@@ -69,13 +78,13 @@ module.exports = async function sharePage(req, res) {
 <title>${escapeHtml(title)} | GoCat</title>
 <meta name="description" content="${escapeHtml(description)}">
 <link rel="canonical" href="${escapeHtml(canonical)}">
-<meta property="og:type" content="video.other">
+<meta property="og:type" content="${ogType}">
 <meta property="og:site_name" content="GoCat">
 <meta property="og:title" content="${escapeHtml(title)}">
 <meta property="og:description" content="${escapeHtml(description)}">
 <meta property="og:url" content="${escapeHtml(canonical)}">
 <meta property="og:image" content="${escapeHtml(image)}">
-<meta property="og:image:alt" content="GoCat video preview">
+<meta property="og:image:alt" content="GoCat ${type} preview">
 ${mediaUrl ? `<meta property="og:video" content="${escapeHtml(mediaUrl)}">
 <meta property="og:video:secure_url" content="${escapeHtml(mediaUrl)}">
 <meta property="og:video:type" content="video/mp4">` : ""}
