@@ -54,8 +54,8 @@ module.exports = async function sharePage(req, res) {
 
     const title = String(video.title || "Watch this video on GoCat").slice(0, 180);
     const description = String(video.description || "Discover videos and creators on GoCat.").slice(0, 300);
-    const imageCandidate = video.thumbnail_url || video.thumbnail || video.poster_url ||
-      video.cover_url || video.thumbnail_path || "";
+    const imageCandidate = video.thumbnail_path || video.thumbnail_url || video.thumbnail || video.poster_url ||
+      video.cover_url || "";
     const image = publicStorageUrl("videos", imageCandidate) || (SITE_URL + "/gocat-logo.svg");
     const mediaUrl = publicStorageUrl("videos", video.storage_path);
     const canonical = SITE_URL + "/share/video/" + encodeURIComponent(id);
