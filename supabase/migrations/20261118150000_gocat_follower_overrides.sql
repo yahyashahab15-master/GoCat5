@@ -94,3 +94,45 @@ begin
     end if;
 end;
 $$;
+
+
+-- Creator-owned visual channel theme.
+alter table public.users
+    add column if not exists channel_theme text not null default 'emerald';
+alter table public.users
+    drop constraint if exists users_channel_theme_check;
+alter table public.users
+    add constraint users_channel_theme_check
+    check (channel_theme in ('emerald','ocean','sunset','violet','slate'));
+grant select (channel_theme) on public.users to anon, authenticated;
+grant update (channel_theme) on public.users to authenticated;
+
+-- Public leaderboard uses aggregate video-view counts only. Viewer IDs are
+-- never returned from this function.
+create or replace function public.gocat_weekly_creator_leaderboard()
+returns table (
+    user_id text,
+    username text,
+    avatar_path text,
+    weekly_views bigint,
+    active_videos bigint
+)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+    select u.id, u.username, u.avatar_path,
+           count(*)::bigint as weekly_views,
+           count(distinct v.id)::bigint as active_videos
+    from public.video_views vv
+    join public.videos v on v.id = vv.video_id
+    join public.users u on u.id = v.owner_id
+    where vv.created_at >= pg_catalog.now() - interval '7 days'
+      and coalesce(u.is_banned, false) = false
+    group by u.id, u.username, u.avatar_path
+    order by count(*) desc, max(vv.created_at) desc, u.username asc
+    limit 10;
+$$;
+revoke all on function public.gocat_weekly_creator_leaderboard() from public;
+grant execute on function public.gocat_weekly_creator_leaderboard() to anon, authenticated;
