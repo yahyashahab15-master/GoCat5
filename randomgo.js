@@ -34,7 +34,7 @@ let chatRealtimeChannel = null, commentRealtimeChannel = null, feedRealtimeChann
 let currentChatMessages = [], chatSignedUrls = new Map(), selectedChatAttachment = null, pendingExternalShare = null;
 let liveRefreshTimer = null, chatTypingTimer = null, feedRealtimeReady = false;
 let activePlaybackVideoId = null, liveRenderPending = false;
-let users = [], videos = [], posts = [], follows = [], followerOverrides = [], notifications = [], featuredCreators = [];
+let users = [], videos = [], posts = [], follows = [], followerOverrides = [], notifications = [], featuredCreators = [], weeklyCreatorLeaders = [];
 let currentPage = "home", activeHomeTopic = "All", exploreMode = "videos", profileMode = "home";
 let homeVisibleCycles = 1, exploreVisible = 6, postsVisible = 5, reelsVisible = 5;
 let uploadMode = "video", selectedVideoFile = null, exportedReelFile = null;
@@ -439,7 +439,7 @@ listen("registerForm", "submit", async function (event) {
 /* ---------- 07 PROFILE, ADMIN, DATA LOADING ---------- */
 
 async function ensureProfile() {
-    const publicColumns = "id,username,bio,avatar_path,created_at";
+    const publicColumns = "id,username,bio,avatar_path,created_at,channel_theme";
     const existing = await db.from("users").select(publicColumns).eq("id", currentUser.id).maybeSingle();
     if (existing.error) throw existing.error;
 
@@ -460,8 +460,8 @@ async function ensureProfile() {
 
         const insert = await db
             .from("users")
-            .insert({ id: currentUser.id, username, email: currentUser.email, created_at: Date.now() })
-            .select("id,username,bio,avatar_path,created_at")
+            .insert({ id: currentUser.id, username, email: currentUser.email, created_at: Date.now(), channel_theme: "emerald" })
+            .select("id,username,bio,avatar_path,created_at,channel_theme")
             .maybeSingle();
 
         if (!insert.error) {
@@ -499,7 +499,7 @@ async function loadUsers() {
     // and moderation flags are never selected by the public profile query.
     const result = await db
         .from("users")
-        .select("id,username,bio,avatar_path,created_at")
+        .select("id,username,bio,avatar_path,created_at,channel_theme")
         .order("created_at", { ascending: false });
 
     if (result.error) throw result.error;
@@ -575,6 +575,16 @@ async function loadFeaturedCreators() {
     featuredCreators = result.data || [];
 }
 
+async function loadWeeklyCreatorLeaderboard() {
+    const result = await db.rpc("gocat_weekly_creator_leaderboard");
+    if (result.error) {
+        weeklyCreatorLeaders = [];
+        console.warn("Weekly creator leaderboard could not load:", result.error.message);
+        return;
+    }
+    weeklyCreatorLeaders = result.data || [];
+}
+
 function isFeaturedCreator(userId) {
     return featuredCreators.some(item =>
         String(item.user_id) === String(userId) &&
@@ -617,7 +627,8 @@ async function loadAllData() {
         ["videos", loadVideos],
         ["follows", loadFollows],
         ["posts", loadPosts],
-        ["featured creators", loadFeaturedCreators]
+        ["featured creators", loadFeaturedCreators],
+        ["weekly creator leaderboard", loadWeeklyCreatorLeaderboard]
     ];
 
     const results = await Promise.allSettled(jobs.map(([, load]) => load()));
@@ -1558,7 +1569,35 @@ function updateExploreMore(total) {
     }
 }
 
+
+function renderWeeklyCreatorLeaderboard() {
+    const container = $("weeklyCreatorsList");
+    if (!container) return;
+
+    if (!weeklyCreatorLeaders.length) {
+        container.innerHTML = "<div class='weekly-creators-empty'>No weekly rankings yet. Publish great content and build your audience.</div>";
+        return;
+    }
+
+    container.innerHTML = weeklyCreatorLeaders.map((creator, index) => {
+        const username = creator.username || getUsername(creator.user_id);
+        const views = Number(creator.weekly_views || 0);
+        const videoCount = Number(creator.active_videos || 0);
+        return `
+            <button type="button" class="weekly-creator-row" data-profile-user="${esc(creator.user_id)}">
+                <span class="weekly-creator-rank">${index + 1}</span>
+                ${avatar(username, "md", creator.avatar_path || "")}
+                <span class="weekly-creator-details">
+                    <strong>${esc(username)}</strong>
+                    <small>${compact(views)} views · ${videoCount} videos this week</small>
+                </span>
+                <span class="weekly-creator-arrow">View channel</span>
+            </button>`;
+    }).join("");
+}
+
 function renderExplore() {
+    renderWeeklyCreatorLeaderboard();
     const query = $("searchInput")?.value.trim().toLowerCase() || "";
 
     const videoMatch = v => !query ||
@@ -2780,6 +2819,7 @@ function renderProfile() {
     const own = isOwnContent(profileId);
 
     if ($("profileUsername")) $("profileUsername").textContent = profile.username || getUsername(profileId);
+    if ($("profileChannelHeader")) $("profileChannelHeader").dataset.channelTheme = profile.channel_theme || "emerald";
     if ($("profileEmail")) $("profileEmail").textContent = own ? (currentUser?.email || "") : "";
     if ($("profileBio")) $("profileBio").textContent = profile.bio || "Welcome to GoCat.";
     paintAvatar("profileAvatar", profile.username, profile.avatar_path || "");
@@ -2791,6 +2831,7 @@ function renderProfile() {
                 $("editUsername").value = profile.username || "";
                 $("editBio").value = profile.bio || "";
                 if ($("editAvatarFile")) $("editAvatarFile").value = "";
+                if ($("editChannelTheme")) $("editChannelTheme").value = profile.channel_theme || "emerald";
                 if ($("editAvatarName")) $("editAvatarName").textContent = profile.avatar_path ? "Current photo saved" : "No photo selected";
                 showModal("editProfileModal");
             } else {
@@ -2924,6 +2965,7 @@ listen("editProfileForm", "submit", async function (event) {
 
     const username = $("editUsername")?.value.trim() || "";
     const bio = $("editBio")?.value.trim() || "";
+    const channelTheme = $("editChannelTheme")?.value || "emerald";
     const avatarFile = $("editAvatarFile")?.files?.[0];
 
     if (username.length < 3) return showToast("Username must have at least 3 characters.");
@@ -2938,8 +2980,8 @@ listen("editProfileForm", "submit", async function (event) {
             const upload = await db.storage.from("profile-avatars").upload(avatarPath, avatarFile, { upsert: true, contentType: avatarFile.type });
             if (upload.error) throw upload.error;
         }
-        const result = await db.from("users").update({ username, bio, avatar_path: avatarPath })
-            .eq("id", currentUser.id).select("id,username,bio,avatar_path,created_at").single();
+        const result = await db.from("users").update({ username, bio, avatar_path: avatarPath, channel_theme: channelTheme })
+            .eq("id", currentUser.id).select("id,username,bio,avatar_path,created_at,channel_theme").single();
         if (result.error) throw result.error;
 
         currentProfile = result.data;
