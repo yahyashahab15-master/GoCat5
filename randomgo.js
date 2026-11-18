@@ -2806,7 +2806,7 @@ function renderProfile() {
 
     const set = (id, value) => { if ($(id)) $(id).textContent = value; };
     set("profileVideoCount", regular.length);
-    set("profileReelCount", reels.length);
+    set("profileShortCount", reels.length);
     set("profileFollowerCount", getDisplayedFollowerCount(profileId));
     set("profileFollowingCount", follows.filter(f => String(f.follower_id) === String(profileId)).length);
     set("profilePostCount", myPosts.length);
