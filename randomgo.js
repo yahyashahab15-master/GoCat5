@@ -34,7 +34,7 @@ let chatRealtimeChannel = null, commentRealtimeChannel = null, feedRealtimeChann
 let currentChatMessages = [], chatSignedUrls = new Map(), selectedChatAttachment = null, pendingExternalShare = null;
 let liveRefreshTimer = null, chatTypingTimer = null, feedRealtimeReady = false;
 let activePlaybackVideoId = null, liveRenderPending = false;
-let users = [], videos = [], posts = [], follows = [], notifications = [], featuredCreators = [];
+let users = [], videos = [], posts = [], follows = [], followerOverrides = [], notifications = [], featuredCreators = [];
 let currentPage = "home", activeHomeTopic = "All", exploreMode = "videos", profileMode = "home";
 let homeVisibleCycles = 1, exploreVisible = 6, postsVisible = 5, reelsVisible = 5;
 let uploadMode = "video", selectedVideoFile = null, exportedReelFile = null;
@@ -180,6 +180,15 @@ const canManageContent = id => isOwnContent(id) || isGoCatAdmin;
 function isFollowing(id) {
     return !!currentUser && follows.some(f =>
         String(f.follower_id) === String(currentUser.id) && String(f.following_id) === String(id));
+}
+
+function getActualFollowerCount(userId) {
+    return follows.filter(row => String(row.following_id) === String(userId)).length;
+}
+
+function getDisplayedFollowerCount(userId) {
+    const override = followerOverrides.find(row => String(row.user_id) === String(userId));
+    return override ? Number(override.follower_count) : getActualFollowerCount(userId);
 }
 
 const isReel = v => v?.is_short === true || v?.is_short === "true";
@@ -545,9 +554,14 @@ async function loadVideos() {
 }
 
 async function loadFollows() {
-    const result = await db.from("follows").select("follower_id,following_id");
+    const [result, overrideResult] = await Promise.all([
+        db.from("follows").select("follower_id,following_id"),
+        db.from("gocat_follower_overrides").select("user_id,follower_count")
+    ]);
     if (result.error) throw result.error;
+    if (overrideResult.error) throw overrideResult.error;
     follows = result.data || [];
+    followerOverrides = overrideResult.data || [];
 }
 
 async function loadFeaturedCreators() {
@@ -2793,7 +2807,7 @@ function renderProfile() {
     const set = (id, value) => { if ($(id)) $(id).textContent = value; };
     set("profileVideoCount", regular.length);
     set("profileReelCount", reels.length);
-    set("profileFollowerCount", follows.filter(f => String(f.following_id) === String(profileId)).length);
+    set("profileFollowerCount", getDisplayedFollowerCount(profileId));
     set("profileFollowingCount", follows.filter(f => String(f.follower_id) === String(profileId)).length);
     set("profilePostCount", myPosts.length);
 
@@ -3926,7 +3940,9 @@ async function renderAdminPanel() {
 
     list.innerHTML = shown.map(user => {
         const banned = !!user.is_banned;
-        const followerCount = follows.filter(row => String(row.following_id) === String(user.id)).length;
+        const followerCount = getDisplayedFollowerCount(user.id);
+        const realFollowerCount = getActualFollowerCount(user.id);
+        const hasFollowerOverride = followerOverrides.some(row => String(row.user_id) === String(user.id));
         const followingCount = follows.filter(row => String(row.follower_id) === String(user.id)).length;
         const uploadCount = videos.filter(video => String(video.owner_id) === String(user.id)).length;
         const creatorPostCount = posts.filter(post => String(post.user_id) === String(user.id)).length;
@@ -3935,11 +3951,14 @@ async function renderAdminPanel() {
         return '<div class="admin-user-row" data-admin-user-row="' + esc(user.id) + '">' +
             '<div class="admin-user-main"><strong>' + esc(user.username || "Creator") + '</strong>' +
             '<small>' + (banned ? "Suspended" : "Active") + (featured ? " · ✦ Featured" : "") + '</small>' +
-            '<small>' + followerCount.toLocaleString() + ' followers · ' +
-                followingCount.toLocaleString() + ' following</small>' +
+            '<small>' + followerCount.toLocaleString() + ' followers shown' +
+                (hasFollowerOverride ? ' · ' + realFollowerCount.toLocaleString() + ' real follows' : '') +
+                ' · ' + followingCount.toLocaleString() + ' following</small>' +
             '<small>' + uploadCount.toLocaleString() + ' videos/Reels · ' +
                 creatorPostCount.toLocaleString() + ' posts</small></div>' +
             '<div class="admin-user-actions">' +
+            '<button class="soft-btn" data-admin-set-followers="' + esc(user.id) + '">Set follower count</button>' +
+            (hasFollowerOverride ? '<button class="soft-btn" data-admin-reset-followers="' + esc(user.id) + '">Reset to real</button>' : '') +
             '<button class="soft-btn" data-admin-open-profile="' + esc(user.id) + '">View channel</button>' +
             '<button class="soft-btn" data-admin-edit-user="' + esc(user.id) + '">Edit profile</button>' +
             (featured
@@ -3958,6 +3977,59 @@ listen("adminRefreshBtn", "click", async () => {
     catch (error) { showToast("Refresh failed: " + error.message); }
 });
 listen("adminUserSearch", "input", renderAdminPanel);
+
+document.addEventListener("click", async event => {
+    const setButton = event.target.closest("[data-admin-set-followers]");
+    const resetButton = event.target.closest("[data-admin-reset-followers]");
+    if (!setButton && !resetButton) return;
+    if (!currentUser || !isGoCatAdmin) return showToast("Admin access required.");
+
+    const userId = (setButton || resetButton).dataset.adminSetFollowers
+        || (setButton || resetButton).dataset.adminResetFollowers;
+    const user = users.find(item => String(item.id) === String(userId));
+    if (!user) return showToast("Creator was not found.");
+
+    try {
+        if (resetButton) {
+            const result = await db.rpc("gocat_admin_clear_follower_count", {
+                target_user_id: String(user.id)
+            });
+            if (result.error) throw result.error;
+        } else {
+            const currentValue = getDisplayedFollowerCount(user.id);
+            const raw = prompt(
+                "Set the displayed follower total for @" + (user.username || "creator") +
+                ". Enter a whole number from 0 to 2,147,483,647. Actual follows stay unchanged.",
+                String(currentValue)
+            );
+            if (raw === null) return;
+            const cleaned = raw.trim();
+            if (!/^\\d+$/.test(cleaned)) {
+                return showToast("Enter a whole number such as 1250.");
+            }
+            const total = Number(cleaned);
+            if (!Number.isSafeInteger(total) || total > 2147483647) {
+                return showToast("Choose a number between 0 and 2,147,483,647.");
+            }
+            const result = await db.rpc("gocat_admin_set_follower_count", {
+                target_user_id: String(user.id),
+                target_count: total
+            });
+            if (result.error) throw result.error;
+        }
+
+        await loadFollows();
+        renderEverything();
+        renderAdminPanel();
+        showToast(resetButton
+            ? "Follower display reset to real follows."
+            : "Displayed follower total updated for @" + (user.username || "creator") + ".");
+    } catch (error) {
+        console.error(error);
+        showToast("Follower total update failed: " + error.message);
+    }
+});
+
 document.addEventListener("click", async event => {
     const edit = event.target.closest("[data-admin-edit-user]");
     const ban = event.target.closest("[data-admin-ban-user]");
