@@ -76,3 +76,21 @@ revoke all on function public.gocat_admin_set_follower_count(text, bigint) from 
 grant execute on function public.gocat_admin_set_follower_count(text, bigint) to authenticated;
 revoke all on function public.gocat_admin_clear_follower_count(text) from public, anon;
 grant execute on function public.gocat_admin_clear_follower_count(text) to authenticated;
+
+
+-- Let clients already subscribed to GoCat Postgres Changes refresh displayed
+-- follower totals immediately after an owner adjustment.
+do $$
+begin
+    if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+       and not exists (
+          select 1
+          from pg_publication_tables
+          where pubname = 'supabase_realtime'
+            and schemaname = 'public'
+            and tablename = 'gocat_follower_overrides'
+       ) then
+        alter publication supabase_realtime add table public.gocat_follower_overrides;
+    end if;
+end;
+$$;
