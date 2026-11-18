@@ -277,6 +277,10 @@
                 <div class="page-title-row">
                     <div><h1>Explore</h1></div>
                 </div>
+                <div class="weekly-creator-panel">
+                    <div class="weekly-creator-heading"><div><h2>Top creators this week</h2><p>Based on real views from the last seven days.</p></div><span>7 DAY LEADERS</span></div>
+                    <div id="weeklyCreatorsList" class="weekly-creators-list" aria-live="polite"></div>
+                </div>
                 <div class="tab-row">
                     <button class="tab-btn active" data-explore-tab="videos">Videos</button>
                     <button class="tab-btn" data-explore-tab="reels">Reels</button>
@@ -549,7 +553,7 @@
             <!-- PROFILE -->
             <section id="page-profile" class="page-section hidden">
                 <div class="channel-cover"></div>
-                <div class="channel-header">
+                <div id="profileChannelHeader" class="channel-header" data-channel-theme="emerald">
                     <div id="profileAvatar" class="channel-avatar">G</div>
                     <div class="channel-details">
                         <h1 id="profileUsername">Creator</h1>
@@ -963,6 +967,16 @@
             </label>
             <label class="field">Channel description
                 <textarea id="editBio" maxlength="250" rows="4"></textarea>
+            </label>
+            <label class="field">Channel theme
+                <select id="editChannelTheme">
+                    <option value="emerald">Emerald green</option>
+                    <option value="ocean">Ocean blue</option>
+                    <option value="sunset">Sunset orange</option>
+                    <option value="violet">Violet glow</option>
+                    <option value="slate">Midnight slate</option>
+                </select>
+                <small class="muted-text">Choose a colour style for your public creator channel.</small>
             </label>
             <button class="primary-btn full-btn" type="submit">Save changes</button>
         </form>
