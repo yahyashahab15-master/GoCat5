@@ -815,9 +815,9 @@ function videoCard(video) {
     return `
         <article class="video-card">
             <div class="video-player-wrap">
-                <video class="video-player" src="${esc(getVideoURL(video.storage_path))}#t=0.1"
+                <video class="video-player" src="${esc(getVideoURL(video.storage_path))}"
                     ${video.thumbnail_path ? 'poster="' + esc(getVideoURL(video.thumbnail_path)) + '"' : ""}
-                    controls playsinline preload="metadata" data-play-video="${esc(video.id)}"></video>
+                    controls playsinline preload="none" data-play-video="${esc(video.id)}"></video>
             </div>
 
             <div class="video-body">
@@ -898,9 +898,9 @@ function homeReelCard(video) {
         <article class="home-short-card">
             <button class="home-short-open" data-open-reel-id="${esc(video.id)}">
                 <div class="home-short-thumb">
-                    <video src="${esc(getVideoURL(video.storage_path))}#t=0.1"
+                    <video src="${esc(getVideoURL(video.storage_path))}"
                         ${video.thumbnail_path ? 'poster="' + esc(getVideoURL(video.thumbnail_path)) + '"' : ""}
-                        muted playsinline preload="metadata"></video>
+                        muted playsinline preload="none"></video>
                     <div class="home-short-grad"></div>
                     <strong class="home-short-title">${esc(video.title)}</strong>
                 </div>
@@ -1427,7 +1427,7 @@ function renderReels() {
             <article class="reel-item" data-reel-item="${esc(video.id)}">
                 <video class="reel-video" src="${esc(getVideoURL(video.storage_path))}"
                     ${video.thumbnail_path ? 'poster="' + esc(getVideoURL(video.thumbnail_path)) + '"' : ""}
-                    playsinline loop ${settings.muted ? "muted" : ""} preload="metadata"
+                    playsinline loop ${settings.muted ? "muted" : ""} preload="none"
                     data-play-video="${esc(video.id)}"></video>
 
                 <button class="reel-sound-btn" data-reel-sound aria-label="Toggle sound">
