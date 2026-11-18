@@ -675,7 +675,7 @@ function queueLiveRefresh(delay = 450) {
 function subscribeToLiveFeed() {
     if (!db) return;
     if (feedRealtimeChannel) db.removeChannel(feedRealtimeChannel);
-    const tables = ["videos", "likes", "comments", "posts", "post_likes", "post_comments", "follows", "gocat_featured_creators"];
+    const tables = ["videos", "likes", "comments", "posts", "post_likes", "post_comments", "follows", "gocat_featured_creators", "gocat_follower_overrides"];
     let channel = db.channel("gocat-live-feed");
     tables.forEach(table => {
         channel = channel.on("postgres_changes", { event: "*", schema: "public", table }, () => queueLiveRefresh());
