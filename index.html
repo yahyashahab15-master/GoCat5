@@ -277,6 +277,10 @@
                 <div class="page-title-row">
                     <div><h1>Explore</h1></div>
                 </div>
+                <div class="weekly-creator-panel">
+                    <div class="weekly-creator-heading"><div><h2>Top creators this week</h2><p>Based on real views from the last seven days.</p></div><span>7 DAY LEADERS</span></div>
+                    <div id="weeklyCreatorsList" class="weekly-creators-list" aria-live="polite"></div>
+                </div>
                 <div class="tab-row">
                     <button class="tab-btn active" data-explore-tab="videos">Videos</button>
                     <button class="tab-btn" data-explore-tab="reels">Reels</button>
@@ -549,7 +553,7 @@
             <!-- PROFILE -->
             <section id="page-profile" class="page-section hidden">
                 <div class="channel-cover"></div>
-                <div class="channel-header">
+                <div id="profileChannelHeader" class="channel-header" data-channel-theme="emerald">
                     <div id="profileAvatar" class="channel-avatar">G</div>
                     <div class="channel-details">
                         <h1 id="profileUsername">Creator</h1>
@@ -590,7 +594,8 @@
                     </div></div>
                     <div class="settings-card"><h2>Find a creator</h2><input id="adminUserSearch" type="search" placeholder="Search username…"><div id="adminUserList" class="admin-user-list"></div></div>
                     <div class="settings-card"><h2>Content and profile controls</h2><p class="muted-text">As owner, you can edit public creator profiles, edit or remove public posts and videos/Reels, suspend accounts, and feature creators in discovery. Uploads from Studio publish under your own GoCat account.</p></div>
-                    <div class="settings-card"><h2>Account privacy and authentic growth</h2><p class="muted-text">Passwords, login sessions, private messages and private account data remain protected. Follower totals stay tied to real follow relationships. Use Feature to give creators more visibility instead of inventing followers.</p></div>
+                    <div class="settings-card"><h2>Follower display controls</h2><p class="muted-text">Use Set follower count beside any creator, including your own account, to choose the public number shown on their channel. This is a display-only setting: real follows, Follow buttons, following lists and notifications remain unchanged. Use Reset to real to return to the actual relationship count.</p></div>
+                    <div class="settings-card"><h2>Account privacy and authentic growth</h2><p class="muted-text">Passwords, login sessions, private messages and private account data remain protected. Actual follower relationships remain separately stored and are never created by changing the displayed count.</p></div>
                 </div>
             </section>
 
@@ -962,6 +967,16 @@
             </label>
             <label class="field">Channel description
                 <textarea id="editBio" maxlength="250" rows="4"></textarea>
+            </label>
+            <label class="field">Channel theme
+                <select id="editChannelTheme">
+                    <option value="emerald">Emerald green</option>
+                    <option value="ocean">Ocean blue</option>
+                    <option value="sunset">Sunset orange</option>
+                    <option value="violet">Violet glow</option>
+                    <option value="slate">Midnight slate</option>
+                </select>
+                <small class="muted-text">Choose a colour style for your public creator channel.</small>
             </label>
             <button class="primary-btn full-btn" type="submit">Save changes</button>
         </form>
