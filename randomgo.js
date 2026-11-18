@@ -4004,7 +4004,7 @@ document.addEventListener("click", async event => {
             );
             if (raw === null) return;
             const cleaned = raw.trim();
-            if (!/^\\d+$/.test(cleaned)) {
+            if (!/^\d+$/.test(cleaned)) {
                 return showToast("Enter a whole number such as 1250.");
             }
             const total = Number(cleaned);
