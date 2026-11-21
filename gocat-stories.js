@@ -59,7 +59,7 @@
   }
 
   async function loadStories() {
-    if (!db) return;
+    if (!db || window.GoCatServiceGuard?.isSupabaseRestricted?.()) return;
     if (busy) { queued = true; return; }
     busy = true; queued = false;
     try {
@@ -283,10 +283,20 @@
   });
 
   if (db) {
-    db.auth.onAuthStateChange(() => window.setTimeout(loadStories, 0));
-    db.channel("gocat-stories-live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "stories" }, () => window.setTimeout(loadStories, 250))
-      .subscribe();
+    db.auth.onAuthStateChange(() => {
+      if (!window.GoCatServiceGuard?.isSupabaseRestricted?.()) window.setTimeout(loadStories, 0);
+    });
+    // Defer the WebSocket subscription until initial API checks have identified
+    // any account-level 402 restriction. Realtime reconnects are not useful
+    // while every Supabase service is blocked.
+    window.setTimeout(() => {
+      if (window.GoCatServiceGuard?.isSupabaseRestricted?.()) return;
+      db.channel("gocat-stories-live")
+        .on("postgres_changes", { event: "*", schema: "public", table: "stories" }, () => {
+          if (!window.GoCatServiceGuard?.isSupabaseRestricted?.()) window.setTimeout(loadStories, 250);
+        })
+        .subscribe();
+    }, 2500);
   }
   window.renderGoCatStories = loadStories;
   window.setTimeout(loadStories, 600);
