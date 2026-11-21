@@ -10,6 +10,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="stylesheet" href="/gocat-growth.css">
+<link rel="stylesheet" href="/gocat-chat-admin.css">
+<link rel="stylesheet" href="/gocat-followers.css">
 <title>GoCat — Discover Videos, Explore Creators & Share</title>
 <meta name="description" content="GoCat is a video-sharing platform where you can discover videos, explore creators, watch Reels, and share your own content.">
 <meta name="robots" content="index, follow, max-image-preview:large">
@@ -275,6 +277,10 @@
                 <div class="page-title-row">
                     <div><h1>Explore</h1></div>
                 </div>
+                <div class="weekly-creator-panel">
+                    <div class="weekly-creator-heading"><div><h2>Top creators this week</h2><p>Based on real views from the last seven days.</p></div><span>7 DAY LEADERS</span></div>
+                    <div id="weeklyCreatorsList" class="weekly-creators-list" aria-live="polite"></div>
+                </div>
                 <div class="tab-row">
                     <button class="tab-btn active" data-explore-tab="videos">Videos</button>
                     <button class="tab-btn" data-explore-tab="reels">Reels</button>
@@ -477,9 +483,16 @@
                             <button type="button" data-chat-emoji="😂" aria-label="Add laugh">😂</button>
                             <button type="button" data-chat-emoji="🎉" aria-label="Add celebration">🎉</button>
                         </div>
+                        <div id="chatAttachmentPreview" class="chat-attachment-preview hidden">
+                            <span id="chatAttachmentName"></span>
+                            <button id="chatClearAttachment" type="button" aria-label="Remove attachment">×</button>
+                        </div>
+                        <div id="chatUploadStatus" class="chat-upload-status">Files from this device or other apps · Max 50 MB</div>
                         <form id="chatForm" class="chat-compose">
+                            <button id="chatAttachBtn" class="chat-attach-btn" type="button" disabled aria-label="Attach a file" title="Attach a photo, video, audio clip or document">＋</button>
+                            <input id="chatAttachmentFile" type="file" hidden accept="image/jpeg,image/png,image/webp,image/gif,image/avif,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/mp4,audio/ogg,audio/wav,audio/webm,application/pdf,text/plain,text/csv,application/zip,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx">
                             <div class="chat-compose-field">
-                                <textarea id="messageInput" maxlength="2000" rows="1" placeholder="Write a message…" aria-label="Write a message. Press Enter to send." disabled required></textarea>
+                                <textarea id="messageInput" maxlength="10000" rows="1" placeholder="Write a message…" aria-label="Write a message. Press Enter to send." disabled></textarea>
                                 <small>Enter to send <span>·</span> Shift + Enter for a new line</small>
                             </div>
                             <button id="sendMessageBtn" class="primary-btn" type="submit" disabled><span>Send</span><span aria-hidden="true">➤</span></button>
@@ -540,7 +553,7 @@
             <!-- PROFILE -->
             <section id="page-profile" class="page-section hidden">
                 <div class="channel-cover"></div>
-                <div class="channel-header">
+                <div id="profileChannelHeader" class="channel-header" data-channel-theme="emerald">
                     <div id="profileAvatar" class="channel-avatar">G</div>
                     <div class="channel-details">
                         <h1 id="profileUsername">Creator</h1>
@@ -552,8 +565,8 @@
                 <div class="channel-stats">
                     <div><strong id="profileVideoCount">0</strong><span>Videos</span></div>
                     <div><strong id="profileShortCount">0</strong><span>Reels</span></div>
-                    <div><strong id="profileFollowerCount">0</strong><span>Followers</span></div>
-                    <div><strong id="profileFollowingCount">0</strong><span>Following</span></div>
+                    <button type="button" id="profileFollowersOpen" class="channel-stat-button" aria-label="View followers" aria-haspopup="dialog"><strong id="profileFollowerCount">0</strong><span>Followers</span></button>
+                    <button type="button" id="profileFollowingOpen" class="channel-stat-button" aria-label="View following" aria-haspopup="dialog"><strong id="profileFollowingCount">0</strong><span>Following</span></button>
                     <div><strong id="profilePostCount">0</strong><span>Posts</span></div>
                 </div>
                 <div class="profile-tabs">
@@ -572,10 +585,17 @@
             <section id="page-admin" class="page-section hidden">
                 <div class="page-title-row"><div><h1>GoCat Admin</h1><p class="muted-text">Owner-only community and content management.</p></div><button class="soft-btn" id="adminRefreshBtn">Refresh</button></div>
                 <div class="settings-layout">
-                    <div class="settings-card"><h2>Community overview</h2><div class="admin-stats"><div><strong id="adminUserCount">—</strong><small>Creators</small></div><div><strong id="adminVideoCount">—</strong><small>Videos & Reels</small></div><div><strong id="adminPostCount">—</strong><small>Posts</small></div></div></div>
+                    <div class="settings-card"><h2>Community overview</h2><div class="admin-stats">
+                        <div><strong id="adminUserCount">—</strong><small>Creators</small></div>
+                        <div><strong id="adminVideoCount">—</strong><small>Videos & Reels</small></div>
+                        <div><strong id="adminPostCount">—</strong><small>Posts</small></div>
+                        <div><strong id="adminFollowerCount">—</strong><small>Real follows</small></div>
+                        <div><strong id="adminFeaturedCount">—</strong><small>Featured</small></div>
+                    </div></div>
                     <div class="settings-card"><h2>Find a creator</h2><input id="adminUserSearch" type="search" placeholder="Search username…"><div id="adminUserList" class="admin-user-list"></div></div>
-                    <div class="settings-card"><h2>Content moderation</h2><p class="muted-text">Remove content that breaks GoCat rules. Use the Delete controls on posts and videos throughout the app; admin permissions apply across creators.</p></div>
-                    <div class="settings-card"><h2>Important</h2><p class="muted-text">Follower totals stay tied to real follows. GoCat does not manufacture followers or engagement.</p></div>
+                    <div class="settings-card"><h2>Content and profile controls</h2><p class="muted-text">As owner, you can edit public creator profiles, edit or remove public posts and videos/Reels, suspend accounts, and feature creators in discovery. Uploads from Studio publish under your own GoCat account.</p></div>
+                    <div class="settings-card"><h2>Follower display controls</h2><p class="muted-text">Use Set follower count beside any creator, including your own account, to choose the public number shown on their channel. This is a display-only setting: real follows, Follow buttons, following lists and notifications remain unchanged. Use Reset to real to return to the actual relationship count.</p></div>
+                    <div class="settings-card"><h2>Account privacy and authentic growth</h2><p class="muted-text">Passwords, login sessions, private messages and private account data remain protected. Actual follower relationships remain separately stored and are never created by changing the displayed count.</p></div>
                 </div>
             </section>
 
@@ -913,6 +933,22 @@
     </div>
 </div>
 
+<!-- FOLLOWERS AND FOLLOWING -->
+<div id="followListModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="followListTitle">
+    <div class="modal-backdrop" data-close="followListModal"></div>
+    <div class="modal-card follow-list-modal">
+        <div class="modal-heading">
+            <div>
+                <h2 id="followListTitle">Followers</h2>
+                <p id="followListSubtitle" class="muted-text">GoCat creators</p>
+            </div>
+            <button class="icon-btn" type="button" data-close="followListModal" aria-label="Close followers list"><i data-icon="close"></i></button>
+        </div>
+        <input id="followListSearch" class="follow-list-search" type="search" placeholder="Search creators…" aria-label="Search this list" autocomplete="off">
+        <div id="followListBody" class="follow-list-body" aria-live="polite"></div>
+    </div>
+</div>
+
 <!-- EDIT PROFILE -->
 <div id="editProfileModal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-backdrop" data-close="editProfileModal"></div>
@@ -931,6 +967,16 @@
             </label>
             <label class="field">Channel description
                 <textarea id="editBio" maxlength="250" rows="4"></textarea>
+            </label>
+            <label class="field">Channel theme
+                <select id="editChannelTheme">
+                    <option value="emerald">Emerald green</option>
+                    <option value="ocean">Ocean blue</option>
+                    <option value="sunset">Sunset orange</option>
+                    <option value="violet">Violet glow</option>
+                    <option value="slate">Midnight slate</option>
+                </select>
+                <small class="muted-text">Choose a colour style for your public creator channel.</small>
             </label>
             <button class="primary-btn full-btn" type="submit">Save changes</button>
         </form>

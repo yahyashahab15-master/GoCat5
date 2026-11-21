@@ -132,7 +132,8 @@
     feed.innerHTML = posts.map(post => {
       const username = getUsername(post.user_id);
       const canDelete = !!currentUser && (
-        String(post.user_id) === String(currentUser.id) || isOwner
+        String(post.user_id) === String(currentUser.id) || isOwner ||
+        (typeof isGoCatAdmin !== "undefined" && isGoCatAdmin)
       );
       const author = typeof getUser === "function" ? getUser(post.user_id) : null;
       return `
@@ -140,6 +141,7 @@
           <div class="community-post-author">
             ${avatar(username, "", author?.avatar_path || "")}
             <div><strong>${esc(username)}</strong><small>${esc(formatDate(post.created_at))}</small></div>
+            ${(typeof isGoCatAdmin !== "undefined" && isGoCatAdmin) ? '<button class="community-delete-post" type="button" data-community-edit-post="' + esc(post.id) + '" aria-label="Edit community post">Edit</button>' : ''}
             ${canDelete ? '<button class="community-delete-post" type="button" data-community-delete-post="' + esc(post.id) + '" aria-label="Delete post">Delete</button>' : ''}
           </div>
           ${post.media_url ? (post.media_type === "video"
@@ -360,11 +362,54 @@
     }
   }
 
+  async function editCommunityPost(id) {
+    if (!currentUser || typeof isGoCatAdmin === "undefined" || !isGoCatAdmin) {
+      return showToast("GoCat owner access required.");
+    }
+    const post = communityPosts.find(item => String(item.id) === String(id));
+    if (!post) return showToast("That community post could not be found.");
+    const content = window.prompt("Edit " + getUsername(post.user_id) + "'s community post:", post.content || "");
+    if (content === null) return;
+    const clean = content.trim();
+    if (!clean && !post.media_url) return showToast("A community post needs text or media.");
+    try {
+      const { error } = await db.from("community_posts")
+        .update({ content: clean })
+        .eq("id", id);
+      if (error) throw error;
+      communitiesLoaded = false;
+      await loadCommunities();
+      renderCommunityDetail();
+      showToast("Community post updated.");
+    } catch (error) {
+      console.error("Edit community post:", error);
+      showToast("Could not update post: " + (error.message || "Please try again."));
+    }
+  }
+
   async function deleteCommunityPost(id) {
     if (!requireAuth("manage this post")) return;
+    const post = communityPosts.find(item => String(item.id) === String(id));
+    const community = post && communities.find(item => String(item.id) === String(post.community_id));
+    const isOwner = !!community && String(community.created_by) === String(currentUser.id);
+    const isAuthor = !!post && String(post.user_id) === String(currentUser.id);
+    const isAdmin = typeof isGoCatAdmin !== "undefined" && isGoCatAdmin;
+    if (!post || (!isAuthor && !isOwner && !isAdmin)) {
+      return showToast("You do not have permission to remove this community post.");
+    }
+    if (!window.confirm("Delete this community post permanently?")) return;
     try {
       const { error } = await db.from("community_posts").delete().eq("id", id);
       if (error) throw error;
+
+      // Only the file owner or a GoCat admin can remove the corresponding
+      // Storage object. Community owners may moderate the database post row.
+      if ((isAuthor || isAdmin) && post.media_url &&
+          !window.GoCatMedia?.isRemoteUrl(post.media_url)) {
+        const removal = await db.storage.from("post-media").remove([post.media_url]);
+        if (removal.error) console.warn("Community media cleanup:", removal.error.message);
+      }
+
       communitiesLoaded = false;
       await loadCommunities();
       renderCommunityDetail();
@@ -380,6 +425,7 @@
     const join = event.target.closest("[data-community-join]");
     const leave = event.target.closest("[data-community-leave]");
     const remove = event.target.closest("[data-community-delete-post]");
+    const editPostButton = event.target.closest("[data-community-edit-post]");
     if (event.target.closest("#openCommunityCreate, [data-open-community-create]")) {
       event.preventDefault();
       toggleCreatePanel(true);
@@ -419,6 +465,7 @@
     }
     if (join) { event.preventDefault(); joinCommunity(join.dataset.communityJoin); return; }
     if (leave) { event.preventDefault(); leaveCommunity(leave.dataset.communityLeave); return; }
+    if (editPostButton) { event.preventDefault(); editCommunityPost(editPostButton.dataset.communityEditPost); return; }
     if (remove) { event.preventDefault(); deleteCommunityPost(remove.dataset.communityDeletePost); }
   });
 

@@ -1,5 +1,5 @@
 "use strict";
-const CACHE_NAME = "gocat-shell-v11";
+const CACHE_NAME = "gocat-shell-v13";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -20,8 +20,73 @@ const APP_SHELL = [
   "/gocat-commercial-polish.js",
   "/gocat-creator-launchpad.js",
   "/gocat-pwa.js",
-  "/gocat-growth.css"
+  "/gocat-growth.css",
+  "/gocat-chat-admin.css"
 ];
+
+const SHARE_INBOX_DB = "gocat-share-inbox";
+const SHARE_FILE_LIMIT = 50 * 1024 * 1024;
+
+function saveIncomingShare(record) {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(SHARE_INBOX_DB, 1);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains("incoming")) {
+        request.result.createObjectStore("incoming", { keyPath: "id" });
+      }
+    };
+    request.onerror = () => reject(request.error || new Error("Could not open share inbox."));
+    request.onsuccess = () => {
+      const database = request.result;
+      const transaction = database.transaction("incoming", "readwrite");
+      transaction.objectStore("incoming").put(record);
+      transaction.oncomplete = () => { database.close(); resolve(); };
+      transaction.onerror = () => { database.close(); reject(transaction.error || new Error("Could not save shared content.")); };
+      transaction.onabort = () => { database.close(); reject(transaction.error || new Error("Share inbox save was cancelled.")); };
+    };
+  });
+}
+
+async function receiveSharedContent(request) {
+  try {
+    const form = await request.formData();
+    const incomingFiles = form.getAll("files").filter(item =>
+      item && typeof item.name === "string" && item.name && typeof item.size === "number" && item.size > 0
+    );
+    let file = incomingFiles[0] || null;
+    let error = "";
+    let notice = "";
+
+    if (incomingFiles.length > 1) {
+      notice = "GoCat chat attaches one file per message. The first shared file was added; share other files separately.";
+    }
+    if (file && file.size > SHARE_FILE_LIMIT) {
+      error = "This shared file is larger than GoCat's current 50 MB per-file limit.";
+      file = null;
+    }
+
+    const record = {
+      id: "latest",
+      receivedAt: Date.now(),
+      title: String(form.get("title") || "").slice(0, 240),
+      text: String(form.get("text") || "").slice(0, 10000),
+      url: String(form.get("url") || "").slice(0, 4000),
+      file,
+      fileName: file ? String(file.name || "shared-file").slice(0, 180) : "",
+      fileType: file ? String(file.type || "").slice(0, 160) : "",
+      fileLastModified: file && Number(file.lastModified || 0),
+      notice,
+      error
+    };
+
+    await saveIncomingShare(record);
+    return Response.redirect(new URL("/?gocatShareInbox=1", self.location.origin), 303);
+  } catch (error) {
+    console.error("GoCat share target could not save incoming content:", error);
+    return Response.redirect(new URL("/?gocatShareInboxError=1", self.location.origin), 303);
+  }
+}
+
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));
 });
@@ -31,6 +96,10 @@ self.addEventListener("activate", event => {
 self.addEventListener("fetch", event => {
   const request = event.request;
   const url = new URL(request.url);
+  if (url.origin === self.location.origin && request.method === "POST" && url.pathname === "/share-target/") {
+    event.respondWith(receiveSharedContent(request));
+    return;
+  }
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
   if (request.mode === "navigate") {
     event.respondWith(fetch(request).then(response => {

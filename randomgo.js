@@ -11,6 +11,10 @@ const SUPABASE_KEY = "sb_publishable_LWIaOaxbzp19lV765vbbQg_kF5apL0O";
 
 const VIDEO_BUCKET = "videos";
 const POST_BUCKET = "post-media";
+const CHAT_BUCKET = "chat-media";
+const EXTERNAL_SHARE_DB_NAME = "gocat-share-inbox";
+const MAX_CHAT_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+const CHAT_ALLOWED_TYPES = new Set(["image/jpeg","image/png","image/webp","image/gif","image/avif","video/mp4","video/webm","video/quicktime","audio/mpeg","audio/mp4","audio/ogg","audio/wav","audio/webm","application/pdf","text/plain","text/csv","application/msword","application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.ms-excel","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/vnd.ms-powerpoint","application/vnd.openxmlformats-officedocument.presentationml.presentation","application/zip","application/x-zip-compressed"]);
 
 const MAX_VIDEO_BYTES = 500 * 1024 * 1024;
 const MAX_VIDEO_DURATION = 1200;
@@ -25,10 +29,13 @@ const db = window.supabase?.createClient
 
 let currentUser = null, currentProfile = null, isGoCatAdmin = false;
 let currentProfileUserId = null, currentCommentVideoId = null, currentCommentPostId = null, currentCommentParentId = null, currentChatUserId = null;
+let followListProfileId = null, followListKind = "followers";
+let pendingFollowTargets = new Set();
 let chatRealtimeChannel = null, commentRealtimeChannel = null, feedRealtimeChannel = null;
+let currentChatMessages = [], chatSignedUrls = new Map(), selectedChatAttachment = null, pendingExternalShare = null;
 let liveRefreshTimer = null, chatTypingTimer = null, feedRealtimeReady = false;
 let activePlaybackVideoId = null, liveRenderPending = false;
-let users = [], videos = [], posts = [], follows = [], notifications = [];
+let users = [], videos = [], posts = [], follows = [], followerOverrides = [], notifications = [], featuredCreators = [], weeklyCreatorLeaders = [];
 let currentPage = "home", activeHomeTopic = "All", exploreMode = "videos", profileMode = "home";
 let homeVisibleCycles = 1, exploreVisible = 6, postsVisible = 5, reelsVisible = 5;
 let uploadMode = "video", selectedVideoFile = null, exportedReelFile = null;
@@ -174,6 +181,15 @@ const canManageContent = id => isOwnContent(id) || isGoCatAdmin;
 function isFollowing(id) {
     return !!currentUser && follows.some(f =>
         String(f.follower_id) === String(currentUser.id) && String(f.following_id) === String(id));
+}
+
+function getActualFollowerCount(userId) {
+    return follows.filter(row => String(row.following_id) === String(userId)).length;
+}
+
+function getDisplayedFollowerCount(userId) {
+    const override = followerOverrides.find(row => String(row.user_id) === String(userId));
+    return override ? Number(override.follower_count) : getActualFollowerCount(userId);
 }
 
 const isReel = v => v?.is_short === true || v?.is_short === "true";
@@ -424,7 +440,7 @@ listen("registerForm", "submit", async function (event) {
 /* ---------- 07 PROFILE, ADMIN, DATA LOADING ---------- */
 
 async function ensureProfile() {
-    const publicColumns = "id,username,bio,avatar_path,created_at";
+    const publicColumns = "id,username,bio,avatar_path,created_at,channel_theme";
     const existing = await db.from("users").select(publicColumns).eq("id", currentUser.id).maybeSingle();
     if (existing.error) throw existing.error;
 
@@ -445,8 +461,8 @@ async function ensureProfile() {
 
         const insert = await db
             .from("users")
-            .insert({ id: currentUser.id, username, email: currentUser.email, created_at: Date.now() })
-            .select("id,username,bio,avatar_path,created_at")
+            .insert({ id: currentUser.id, username, email: currentUser.email, created_at: Date.now(), channel_theme: "emerald" })
+            .select("id,username,bio,avatar_path,created_at,channel_theme")
             .maybeSingle();
 
         if (!insert.error) {
@@ -484,7 +500,7 @@ async function loadUsers() {
     // and moderation flags are never selected by the public profile query.
     const result = await db
         .from("users")
-        .select("id,username,bio,avatar_path,created_at")
+        .select("id,username,bio,avatar_path,created_at,channel_theme")
         .order("created_at", { ascending: false });
 
     if (result.error) throw result.error;
@@ -538,10 +554,66 @@ async function loadVideos() {
     }));
 }
 
+async function loadPagedRows(makeQuery, pageSize = 500) {
+    const rows = [];
+    for (let offset = 0; ; offset += pageSize) {
+        const result = await makeQuery().range(offset, offset + pageSize - 1);
+        if (result.error) throw result.error;
+
+        const page = result.data || [];
+        rows.push(...page);
+        if (page.length < pageSize) break;
+    }
+    return rows;
+}
+
 async function loadFollows() {
-    const result = await db.from("follows").select("follower_id,following_id");
-    if (result.error) throw result.error;
-    follows = result.data || [];
+    // Real relationships are the source of truth. Load them first and page
+    // through the table so large follow graphs are not silently truncated.
+    const realFollows = await loadPagedRows(() => db.from("follows")
+        .select("follower_id,following_id")
+        .order("follower_id", { ascending: true })
+        .order("following_id", { ascending: true }));
+    follows = realFollows;
+
+    // Display overrides are an optional owner feature. Their failure must
+    // never hide or break real follow relationships and counts.
+    try {
+        followerOverrides = await loadPagedRows(() => db.from("gocat_follower_overrides")
+            .select("user_id,follower_count")
+            .order("user_id", { ascending: true }));
+    } catch (error) {
+        followerOverrides = [];
+        console.warn("Follower display overrides could not load; using real follow counts:", error.message || error);
+    }
+}
+
+async function loadFeaturedCreators() {
+    const result = await db.from("gocat_featured_creators")
+        .select("user_id,featured_by,created_at,expires_at");
+    if (result.error) {
+        featuredCreators = [];
+        console.warn("Featured creator placements could not load:", result.error.message);
+        return;
+    }
+    featuredCreators = result.data || [];
+}
+
+async function loadWeeklyCreatorLeaderboard() {
+    const result = await db.rpc("gocat_weekly_creator_leaderboard");
+    if (result.error) {
+        weeklyCreatorLeaders = [];
+        console.warn("Weekly creator leaderboard could not load:", result.error.message);
+        return;
+    }
+    weeklyCreatorLeaders = result.data || [];
+}
+
+function isFeaturedCreator(userId) {
+    return featuredCreators.some(item =>
+        String(item.user_id) === String(userId) &&
+        (!item.expires_at || new Date(item.expires_at).getTime() > Date.now())
+    );
 }
 
 async function loadPosts() {
@@ -578,7 +650,9 @@ async function loadAllData() {
         ["creators", loadUsers],
         ["videos", loadVideos],
         ["follows", loadFollows],
-        ["posts", loadPosts]
+        ["posts", loadPosts],
+        ["featured creators", loadFeaturedCreators],
+        ["weekly creator leaderboard", loadWeeklyCreatorLeaderboard]
     ];
 
     const results = await Promise.allSettled(jobs.map(([, load]) => load()));
@@ -636,7 +710,7 @@ function queueLiveRefresh(delay = 450) {
 function subscribeToLiveFeed() {
     if (!db) return;
     if (feedRealtimeChannel) db.removeChannel(feedRealtimeChannel);
-    const tables = ["videos", "likes", "comments", "posts", "post_likes", "post_comments", "follows"];
+    const tables = ["videos", "likes", "comments", "posts", "post_likes", "post_comments", "follows", "gocat_featured_creators", "gocat_follower_overrides"];
     let channel = db.channel("gocat-live-feed");
     tables.forEach(table => {
         channel = channel.on("postgres_changes", { event: "*", schema: "public", table }, () => queueLiveRefresh());
@@ -675,6 +749,7 @@ async function startGoCat() {
         renderEverything();
         openPage("home");
         checkSharedVideoLink();
+        activateIncomingShareInbox();
     } catch (error) {
         console.error("GoCat startup:", error);
         openApp();
@@ -719,6 +794,7 @@ async function startGuestGoCat() {
     }
 
     checkSharedVideoLink();
+    activateIncomingShareInbox();
 }
 
 function updateUserInterface() {
@@ -763,9 +839,9 @@ function videoCard(video) {
     return `
         <article class="video-card">
             <div class="video-player-wrap">
-                <video class="video-player" src="${esc(getVideoURL(video.storage_path))}#t=0.1"
+                <video class="video-player" src="${esc(getVideoURL(video.storage_path))}"
                     ${video.thumbnail_path ? 'poster="' + esc(getVideoURL(video.thumbnail_path)) + '"' : ""}
-                    controls playsinline preload="metadata" data-play-video="${esc(video.id)}"></video>
+                    controls playsinline preload="none" data-play-video="${esc(video.id)}"></video>
             </div>
 
             <div class="video-body">
@@ -789,6 +865,7 @@ function videoCard(video) {
             <div class="video-actions">
                 ${pill("heart", video.likes?.length || 0, `data-like-video="${esc(video.id)}"`, liked ? "liked" : "")}
                 ${pill("message", video.comments?.length || 0, `data-comments-video="${esc(video.id)}"`)}
+                ${canManageContent(video.owner_id) ? pill("edit", "Edit", `data-edit-video="${esc(video.id)}"`) : ""}
                 ${pill("share", "Share", `data-share-video="${esc(video.id)}"`)}
                 ${canManageContent(video.owner_id) ? pill("trash", "Delete", `data-delete-video="${esc(video.id)}"`, "delete-btn") : ""}
             </div>
@@ -814,7 +891,7 @@ function postCard(post) {
     const username = getUsername(post.user_id);
     const liked = hasLiked(post);
     const imageURL = getPostImageURL(post.media_path);
-    const isOwnPost = String(post.user_id) === String(currentUser?.id);
+    const canEditThisPost = canManageContent(post.user_id);
 
     return `
         <article class="post-card" data-post-id="${esc(post.id)}">
@@ -824,7 +901,7 @@ function postCard(post) {
                     <strong>${esc(username)}</strong>
                     <small>${formatDate(post.created_at)}</small>
                 </div>
-                ${isOwnPost ? pill("edit", "Edit", `data-edit-post="${esc(post.id)}"`) : ""}
+                ${canEditThisPost ? pill("edit", "Edit", `data-edit-post="${esc(post.id)}"`) : ""}
                 ${canManageContent(post.user_id) ? pill("trash", "Delete", `data-delete-post="${esc(post.id)}"`, "delete-btn") : ""}
             </div>
 
@@ -845,9 +922,9 @@ function homeReelCard(video) {
         <article class="home-short-card">
             <button class="home-short-open" data-open-reel-id="${esc(video.id)}">
                 <div class="home-short-thumb">
-                    <video src="${esc(getVideoURL(video.storage_path))}#t=0.1"
+                    <video src="${esc(getVideoURL(video.storage_path))}"
                         ${video.thumbnail_path ? 'poster="' + esc(getVideoURL(video.thumbnail_path)) + '"' : ""}
-                        muted playsinline preload="metadata"></video>
+                        muted playsinline preload="none"></video>
                     <div class="home-short-grad"></div>
                     <strong class="home-short-title">${esc(video.title)}</strong>
                 </div>
@@ -980,7 +1057,10 @@ function renderSuggestedCreators() {
     const container = $("suggestedCreators");
     if (!container) return;
 
-    const suggestions = users.filter(u => !isOwnContent(u.id) && !isFollowing(u.id)).slice(0, 15);
+    const suggestions = users
+        .filter(u => !isOwnContent(u.id) && !isFollowing(u.id))
+        .sort((a, b) => Number(isFeaturedCreator(b.id)) - Number(isFeaturedCreator(a.id)))
+        .slice(0, 15);
 
     container.innerHTML = suggestions.length
         ? suggestions.map(user => `
@@ -988,7 +1068,7 @@ function renderSuggestedCreators() {
                 ${avatar(user.username, "lg")}
                 <div class="creator-info">
                     <strong>${esc(user.username)}</strong>
-                    <small>GoCat creator</small>
+                    <small>${isFeaturedCreator(user.id) ? "✦ Featured creator" : "GoCat creator"}</small>
                 </div>
                 <button class="mini-follow" data-follow-user="${esc(user.id)}">Follow</button>
             </div>`).join("")
@@ -996,35 +1076,68 @@ function renderSuggestedCreators() {
 }
 
 async function toggleFollow(userId) {
-    if (!requireAuth("follow creators") || isOwnContent(userId)) return;
+    if (!requireAuth("follow creators")) return;
 
-    const existing = follows.find(f =>
-        String(f.follower_id) === String(currentUser.id) && String(f.following_id) === String(userId));
+    const targetId = String(userId || "").trim();
+    if (!targetId || isOwnContent(targetId) || pendingFollowTargets.has(targetId)) return;
+
+    pendingFollowTargets.add(targetId);
+    document.querySelectorAll("[data-follow-user]").forEach(button => {
+        if (String(button.dataset.followUser) === targetId) {
+            button.disabled = true;
+            button.setAttribute("aria-busy", "true");
+        }
+    });
 
     try {
+        const existing = follows.some(f =>
+            String(f.follower_id) === String(currentUser.id) && String(f.following_id) === targetId);
+
         if (existing) {
             const result = await db.from("follows").delete()
-                .eq("follower_id", currentUser.id).eq("following_id", userId);
+                .eq("follower_id", currentUser.id).eq("following_id", targetId);
             if (result.error) throw result.error;
 
-            follows = follows.filter(f => f !== existing);
-            showToast("Unfollowed " + getUsername(userId));
+            follows = follows.filter(f =>
+                !(String(f.follower_id) === String(currentUser.id) && String(f.following_id) === targetId));
+            showToast("Unfollowed " + getUsername(targetId));
 
         } else {
             const result = await db.from("follows")
-                .insert({ follower_id: currentUser.id, following_id: userId });
+                .insert({ follower_id: currentUser.id, following_id: targetId });
             if (result.error) throw result.error;
 
-            follows.push({ follower_id: currentUser.id, following_id: userId });
-            addLocalNotification("follow", "You started following " + getUsername(userId));
-            showToast("Following " + getUsername(userId));
+            if (!follows.some(f =>
+                String(f.follower_id) === String(currentUser.id) && String(f.following_id) === targetId)) {
+                follows = [...follows, { follower_id: currentUser.id, following_id: targetId }];
+            }
+            addLocalNotification("follow", "You started following " + getUsername(targetId));
+            showToast("Following " + getUsername(targetId));
         }
 
         renderEverything();
+        if ($("followListModal") && !$("followListModal").classList.contains("hidden")) renderFollowList();
 
     } catch (error) {
         console.error(error);
+        // Reconcile with the database after a failed or racing request so the
+        // button and profile counts reflect the actual saved relationship.
+        try {
+            await loadFollows();
+            renderEverything();
+            if ($("followListModal") && !$("followListModal").classList.contains("hidden")) renderFollowList();
+        } catch (syncError) {
+            console.warn("Could not refresh follows after a failed action:", syncError.message || syncError);
+        }
         showToast("Follow error: " + error.message);
+    } finally {
+        pendingFollowTargets.delete(targetId);
+        document.querySelectorAll("[data-follow-user]").forEach(button => {
+            if (String(button.dataset.followUser) === targetId) {
+                button.disabled = false;
+                button.removeAttribute("aria-busy");
+            }
+        });
     }
 }
 
@@ -1269,6 +1382,50 @@ function checkSharedVideoLink() {
     }
 }
 
+async function editVideo(videoId) {
+    const video = videos.find(item => String(item.id) === String(videoId));
+    if (!video || !canManageContent(video.owner_id)) return;
+
+    const isAdminEdit = isGoCatAdmin && String(video.owner_id) !== String(currentUser.id);
+    const title = prompt(
+        isAdminEdit ? "Edit " + getUsername(video.owner_id) + "'s video title:" : "Edit video title:",
+        video.title || ""
+    );
+    if (title === null) return;
+    if (!title.trim()) return showToast("A video needs a title.");
+
+    const description = prompt("Edit video description:", video.description || "");
+    if (description === null) return;
+    const topic = prompt("Choose a topic (Gaming, Technology, Education, Sports, Music, Art, Cooking, Entertainment, Other):", video.topic || "Other");
+    if (topic === null) return;
+
+    try {
+        let query = db.from("videos").update({
+            title: title.trim().slice(0, 100),
+            description: description.trim().slice(0, 1000),
+            topic: topic.trim().slice(0, 40) || "Other"
+        }).eq("id", videoId);
+        if (!isAdminEdit) query = query.eq("owner_id", currentUser.id);
+        const result = await query.select("id").maybeSingle();
+        if (result.error) throw result.error;
+        if (!result.data) throw new Error("No video was updated. Check your video update policy.");
+
+        await loadVideos();
+        renderEverything();
+        showToast(isAdminEdit ? "Creator video updated." : "Video updated.");
+    } catch (error) {
+        console.error("Video edit error:", error);
+        showToast("Video edit failed: " + error.message);
+    }
+}
+
+document.addEventListener("click", event => {
+    const edit = event.target.closest("[data-edit-video]");
+    if (!edit) return;
+    event.preventDefault();
+    editVideo(edit.dataset.editVideo);
+});
+
 async function deleteVideo(videoId) {
     const video = videos.find(v => String(v.id) === String(videoId));
     if (!video || !canManageContent(video.owner_id)) return;
@@ -1326,7 +1483,7 @@ function renderReels() {
             <article class="reel-item" data-reel-item="${esc(video.id)}">
                 <video class="reel-video" src="${esc(getVideoURL(video.storage_path))}"
                     ${video.thumbnail_path ? 'poster="' + esc(getVideoURL(video.thumbnail_path)) + '"' : ""}
-                    playsinline loop ${settings.muted ? "muted" : ""} preload="metadata"
+                    playsinline loop ${settings.muted ? "muted" : ""} preload="none"
                     data-play-video="${esc(video.id)}"></video>
 
                 <button class="reel-sound-btn" data-reel-sound aria-label="Toggle sound">
@@ -1353,6 +1510,9 @@ function renderReels() {
                     <button class="reel-action" data-comments-video="${esc(video.id)}" aria-label="Comments">${icon("message")}</button>
                     <span class="reel-count">${video.comments?.length || 0}</span>
                     <button class="reel-action" data-share-video="${esc(video.id)}" aria-label="Share">${icon("share")}</button>
+                    ${canManageContent(video.owner_id)
+                        ? `<button class="reel-action" data-edit-video="${esc(video.id)}" aria-label="Edit">${icon("settings")}</button>`
+                        : ""}
                     ${canManageContent(video.owner_id)
                         ? `<button class="reel-action" data-delete-video="${esc(video.id)}" aria-label="Delete">${icon("trash")}</button>`
                         : ""}
@@ -1465,7 +1625,35 @@ function updateExploreMore(total) {
     }
 }
 
+
+function renderWeeklyCreatorLeaderboard() {
+    const container = $("weeklyCreatorsList");
+    if (!container) return;
+
+    if (!weeklyCreatorLeaders.length) {
+        container.innerHTML = "<div class='weekly-creators-empty'>No weekly rankings yet. Publish great content and build your audience.</div>";
+        return;
+    }
+
+    container.innerHTML = weeklyCreatorLeaders.map((creator, index) => {
+        const username = creator.username || getUsername(creator.user_id);
+        const views = Number(creator.weekly_views || 0);
+        const videoCount = Number(creator.active_videos || 0);
+        return `
+            <button type="button" class="weekly-creator-row" data-profile-user="${esc(creator.user_id)}">
+                <span class="weekly-creator-rank">${index + 1}</span>
+                ${avatar(username, "md", creator.avatar_path || "")}
+                <span class="weekly-creator-details">
+                    <strong>${esc(username)}</strong>
+                    <small>${compact(views)} views · ${videoCount} videos this week</small>
+                </span>
+                <span class="weekly-creator-arrow">View channel</span>
+            </button>`;
+    }).join("");
+}
+
 function renderExplore() {
+    renderWeeklyCreatorLeaderboard();
     const query = $("searchInput")?.value.trim().toLowerCase() || "";
 
     const videoMatch = v => !query ||
@@ -2596,9 +2784,13 @@ async function togglePostLike(postId) {
 
 async function editPost(postId) {
     const post = posts.find(p => String(p.id) === String(postId));
-    if (!post || String(post.user_id) !== String(currentUser.id)) return;
+    if (!post || !canManageContent(post.user_id)) return;
 
-    const editedContent = prompt("Edit your post:", post.content || "");
+    const isAdminEdit = isGoCatAdmin && String(post.user_id) !== String(currentUser.id);
+    const editedContent = prompt(
+        isAdminEdit ? "Edit " + getUsername(post.user_id) + "'s public post:" : "Edit your post:",
+        post.content || ""
+    );
     if (editedContent === null) return;
 
     const content = editedContent.trim();
@@ -2608,19 +2800,16 @@ async function editPost(postId) {
     }
 
     try {
-        const result = await db.from("posts")
-            .update({ content })
-            .eq("id", postId)
-            .eq("user_id", currentUser.id)
-            .select("id")
-            .maybeSingle();
+        let query = db.from("posts").update({ content }).eq("id", postId);
+        if (!isAdminEdit) query = query.eq("user_id", currentUser.id);
+        const result = await query.select("id").maybeSingle();
 
         if (result.error) throw result.error;
         if (!result.data) throw new Error("No post was updated. Check your Supabase UPDATE policy.");
 
         await loadPosts();
         renderEverything();
-        showToast("Post updated");
+        showToast(isAdminEdit ? "Creator post updated." : "Post updated");
     } catch (error) {
         console.error("Post edit error:", error);
         showToast("Edit failed: " + error.message);
@@ -2669,6 +2858,7 @@ listen("postsLoadMore", "click", () => { postsVisible += PAGE_SIZE; renderPosts(
 /* ---------- 25 PROFILE ---------- */
 
 function openOtherProfile(userId) {
+    hideModal("followListModal");
     currentProfileUserId = userId;
     profileMode = "home";
     openPage("profile");
@@ -2685,6 +2875,7 @@ function renderProfile() {
     const own = isOwnContent(profileId);
 
     if ($("profileUsername")) $("profileUsername").textContent = profile.username || getUsername(profileId);
+    if ($("profileChannelHeader")) $("profileChannelHeader").dataset.channelTheme = profile.channel_theme || "emerald";
     if ($("profileEmail")) $("profileEmail").textContent = own ? (currentUser?.email || "") : "";
     if ($("profileBio")) $("profileBio").textContent = profile.bio || "Welcome to GoCat.";
     paintAvatar("profileAvatar", profile.username, profile.avatar_path || "");
@@ -2696,6 +2887,7 @@ function renderProfile() {
                 $("editUsername").value = profile.username || "";
                 $("editBio").value = profile.bio || "";
                 if ($("editAvatarFile")) $("editAvatarFile").value = "";
+                if ($("editChannelTheme")) $("editChannelTheme").value = profile.channel_theme || "emerald";
                 if ($("editAvatarName")) $("editAvatarName").textContent = profile.avatar_path ? "Current photo saved" : "No photo selected";
                 showModal("editProfileModal");
             } else {
@@ -2711,8 +2903,8 @@ function renderProfile() {
 
     const set = (id, value) => { if ($(id)) $(id).textContent = value; };
     set("profileVideoCount", regular.length);
-    set("profileReelCount", reels.length);
-    set("profileFollowerCount", follows.filter(f => String(f.following_id) === String(profileId)).length);
+    set("profileShortCount", reels.length);
+    set("profileFollowerCount", getDisplayedFollowerCount(profileId));
     set("profileFollowingCount", follows.filter(f => String(f.follower_id) === String(profileId)).length);
     set("profilePostCount", myPosts.length);
 
@@ -2735,6 +2927,80 @@ function renderProfile() {
     renderProfileTab(profileMode);
 }
 
+
+function openFollowList(kind) {
+    const profileId = currentProfileUserId || currentUser?.id;
+    if (!profileId) return;
+
+    followListProfileId = String(profileId);
+    followListKind = kind === "following" ? "following" : "followers";
+
+    const profile = getUser(followListProfileId);
+    const username = profile?.username || getUsername(followListProfileId);
+    const isFollowers = followListKind === "followers";
+
+    if ($("followListTitle")) $("followListTitle").textContent = isFollowers ? "Followers" : "Following";
+    if ($("followListSubtitle")) $("followListSubtitle").textContent = "@" + username;
+    if ($("followListSearch")) $("followListSearch").value = "";
+
+    renderFollowList();
+    showModal("followListModal");
+}
+
+function renderFollowList() {
+    const body = $("followListBody");
+    if (!body || !followListProfileId) return;
+
+    const isFollowers = followListKind === "followers";
+    const ids = [...new Set(follows
+        .filter(f => isFollowers
+            ? String(f.following_id) === String(followListProfileId)
+            : String(f.follower_id) === String(followListProfileId))
+        .map(f => String(isFollowers ? f.follower_id : f.following_id))
+    )];
+
+    const query = ($("followListSearch")?.value || "").trim().toLowerCase();
+    const people = ids
+        .map(id => getUser(id))
+        .filter(Boolean)
+        .filter(user => !query || [user.username, user.bio].join(" ").toLowerCase().includes(query))
+        .sort((a, b) => String(a.username || "").localeCompare(String(b.username || "")));
+
+    if (!people.length) {
+        const message = query
+            ? "No creators match your search."
+            : isFollowers
+                ? "This creator has no followers yet."
+                : "This creator is not following anyone yet.";
+        body.innerHTML = `<div class="follow-list-empty"><strong>${esc(message)}</strong><span>Creator connections will appear here.</span></div>`;
+        return;
+    }
+
+    body.innerHTML = people.map(user => {
+        const username = user.username || getUsername(user.id);
+        const following = isFollowing(user.id);
+        const action = isOwnContent(user.id)
+            ? '<span class="follow-list-you">You</span>'
+            : `<button type="button" class="${following ? "soft-btn" : "primary-btn"} follow-list-action" data-follow-user="${esc(user.id)}">${following ? "Following" : "Follow"}</button>`;
+
+        return `
+            <div class="follow-list-row">
+                <button type="button" class="follow-list-person" data-profile-user="${esc(user.id)}">
+                    ${avatar(username, "lg", user.avatar_path || "")}
+                    <span class="follow-list-copy">
+                        <strong>${esc(username)}</strong>
+                        <small>${esc(user.bio || "GoCat creator")}</small>
+                    </span>
+                </button>
+                ${action}
+            </div>`;
+    }).join("");
+}
+
+listen("profileFollowersOpen", "click", () => openFollowList("followers"));
+listen("profileFollowingOpen", "click", () => openFollowList("following"));
+listen("followListSearch", "input", renderFollowList);
+
 function renderProfileTab(tab) {
     profileMode = tab;
 
@@ -2755,6 +3021,7 @@ listen("editProfileForm", "submit", async function (event) {
 
     const username = $("editUsername")?.value.trim() || "";
     const bio = $("editBio")?.value.trim() || "";
+    const channelTheme = $("editChannelTheme")?.value || "emerald";
     const avatarFile = $("editAvatarFile")?.files?.[0];
 
     if (username.length < 3) return showToast("Username must have at least 3 characters.");
@@ -2769,8 +3036,8 @@ listen("editProfileForm", "submit", async function (event) {
             const upload = await db.storage.from("profile-avatars").upload(avatarPath, avatarFile, { upsert: true, contentType: avatarFile.type });
             if (upload.error) throw upload.error;
         }
-        const result = await db.from("users").update({ username, bio, avatar_path: avatarPath })
-            .eq("id", currentUser.id).select("id,username,bio,avatar_path,created_at").single();
+        const result = await db.from("users").update({ username, bio, avatar_path: avatarPath, channel_theme: channelTheme })
+            .eq("id", currentUser.id).select("id,username,bio,avatar_path,created_at,channel_theme").single();
         if (result.error) throw result.error;
 
         currentProfile = result.data;
@@ -3029,6 +3296,193 @@ function getMutualFriends() {
     return users.filter(u => !isOwnContent(u.id) && following.includes(String(u.id)) && followers.includes(String(u.id)));
 }
 
+
+function openIncomingShareDatabase() {
+    return new Promise((resolve, reject) => {
+        if (!window.indexedDB) return reject(new Error("This browser cannot open GoCat's share inbox."));
+        const request = window.indexedDB.open(EXTERNAL_SHARE_DB_NAME, 1);
+        request.onupgradeneeded = () => {
+            if (!request.result.objectStoreNames.contains("incoming")) {
+                request.result.createObjectStore("incoming", { keyPath: "id" });
+            }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error("Could not open GoCat's share inbox."));
+    });
+}
+
+async function readIncomingShareRecord() {
+    const database = await openIncomingShareDatabase();
+    return new Promise((resolve, reject) => {
+        const transaction = database.transaction("incoming", "readonly");
+        const request = transaction.objectStore("incoming").get("latest");
+        let record = null;
+        request.onsuccess = () => { record = request.result || null; };
+        transaction.oncomplete = () => { database.close(); resolve(record); };
+        transaction.onerror = () => { database.close(); reject(transaction.error || new Error("Could not read the share inbox.")); };
+    });
+}
+
+async function removeIncomingShareRecord() {
+    const database = await openIncomingShareDatabase();
+    return new Promise((resolve, reject) => {
+        const transaction = database.transaction("incoming", "readwrite");
+        transaction.objectStore("incoming").delete("latest");
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => { database.close(); reject(transaction.error || new Error("Could not clear the share inbox.")); };
+    });
+}
+
+function incomingShareMessage(record) {
+    const title = String(record.title || "").trim();
+    const text = String(record.text || "").trim();
+    const url = String(record.url || "").trim();
+    const parts = [];
+    if (title && text && !text.toLowerCase().includes(title.toLowerCase())) parts.push(title);
+    if (text) parts.push(text);
+    if (url && !text.includes(url)) parts.push(url);
+    return parts.join("\n").slice(0, 10000);
+}
+
+async function activateIncomingShareInbox() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("gocatShareInboxError")) {
+        params.delete("gocatShareInboxError");
+        const cleanUrl = window.location.pathname + (params.toString() ? "?" + params.toString() : "") + window.location.hash;
+        window.history.replaceState({}, "", cleanUrl);
+        showToast("GoCat could not receive that share. Try opening GoCat and attaching the file from your device.");
+        return;
+    }
+
+    try {
+        if (!pendingExternalShare) pendingExternalShare = await readIncomingShareRecord();
+        if (!pendingExternalShare) return;
+
+        const draft = pendingExternalShare;
+        if (draft.error) {
+            await removeIncomingShareRecord();
+            pendingExternalShare = null;
+            return showToast(draft.error);
+        }
+
+        if (draft.file && !draft.fileObject) {
+            const blob = draft.file;
+            const file = new File([blob], draft.fileName || "shared-file", {
+                type: draft.fileType || blob.type || "",
+                lastModified: Number(draft.fileLastModified || Date.now())
+            });
+            if (file.size > MAX_CHAT_ATTACHMENT_BYTES) {
+                await removeIncomingShareRecord();
+                pendingExternalShare = null;
+                return showToast("This file is larger than GoCat's current 50 MB per-file limit.");
+            }
+            if (!chatFileTypeAllowed(file)) {
+                await removeIncomingShareRecord();
+                pendingExternalShare = null;
+                return showToast("This file type is not supported in GoCat chat yet. Try a photo, video, audio file, PDF, ZIP or Office document.");
+            }
+            draft.fileObject = file;
+        }
+
+        if (!currentUser) {
+            showToast("Your shared item is saved. Sign in to send it in a GoCat chat.");
+            return;
+        }
+
+        if (params.has("gocatShareInbox")) {
+            params.delete("gocatShareInbox");
+            const cleanUrl = window.location.pathname + (params.toString() ? "?" + params.toString() : "") + window.location.hash;
+            window.history.replaceState({}, "", cleanUrl);
+        }
+
+        openPage("chats");
+        showToast(draft.notice || "Shared item received. Choose a mutual follower, then tap Send.");
+    } catch (error) {
+        console.warn("GoCat incoming share:", error);
+        showToast("GoCat could not open the shared item. You can still attach it from your device.");
+    }
+}
+
+function applyPendingExternalShare() {
+    if (!pendingExternalShare || !currentChatUserId) return;
+
+    const message = incomingShareMessage(pendingExternalShare);
+    const input = $("messageInput");
+    if (input && message) input.value = message;
+
+    const file = pendingExternalShare.fileObject || null;
+    if (file) {
+        selectedChatAttachment = file;
+        if ($("chatAttachmentPreview")) $("chatAttachmentPreview").classList.remove("hidden");
+        if ($("chatAttachmentName")) $("chatAttachmentName").textContent =
+            file.name + " · " + (file.size / 1048576).toFixed(2) + " MB";
+        if ($("chatUploadStatus")) $("chatUploadStatus").textContent = "Shared item ready · Review it before sending";
+    }
+
+    pendingExternalShare.applied = true;
+    showToast("Shared item ready for " + getUsername(currentChatUserId) + ". Review it, then tap Send.");
+}
+
+async function uploadChatAttachment(file, path, onProgress) {
+    const directUpload = async () => {
+        const result = await db.storage.from(CHAT_BUCKET).upload(path, file, {
+            cacheControl: "3600",
+            contentType: file.type || "application/octet-stream",
+            upsert: false
+        });
+        if (result.error) throw result.error;
+        if (onProgress) onProgress(100);
+        return result.data || { path };
+    };
+
+    if (file.size <= 6 * 1024 * 1024) return directUpload();
+
+    const sessionResult = await db.auth.getSession();
+    if (sessionResult.error) throw sessionResult.error;
+    const session = sessionResult.data.session;
+    if (!session?.access_token) throw new Error("Your session expired. Sign in again.");
+
+    try {
+        await loadTusLibrary();
+    } catch (error) {
+        console.warn("Chat TUS uploader unavailable; using standard upload:", error.message);
+        return directUpload();
+    }
+
+    const projectId = new URL(SUPABASE_URL).hostname.split(".")[0];
+    const endpoint = "https://" + projectId + ".storage.supabase.co/storage/v1/upload/resumable";
+
+    try {
+        await new Promise((resolve, reject) => {
+            const upload = new window.tus.Upload(file, {
+                endpoint,
+                retryDelays: [0, 3000, 5000, 10000],
+                headers: { authorization: "Bearer " + session.access_token, apikey: SUPABASE_KEY },
+                uploadDataDuringCreation: true,
+                removeFingerprintOnSuccess: true,
+                chunkSize: 6 * 1024 * 1024,
+                metadata: {
+                    bucketName: CHAT_BUCKET,
+                    objectName: path,
+                    contentType: file.type || "application/octet-stream",
+                    cacheControl: "3600"
+                },
+                onError: reject,
+                onProgress: (done, total) => {
+                    if (onProgress) onProgress(Math.max(0, Math.min(99, Math.round(done / total * 100))));
+                },
+                onSuccess: resolve
+            });
+            upload.start();
+        });
+        if (onProgress) onProgress(100);
+        return { path };
+    } catch (error) {
+        console.warn("Chat resumable upload failed; retrying with standard upload:", error);
+        return directUpload();
+    }
+}
+
 function renderChatFriends() {
     const container = $("chatFriends");
     if (!container) return;
@@ -3083,6 +3537,7 @@ async function openChat(userId) {
     }
 
     currentChatUserId = userId;
+    resetChatAttachmentSelection();
     if (chatRealtimeChannel) db.removeChannel(chatRealtimeChannel);
     const channelName = "gocat-chat-" + [String(currentUser.id), String(userId)].sort().join("-");
     chatRealtimeChannel = db.channel(channelName, { config: { presence: { key: String(currentUser.id) } } })
@@ -3126,8 +3581,39 @@ async function openChat(userId) {
     if ($("chatTypingStatus")) $("chatTypingStatus").textContent = "";
     if ($("messageInput")) $("messageInput").disabled = false;
     if ($("sendMessageBtn")) $("sendMessageBtn").disabled = false;
+    if ($("chatAttachBtn")) $("chatAttachBtn").disabled = false;
     renderChatFriends();
     await loadMessages();
+    applyPendingExternalShare();
+}
+
+function chatAttachmentMarkup(message, signedUrl) {
+    if (!message.attachment_path) return "";
+    const name = esc(message.attachment_name || "Shared attachment");
+    const mime = String(message.attachment_mime || "");
+    const size = Number(message.attachment_size || 0);
+    const sizeLabel = size ? (size / 1048576 < 1
+        ? Math.max(1, Math.round(size / 1024)) + " KB"
+        : (size / 1048576).toFixed(1) + " MB") : "File";
+    if (!signedUrl) {
+        return '<div class="chat-file-card"><span>▧</span><div><strong>' + name +
+            '</strong><small>Attachment link unavailable. Refresh the conversation.</small></div></div>';
+    }
+    const safeUrl = esc(signedUrl);
+    if (mime.startsWith("image/")) {
+        return '<a class="chat-image-attachment" href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">' +
+            '<img src="' + safeUrl + '" alt="' + name + '" loading="lazy">' +
+            '<span>' + name + ' · ' + sizeLabel + '</span></a>';
+    }
+    if (mime.startsWith("video/")) {
+        return '<div class="chat-media-attachment"><video controls playsinline preload="metadata" src="' + safeUrl + '"></video>' +
+            '<a href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">' + name + ' · ' + sizeLabel + '</a></div>';
+    }
+    if (mime.startsWith("audio/")) {
+        return '<div class="chat-audio-attachment"><strong>' + name + '</strong><audio controls preload="none" src="' + safeUrl + '"></audio></div>';
+    }
+    return '<a class="chat-file-card" href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">' +
+        '<span>↧</span><div><strong>' + name + '</strong><small>' + sizeLabel + ' · Open file</small></div></a>';
 }
 
 async function loadMessages() {
@@ -3141,35 +3627,163 @@ async function loadMessages() {
     const result = await db.from("messages").select("*").or(filter).order("created_at", { ascending: true }).limit(200);
     if (result.error) {
         console.error(result.error);
-        container.innerHTML = `
-            <div class="chat-empty-state">
-                <span class="chat-empty-icon">!</span>
-                <strong>Messages could not load</strong>
-                <p>Check the messages table and its access policies, then try again.</p>
-            </div>`;
+        container.innerHTML = '<div class="chat-empty-state"><span class="chat-empty-icon">!</span>' +
+            '<strong>Messages could not load</strong><p>Check the messages table and its access policies, then try again.</p></div>';
         return;
     }
+
     const messages = result.data || [];
-    container.innerHTML = messages.length ? messages.map(m => {
-        const mine = String(m.sender_id) === String(currentUser.id);
-        const body = esc(m.content ?? m.text ?? "").replace(/\n/g, "<br>");
-        return '<div class="chat-bubble ' + (mine ? "mine" : "") + '">' +
-            body + '<time>' + formatDate(m.created_at) + " " + (mine ? (m.is_read ? "· Seen" : "· Sent") : "") + '</time></div>';
-    }).join("") : `
-        <div class="chat-empty-state">
-            <span class="chat-empty-icon">✦</span>
-            <strong>Start the conversation</strong>
-            <p>Send a message to say hello. Only you and this creator can see this chat.</p>
-        </div>`;
+    currentChatMessages = messages;
+    chatSignedUrls = new Map();
+    const attachmentPaths = Array.from(new Set(messages
+        .map(message => message.attachment_path)
+        .filter(path => typeof path === "string" && path.trim())));
+
+    if (attachmentPaths.length) {
+        const signed = await db.storage.from(CHAT_BUCKET).createSignedUrls(attachmentPaths, 3600);
+        if (signed.error) {
+            console.warn("Chat attachment links could not be created:", signed.error.message);
+        } else {
+            (signed.data || []).forEach(item => {
+                if (item.path && item.signedUrl) chatSignedUrls.set(item.path, item.signedUrl);
+            });
+        }
+    }
+
+    container.innerHTML = messages.length ? messages.map(message => {
+        const mine = String(message.sender_id) === String(currentUser.id);
+        const body = esc(message.content ?? message.text ?? "").replace(/\n/g, "<br>");
+        const file = chatAttachmentMarkup(message, chatSignedUrls.get(message.attachment_path));
+        const shareButton = '<button type="button" class="chat-bubble-share" data-chat-share-message="' +
+            esc(message.id) + '" title="Share this message outside GoCat">Share outside ↗</button>';
+        return '<article class="chat-bubble ' + (mine ? "mine" : "") + '">' +
+            (body ? '<div class="chat-message-body">' + body + '</div>' : "") +
+            file +
+            '<div class="chat-bubble-footer"><time>' + formatDate(message.created_at) + " " +
+            (mine ? (message.is_read ? "· Seen" : "· Sent") : "") + '</time>' + shareButton + '</div></article>';
+    }).join("") : '<div class="chat-empty-state"><span class="chat-empty-icon">✦</span>' +
+        '<strong>Start the conversation</strong><p>Send a message, photo, video, audio clip or document. Only you and this creator can see this chat.</p></div>';
+
     if (nearBottom) container.scrollTop = container.scrollHeight;
 
-    const unread = messages.filter(m => String(m.recipient_id) === String(currentUser.id) && !m.is_read).map(m => m.id);
+    const unread = messages.filter(message =>
+        String(message.recipient_id) === String(currentUser.id) && !message.is_read
+    ).map(message => message.id);
+
     if (unread.length) {
-        const readResult = await db.from("messages").update({ is_read: true, read_at: new Date().toISOString() })
-            .in("id", unread).eq("recipient_id", currentUser.id);
+        const readResult = await db.from("messages").update({
+            is_read: true,
+            read_at: new Date().toISOString()
+        }).in("id", unread).eq("recipient_id", currentUser.id);
         if (readResult.error) console.warn("Read receipts:", readResult.error.message);
     }
 }
+
+function resetChatAttachmentSelection() {
+    selectedChatAttachment = null;
+    if ($("chatAttachmentFile")) $("chatAttachmentFile").value = "";
+    if ($("chatAttachmentPreview")) $("chatAttachmentPreview").classList.add("hidden");
+    if ($("chatAttachmentName")) $("chatAttachmentName").textContent = "";
+    if ($("chatUploadStatus")) $("chatUploadStatus").textContent = "Files from this device or other apps · Max 50 MB";
+}
+
+function chatFileTypeAllowed(file) {
+    const mime = String(file && file.type || "").toLowerCase();
+    const extension = String(file && file.name || "").split(".").pop().toLowerCase();
+    if (mime && CHAT_ALLOWED_TYPES.has(mime)) return true;
+    if (mime) return false;
+    return ["jpg","jpeg","png","webp","gif","avif","mp4","webm","mov","mp3","m4a","ogg","wav","pdf","txt","csv","zip","doc","docx","xls","xlsx","ppt","pptx"]
+        .includes(extension);
+}
+
+listen("chatAttachBtn", "click", () => {
+    if (!requireAuth("send an attachment")) return;
+    if (!currentChatUserId) return showToast("Choose a conversation first.");
+    $("chatAttachmentFile")?.click();
+});
+
+listen("chatAttachmentFile", "change", function () {
+    const file = this.files?.[0] || null;
+    selectedChatAttachment = null;
+    if (!file) return resetChatAttachmentSelection();
+    if (file.size > MAX_CHAT_ATTACHMENT_BYTES) {
+        resetChatAttachmentSelection();
+        return showToast("Chat attachments must be 50 MB or smaller on the current GoCat storage plan.");
+    }
+    if (!chatFileTypeAllowed(file)) {
+        resetChatAttachmentSelection();
+        return showToast("This file type is not supported in GoCat chat.");
+    }
+    selectedChatAttachment = file;
+    if ($("chatAttachmentPreview")) $("chatAttachmentPreview").classList.remove("hidden");
+    if ($("chatAttachmentName")) $("chatAttachmentName").textContent =
+        file.name + " · " + (file.size / 1048576).toFixed(2) + " MB";
+    if ($("chatUploadStatus")) $("chatUploadStatus").textContent = "Attachment ready to send.";
+});
+
+listen("chatClearAttachment", "click", resetChatAttachmentSelection);
+
+async function shareChatMessageOutside(messageId) {
+    if (!currentUser || !currentChatUserId) return;
+    const message = currentChatMessages.find(item => String(item.id) === String(messageId));
+    if (!message) return showToast("That message is no longer loaded.");
+
+    let shareText = String(message.content || "").trim();
+    let shareUrl = "";
+    if (message.attachment_path) {
+        if (!confirm("This creates a temporary link that anyone with the link can open for up to one hour. Continue?")) return;
+        const signed = await db.storage.from(CHAT_BUCKET).createSignedUrl(message.attachment_path, 3600);
+        if (signed.error) return showToast("Could not create a sharing link: " + signed.error.message);
+        shareUrl = signed.data && signed.data.signedUrl || "";
+        if (!shareUrl) return showToast("GoCat could not create the sharing link.");
+        shareText = [shareText, message.attachment_name || "GoCat attachment"].filter(Boolean).join("\n");
+    }
+
+    if (!shareText && !shareUrl) return showToast("There is nothing to share.");
+    const title = "A message from " + getUsername(message.sender_id) + " on GoCat";
+    const data = {
+        title: title,
+        text: shareText || "Shared from GoCat",
+        ...(shareUrl ? { url: shareUrl } : {})
+    };
+
+    try {
+        if (navigator.share) {
+            await navigator.share(data);
+            return;
+        }
+    } catch (error) {
+        if (error && error.name === "AbortError") return;
+    }
+
+    const copyValue = [shareText, shareUrl].filter(Boolean).join("\n");
+    try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(copyValue);
+        } else {
+            const field = document.createElement("textarea");
+            field.value = copyValue;
+            field.setAttribute("readonly", "");
+            field.style.position = "fixed";
+            field.style.opacity = "0";
+            document.body.appendChild(field);
+            field.select();
+            const copied = document.execCommand("copy");
+            field.remove();
+            if (!copied) throw new Error("Copy is not available in this browser.");
+        }
+        showToast("Message copied. Paste it into another app.");
+    } catch (error) {
+        showToast("Could not share this message: " + error.message);
+    }
+}
+
+document.addEventListener("click", event => {
+    const shareButton = event.target.closest("[data-chat-share-message]");
+    if (!shareButton) return;
+    event.preventDefault();
+    shareChatMessageOutside(shareButton.dataset.chatShareMessage);
+});
 
 listen("chatSearch", "input", renderChatFriends);
 listen("messageInput", "input", function () {
@@ -3198,20 +3812,57 @@ listen("chatForm", "submit", async function (event) {
     if (!requireAuth("send messages")) return;
 
     const text = $("messageInput")?.value.trim() || "";
-    if (!text || !currentChatUserId) return;
+    const file = selectedChatAttachment || $("chatAttachmentFile")?.files?.[0] || null;
+    if (!text && !file) return showToast("Write a message or attach a file.");
+    if (!currentChatUserId) return showToast("Choose a conversation first.");
+    if (!getMutualFriends().some(user => String(user.id) === String(currentChatUserId))) {
+        return showToast("Chat is available to mutual followers only.");
+    }
+    if (file && file.size > MAX_CHAT_ATTACHMENT_BYTES) {
+        return showToast("Chat attachments must be 50 MB or smaller.");
+    }
+    if (file && !chatFileTypeAllowed(file)) {
+        return showToast("This file type is not supported in GoCat chat.");
+    }
 
     const button = $("sendMessageBtn");
     if (button) button.disabled = true;
+    if ($("chatAttachBtn")) $("chatAttachBtn").disabled = true;
 
+    let uploadedPath = null;
     try {
-        const result = await insertWithTextFallback(
-            "messages",
-            { sender_id: currentUser.id, recipient_id: currentChatUserId },
-            text, "text", "content"
-        );
+        const row = {
+            sender_id: String(currentUser.id),
+            recipient_id: String(currentChatUserId),
+            content: text
+        };
+
+        if (file) {
+            if ($("chatUploadStatus")) $("chatUploadStatus").textContent = "Uploading attachment…";
+            const extension = (file.name.split(".").pop() || "bin").toLowerCase().replace(/[^a-z0-9]/g, "") || "bin";
+            const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100) || ("attachment." + extension);
+            const path = String(currentUser.id) + "/" + Date.now() + "-" +
+                Math.random().toString(36).slice(2, 9) + "-" + safeName;
+            const upload = await uploadChatAttachment(file, path, percentage => {
+                if ($("chatUploadStatus")) $("chatUploadStatus").textContent = "Uploading attachment… " + percentage + "%";
+            });
+            uploadedPath = upload && upload.path || path;
+            row.attachment_path = uploadedPath;
+            row.attachment_name = file.name.slice(0, 180);
+            row.attachment_mime = file.type || "application/octet-stream";
+            row.attachment_size = file.size;
+            if ($("chatUploadStatus")) $("chatUploadStatus").textContent = "Sending message…";
+        }
+
+        const result = await db.from("messages").insert(row);
         if (result.error) throw result.error;
 
+        if (pendingExternalShare?.applied) {
+            try { await removeIncomingShareRecord(); } catch (shareError) { console.warn("Shared draft cleanup:", shareError); }
+            pendingExternalShare = null;
+        }
         $("messageInput").value = "";
+        resetChatAttachmentSelection();
         await loadMessages();
         if (chatRealtimeChannel) chatRealtimeChannel.send({
             type: "broadcast", event: "typing",
@@ -3219,13 +3870,20 @@ listen("chatForm", "submit", async function (event) {
         });
 
     } catch (error) {
+        if (uploadedPath) {
+            const removal = await db.storage.from(CHAT_BUCKET).remove([uploadedPath]);
+            if (removal.error) console.warn("Chat attachment cleanup failed:", removal.error.message);
+        }
         showToast("Message failed: " + error.message);
 
     } finally {
         if (button) button.disabled = false;
+        if ($("chatAttachBtn")) $("chatAttachBtn").disabled = false;
+        if ($("chatUploadStatus") && !selectedChatAttachment) {
+            $("chatUploadStatus").textContent = "Files from this device or other apps · Max 50 MB";
+        }
     }
 });
-
 
 /* ---------- 29 NOTIFICATIONS ---------- */
 
@@ -3363,22 +4021,52 @@ async function renderAdminPanel() {
         showToast("This page is only available to the GoCat owner.");
         return openPage("home");
     }
-    const userCount = $("adminUserCount");
-    const videoCount = $("adminVideoCount");
-    const postCount = $("adminPostCount");
-    if (userCount) userCount.textContent = users.length;
-    if (videoCount) videoCount.textContent = videos.length;
-    if (postCount) postCount.textContent = posts.length;
+    if ($("adminUserCount")) $("adminUserCount").textContent = users.length.toLocaleString();
+    if ($("adminVideoCount")) $("adminVideoCount").textContent = videos.length.toLocaleString();
+    if ($("adminPostCount")) $("adminPostCount").textContent = posts.length.toLocaleString();
+    if ($("adminFollowerCount")) $("adminFollowerCount").textContent = follows.length.toLocaleString();
+    if ($("adminFeaturedCount")) {
+        $("adminFeaturedCount").textContent = featuredCreators.filter(item =>
+            !item.expires_at || new Date(item.expires_at).getTime() > Date.now()
+        ).length.toLocaleString();
+    }
+
     const search = ($("adminUserSearch")?.value || "").trim().toLowerCase();
     const list = $("adminUserList");
     if (!list) return;
-    const shown = users.filter(u => (u.username || "").toLowerCase().includes(search));
-    list.innerHTML = shown.map(u => {
-        const banned = !!u.is_banned;
-        return '<div class="admin-user-row"><div><strong>' + esc(u.username || "Creator") + '</strong><small>' + (banned ? 'Suspended' : 'Active') + '</small></div><div class="admin-user-actions">' +
-          '<button class="soft-btn" data-admin-edit-user="' + esc(u.id) + '">Edit profile</button>' +
-          (String(u.id) === String(currentUser.id) ? '' : '<button class="' + (banned ? 'soft-btn' : 'danger-outline-btn') + '" data-admin-ban-user="' + esc(u.id) + '" data-ban-state="' + (banned ? 'true' : 'false') + '">' + (banned ? 'Unban' : 'Ban') + '</button>') +
-          '</div></div>';
+    const shown = users.filter(user => (user.username || "").toLowerCase().includes(search));
+
+    list.innerHTML = shown.map(user => {
+        const banned = !!user.is_banned;
+        const followerCount = getDisplayedFollowerCount(user.id);
+        const realFollowerCount = getActualFollowerCount(user.id);
+        const hasFollowerOverride = followerOverrides.some(row => String(row.user_id) === String(user.id));
+        const followingCount = follows.filter(row => String(row.follower_id) === String(user.id)).length;
+        const uploadCount = videos.filter(video => String(video.owner_id) === String(user.id)).length;
+        const creatorPostCount = posts.filter(post => String(post.user_id) === String(user.id)).length;
+        const featured = isFeaturedCreator(user.id);
+
+        return '<div class="admin-user-row" data-admin-user-row="' + esc(user.id) + '">' +
+            '<div class="admin-user-main"><strong>' + esc(user.username || "Creator") + '</strong>' +
+            '<small>' + (banned ? "Suspended" : "Active") + (featured ? " · ✦ Featured" : "") + '</small>' +
+            '<small>' + followerCount.toLocaleString() + ' followers shown' +
+                (hasFollowerOverride ? ' · ' + realFollowerCount.toLocaleString() + ' real follows' : '') +
+                ' · ' + followingCount.toLocaleString() + ' following</small>' +
+            '<small>' + uploadCount.toLocaleString() + ' videos/Reels · ' +
+                creatorPostCount.toLocaleString() + ' posts</small></div>' +
+            '<div class="admin-user-actions">' +
+            '<button class="soft-btn" data-admin-set-followers="' + esc(user.id) + '">Set follower count</button>' +
+            (hasFollowerOverride ? '<button class="soft-btn" data-admin-reset-followers="' + esc(user.id) + '">Reset to real</button>' : '') +
+            '<button class="soft-btn" data-admin-open-profile="' + esc(user.id) + '">View channel</button>' +
+            '<button class="soft-btn" data-admin-edit-user="' + esc(user.id) + '">Edit profile</button>' +
+            (featured
+                ? '<button class="soft-btn" data-admin-feature-user="' + esc(user.id) + '" data-feature-state="true">Unfeature</button>'
+                : '<button class="soft-btn" data-admin-feature-user="' + esc(user.id) + '" data-feature-state="false">Feature</button>') +
+            (String(user.id) === String(currentUser.id) ? "" :
+                '<button class="' + (banned ? "soft-btn" : "danger-outline-btn") +
+                '" data-admin-ban-user="' + esc(user.id) + '" data-ban-state="' +
+                (banned ? "true" : "false") + '">' + (banned ? "Unban" : "Ban") + '</button>') +
+            '</div></div>';
     }).join("") || '<p class="muted-text">No creators match that search.</p>';
 }
 listen("adminRefreshBtn", "click", async () => {
@@ -3387,6 +4075,59 @@ listen("adminRefreshBtn", "click", async () => {
     catch (error) { showToast("Refresh failed: " + error.message); }
 });
 listen("adminUserSearch", "input", renderAdminPanel);
+
+document.addEventListener("click", async event => {
+    const setButton = event.target.closest("[data-admin-set-followers]");
+    const resetButton = event.target.closest("[data-admin-reset-followers]");
+    if (!setButton && !resetButton) return;
+    if (!currentUser || !isGoCatAdmin) return showToast("Admin access required.");
+
+    const userId = (setButton || resetButton).dataset.adminSetFollowers
+        || (setButton || resetButton).dataset.adminResetFollowers;
+    const user = users.find(item => String(item.id) === String(userId));
+    if (!user) return showToast("Creator was not found.");
+
+    try {
+        if (resetButton) {
+            const result = await db.rpc("gocat_admin_clear_follower_count", {
+                target_user_id: String(user.id)
+            });
+            if (result.error) throw result.error;
+        } else {
+            const currentValue = getDisplayedFollowerCount(user.id);
+            const raw = prompt(
+                "Set the displayed follower total for @" + (user.username || "creator") +
+                ". Enter a whole number from 0 to 2,147,483,647. Actual follows stay unchanged.",
+                String(currentValue)
+            );
+            if (raw === null) return;
+            const cleaned = raw.trim();
+            if (!/^\d+$/.test(cleaned)) {
+                return showToast("Enter a whole number such as 1250.");
+            }
+            const total = Number(cleaned);
+            if (!Number.isSafeInteger(total) || total > 2147483647) {
+                return showToast("Choose a number between 0 and 2,147,483,647.");
+            }
+            const result = await db.rpc("gocat_admin_set_follower_count", {
+                target_user_id: String(user.id),
+                target_count: total
+            });
+            if (result.error) throw result.error;
+        }
+
+        await loadFollows();
+        renderEverything();
+        renderAdminPanel();
+        showToast(resetButton
+            ? "Follower display reset to real follows."
+            : "Displayed follower total updated for @" + (user.username || "creator") + ".");
+    } catch (error) {
+        console.error(error);
+        showToast("Follower total update failed: " + error.message);
+    }
+});
+
 document.addEventListener("click", async event => {
     const edit = event.target.closest("[data-admin-edit-user]");
     const ban = event.target.closest("[data-admin-ban-user]");
@@ -3421,6 +4162,45 @@ document.addEventListener("click", async event => {
         } catch (error) { showToast("Moderation failed: " + error.message); }
     }
 });
+
+
+document.addEventListener("click", async event => {
+    const openProfile = event.target.closest("[data-admin-open-profile]");
+    const featureButton = event.target.closest("[data-admin-feature-user]");
+    if (!openProfile && !featureButton) return;
+    if (!currentUser || !isGoCatAdmin) return showToast("Admin access required.");
+
+    if (openProfile) {
+        currentProfileUserId = openProfile.dataset.adminOpenProfile;
+        openPage("profile");
+        return;
+    }
+
+    const userId = String(featureButton.dataset.adminFeatureUser || "");
+    const shouldRemove = featureButton.dataset.featureState === "true";
+    const user = users.find(item => String(item.id) === userId);
+    if (!user) return;
+    const username = user.username || "this creator";
+    if (!confirm((shouldRemove ? "Remove " : "Feature ") + username +
+        (shouldRemove ? " from GoCat discovery?" : " in GoCat discovery?"))) return;
+
+    try {
+        const result = shouldRemove
+            ? await db.from("gocat_featured_creators").delete().eq("user_id", userId)
+            : await db.from("gocat_featured_creators").insert({
+                user_id: userId,
+                featured_by: String(currentUser.id)
+            });
+        if (result.error) throw result.error;
+        await loadFeaturedCreators();
+        renderSuggestedCreators();
+        renderAdminPanel();
+        showToast(shouldRemove ? "Creator removed from Featured." : "Creator featured in discovery.");
+    } catch (error) {
+        showToast("Featured status could not be changed: " + error.message);
+    }
+});
+
 
 /* ---------- 30 RENDERING AND NAVIGATION ---------- */
 
@@ -3608,7 +4388,7 @@ document.querySelectorAll("[data-close]").forEach(button => {
 
 document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
-    ["commentsModal", "editProfileModal", "uploadModal"].forEach(hideModal);
+    ["commentsModal", "editProfileModal", "uploadModal", "followListModal"].forEach(hideModal);
     closeAuthModal();
     closeSidebar();
 });
