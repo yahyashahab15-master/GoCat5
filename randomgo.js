@@ -30,6 +30,7 @@ const db = window.supabase?.createClient
 let currentUser = null, currentProfile = null, isGoCatAdmin = false;
 let currentProfileUserId = null, currentCommentVideoId = null, currentCommentPostId = null, currentCommentParentId = null, currentChatUserId = null;
 let followListProfileId = null, followListKind = "followers";
+let pendingFollowTargets = new Set();
 let chatRealtimeChannel = null, commentRealtimeChannel = null, feedRealtimeChannel = null;
 let currentChatMessages = [], chatSignedUrls = new Map(), selectedChatAttachment = null, pendingExternalShare = null;
 let liveRefreshTimer = null, chatTypingTimer = null, feedRealtimeReady = false;
@@ -553,15 +554,38 @@ async function loadVideos() {
     }));
 }
 
+async function loadPagedRows(makeQuery, pageSize = 500) {
+    const rows = [];
+    for (let offset = 0; ; offset += pageSize) {
+        const result = await makeQuery().range(offset, offset + pageSize - 1);
+        if (result.error) throw result.error;
+
+        const page = result.data || [];
+        rows.push(...page);
+        if (page.length < pageSize) break;
+    }
+    return rows;
+}
+
 async function loadFollows() {
-    const [result, overrideResult] = await Promise.all([
-        db.from("follows").select("follower_id,following_id"),
-        db.from("gocat_follower_overrides").select("user_id,follower_count")
-    ]);
-    if (result.error) throw result.error;
-    if (overrideResult.error) throw overrideResult.error;
-    follows = result.data || [];
-    followerOverrides = overrideResult.data || [];
+    // Real relationships are the source of truth. Load them first and page
+    // through the table so large follow graphs are not silently truncated.
+    const realFollows = await loadPagedRows(() => db.from("follows")
+        .select("follower_id,following_id")
+        .order("follower_id", { ascending: true })
+        .order("following_id", { ascending: true }));
+    follows = realFollows;
+
+    // Display overrides are an optional owner feature. Their failure must
+    // never hide or break real follow relationships and counts.
+    try {
+        followerOverrides = await loadPagedRows(() => db.from("gocat_follower_overrides")
+            .select("user_id,follower_count")
+            .order("user_id", { ascending: true }));
+    } catch (error) {
+        followerOverrides = [];
+        console.warn("Follower display overrides could not load; using real follow counts:", error.message || error);
+    }
 }
 
 async function loadFeaturedCreators() {
@@ -1052,28 +1076,43 @@ function renderSuggestedCreators() {
 }
 
 async function toggleFollow(userId) {
-    if (!requireAuth("follow creators") || isOwnContent(userId)) return;
+    if (!requireAuth("follow creators")) return;
 
-    const existing = follows.find(f =>
-        String(f.follower_id) === String(currentUser.id) && String(f.following_id) === String(userId));
+    const targetId = String(userId || "").trim();
+    if (!targetId || isOwnContent(targetId) || pendingFollowTargets.has(targetId)) return;
+
+    pendingFollowTargets.add(targetId);
+    document.querySelectorAll("[data-follow-user]").forEach(button => {
+        if (String(button.dataset.followUser) === targetId) {
+            button.disabled = true;
+            button.setAttribute("aria-busy", "true");
+        }
+    });
 
     try {
+        const existing = follows.some(f =>
+            String(f.follower_id) === String(currentUser.id) && String(f.following_id) === targetId);
+
         if (existing) {
             const result = await db.from("follows").delete()
-                .eq("follower_id", currentUser.id).eq("following_id", userId);
+                .eq("follower_id", currentUser.id).eq("following_id", targetId);
             if (result.error) throw result.error;
 
-            follows = follows.filter(f => f !== existing);
-            showToast("Unfollowed " + getUsername(userId));
+            follows = follows.filter(f =>
+                !(String(f.follower_id) === String(currentUser.id) && String(f.following_id) === targetId));
+            showToast("Unfollowed " + getUsername(targetId));
 
         } else {
             const result = await db.from("follows")
-                .insert({ follower_id: currentUser.id, following_id: userId });
+                .insert({ follower_id: currentUser.id, following_id: targetId });
             if (result.error) throw result.error;
 
-            follows.push({ follower_id: currentUser.id, following_id: userId });
-            addLocalNotification("follow", "You started following " + getUsername(userId));
-            showToast("Following " + getUsername(userId));
+            if (!follows.some(f =>
+                String(f.follower_id) === String(currentUser.id) && String(f.following_id) === targetId)) {
+                follows = [...follows, { follower_id: currentUser.id, following_id: targetId }];
+            }
+            addLocalNotification("follow", "You started following " + getUsername(targetId));
+            showToast("Following " + getUsername(targetId));
         }
 
         renderEverything();
@@ -1081,7 +1120,24 @@ async function toggleFollow(userId) {
 
     } catch (error) {
         console.error(error);
+        // Reconcile with the database after a failed or racing request so the
+        // button and profile counts reflect the actual saved relationship.
+        try {
+            await loadFollows();
+            renderEverything();
+            if ($("followListModal") && !$("followListModal").classList.contains("hidden")) renderFollowList();
+        } catch (syncError) {
+            console.warn("Could not refresh follows after a failed action:", syncError.message || syncError);
+        }
         showToast("Follow error: " + error.message);
+    } finally {
+        pendingFollowTargets.delete(targetId);
+        document.querySelectorAll("[data-follow-user]").forEach(button => {
+            if (String(button.dataset.followUser) === targetId) {
+                button.disabled = false;
+                button.removeAttribute("aria-busy");
+            }
+        });
     }
 }
 
