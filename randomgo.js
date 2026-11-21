@@ -764,6 +764,7 @@ function videoCard(video) {
         <article class="video-card">
             <div class="video-player-wrap">
                 <video class="video-player" src="${esc(getVideoURL(video.storage_path))}#t=0.1"
+                    ${video.thumbnail_path ? 'poster="' + esc(getVideoURL(video.thumbnail_path)) + '"' : ""}
                     controls playsinline preload="metadata" data-play-video="${esc(video.id)}"></video>
             </div>
 
@@ -816,7 +817,7 @@ function postCard(post) {
     const isOwnPost = String(post.user_id) === String(currentUser?.id);
 
     return `
-        <article class="post-card">
+        <article class="post-card" data-post-id="${esc(post.id)}">
             <div class="post-head">
                 ${avatar(username, "", getUser(post.user_id)?.avatar_path || "")}
                 <div class="post-meta">
@@ -833,6 +834,7 @@ function postCard(post) {
             <div class="post-actions">
                 ${pill("heart", post.likes?.length || 0, `data-like-post="${esc(post.id)}"`, liked ? "liked" : "")}
                 ${pill("message", post.comments?.length || 0, `data-comments-post="${esc(post.id)}"`)}
+                ${pill("share", "Share", `data-share-post="${esc(post.id)}"`)}
             </div>
         </article>
     `;
@@ -843,7 +845,9 @@ function homeReelCard(video) {
         <article class="home-short-card">
             <button class="home-short-open" data-open-reel-id="${esc(video.id)}">
                 <div class="home-short-thumb">
-                    <video src="${esc(getVideoURL(video.storage_path))}#t=0.1" muted playsinline preload="metadata"></video>
+                    <video src="${esc(getVideoURL(video.storage_path))}#t=0.1"
+                        ${video.thumbnail_path ? 'poster="' + esc(getVideoURL(video.thumbnail_path)) + '"' : ""}
+                        muted playsinline preload="metadata"></video>
                     <div class="home-short-grad"></div>
                     <strong class="home-short-title">${esc(video.title)}</strong>
                 </div>
@@ -1192,7 +1196,7 @@ function beginCommentReply(commentId) {
 /* ---------- 13 SHARE AND DELETE VIDEO ---------- */
 
 async function shareVideo(videoId) {
-    const url = location.origin + location.pathname + "?video=" + encodeURIComponent(videoId);
+    const url = location.origin + "/share/video/" + encodeURIComponent(videoId);
 
     try {
         if (navigator.share) {
@@ -1215,16 +1219,51 @@ function scrollToVideo(videoId) {
     }, 300);
 }
 
-function checkSharedVideoLink() {
-    const videoId = new URLSearchParams(location.search).get("video");
-    if (!videoId) return;
+function scrollToPost(postId) {
+    setTimeout(() => {
+        document.querySelector(`[data-post-id="${CSS.escape(String(postId))}"]`)
+            ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 300);
+}
 
+async function sharePost(postId) {
+    const post = posts.find(item => String(item.id) === String(postId));
+    if (!post) return showToast("That post could not be found.");
+    const url = location.origin + "/share/post/" + encodeURIComponent(post.id);
+    const title = (post.content || "A post on GoCat").trim().slice(0, 120);
+    try {
+        if (navigator.share) {
+            await navigator.share({ title: title, text: "See this post on GoCat.", url });
+        } else if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(url);
+            showToast("Post link copied");
+        } else {
+            showToast("Sharing is not supported here.");
+        }
+    } catch (error) {
+        if (error.name !== "AbortError") showToast("Sharing failed.");
+    }
+}
+
+function checkSharedVideoLink() {
+    const params = new URLSearchParams(location.search);
+    const postId = params.get("post");
+    if (postId) {
+        const postIndex = posts.findIndex(item => String(item.id) === String(postId));
+        if (postIndex < 0) return showToast("That GoCat post could not be found.");
+        // Shared posts can be older than the first visible batch.
+        postsVisible = Math.max(postsVisible, postIndex + 1);
+        openPage("posts");
+        scrollToPost(posts[postIndex].id);
+        return;
+    }
+
+    const videoId = params.get("video");
+    if (!videoId) return;
     const video = videos.find(v => String(v.id) === String(videoId));
     if (!video) return showToast("That video could not be found.");
-
-    if (isReel(video)) {
-        openSpecificReel(video.id);
-    } else {
+    if (isReel(video)) openSpecificReel(video.id);
+    else {
         openPage("home");
         scrollToVideo(video.id);
     }
@@ -1256,6 +1295,9 @@ function renderReels() {
     if (!container) return;
 
     const allReels = videos.filter(isReel).sort((a, b) => {
+        if (window.gocatFeedMode?.() === "latest") {
+            return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+        }
         const rank = window.gocatRecommendationScore;
         return typeof rank === "function"
             ? rank(b, "video") - rank(a, "video")
@@ -1283,6 +1325,7 @@ function renderReels() {
         return `
             <article class="reel-item" data-reel-item="${esc(video.id)}">
                 <video class="reel-video" src="${esc(getVideoURL(video.storage_path))}"
+                    ${video.thumbnail_path ? 'poster="' + esc(getVideoURL(video.thumbnail_path)) + '"' : ""}
                     playsinline loop ${settings.muted ? "muted" : ""} preload="metadata"
                     data-play-video="${esc(video.id)}"></video>
 
@@ -1359,6 +1402,9 @@ listen("reelsLoadMore", "click", () => { reelsVisible += PAGE_SIZE; renderReels(
 
 function openSpecificReel(videoId) {
     const rankedReels = videos.filter(isReel).sort((a, b) => {
+        if (window.gocatFeedMode?.() === "latest") {
+            return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+        }
         const rank = window.gocatRecommendationScore;
         return typeof rank === "function"
             ? rank(b, "video") - rank(a, "video")
@@ -2033,8 +2079,13 @@ listen("exportReelBtn", "click", async function () {
 
     const canvasStream = canvas.captureStream(fps);
 
-    const mimeType = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"]
-        .find(t => MediaRecorder.isTypeSupported(t));
+    const mimeType = [
+        "video/webm;codecs=vp9",
+        "video/webm;codecs=vp8",
+        "video/webm",
+        "video/mp4;codecs=avc1.42E01E",
+        "video/mp4"
+    ].find(type => MediaRecorder.isTypeSupported(type));
 
     if (!mimeType) {
         canvasStream.getTracks().forEach(t => t.stop());
@@ -2106,7 +2157,11 @@ listen("exportReelBtn", "click", async function () {
         const blob = new Blob(chunks, { type: mimeType });
         if (!blob.size) throw new Error("The exported video is empty.");
 
-        exportedReelFile = new File([blob], "gocat-short.webm", { type: mimeType, lastModified: Date.now() });
+        const outputExtension = mimeType.startsWith("video/mp4") ? "mp4" : "webm";
+        exportedReelFile = new File([blob], "gocat-short." + outputExtension, {
+            type: mimeType,
+            lastModified: Date.now()
+        });
 
         if ($("selectedVideoName")) {
             $("selectedVideoName").textContent = exportedReelFile.name + ", " + (blob.size / 1048576).toFixed(2) + " MB";
@@ -2244,6 +2299,73 @@ async function uploadVideoFile(file, path, progress) {
 }
 
 
+/* Create a lightweight preview image from the selected local video.
+   This is best-effort: publishing must still work when a browser codec cannot
+   decode a particular file or canvas thumbnail export is unavailable. */
+async function generateVideoThumbnail(file) {
+    if (!file || !String(file.type || "").startsWith("video/")) return null;
+    const objectUrl = URL.createObjectURL(file);
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "metadata";
+    video.src = objectUrl;
+
+    const waitFor = (eventName, timeoutMs = 10000) => new Promise((resolve, reject) => {
+        const cleanup = () => {
+            video.removeEventListener(eventName, onSuccess);
+            video.removeEventListener("error", onError);
+            clearTimeout(timer);
+        };
+        const onSuccess = () => { cleanup(); resolve(); };
+        const onError = () => { cleanup(); reject(new Error("The browser could not read this video.")); };
+        const timer = setTimeout(() => {
+            cleanup();
+            reject(new Error("Video preview generation timed out."));
+        }, timeoutMs);
+        video.addEventListener(eventName, onSuccess, { once: true });
+        video.addEventListener("error", onError, { once: true });
+    });
+
+    try {
+        await waitFor("loadedmetadata");
+        const targetTime = Number.isFinite(video.duration) && video.duration > 0
+            ? Math.min(1, video.duration * 0.15)
+            : 0;
+        if (targetTime > 0) {
+            const seeked = waitFor("seeked", 8000);
+            video.currentTime = targetTime;
+            await seeked;
+        } else {
+            await waitFor("loadeddata", 8000);
+        }
+
+        const width = video.videoWidth || 0;
+        const height = video.videoHeight || 0;
+        if (!width || !height) throw new Error("This video has no readable preview frame.");
+
+        const scale = Math.min(1, 1280 / width, 720 / height);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(width * scale));
+        canvas.height = Math.max(1, Math.round(height * scale));
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("Canvas preview is unavailable.");
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.82));
+        if (!blob || !blob.size) throw new Error("The preview image could not be generated.");
+        return new File([blob], "gocat-video-thumbnail.jpg", {
+            type: "image/jpeg",
+            lastModified: Date.now()
+        });
+    } finally {
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+        URL.revokeObjectURL(objectUrl);
+    }
+}
+
 /* ---------- 23 PUBLISH VIDEO OR SHORT ---------- */
 
 async function insertVideoRecord(record) {
@@ -2290,6 +2412,7 @@ listen("uploadForm", "submit", async function (event) {
     let uploaded = false;
     let uploadedProvider = "supabase";
     let uploadedPath = path;
+    let uploadedThumbnailPath = null;
 
     try {
         const uploadResult = await uploadVideoFile(file, path, percent => {
@@ -2301,6 +2424,25 @@ listen("uploadForm", "submit", async function (event) {
         uploadedProvider = uploadResult.provider || "supabase";
         uploadedPath = uploadResult.path || path;
 
+        // Save preview images in the same public videos bucket. The existing
+        // storage policy checks the first folder against the signed-in user ID.
+        try {
+            const thumbnailFile = await generateVideoThumbnail(file);
+            if (thumbnailFile) {
+                const thumbnailObjectPath = currentUser.id + "/thumbnails/" +
+                    Date.now() + "-" + Math.random().toString(36).slice(2, 9) + ".jpg";
+                const thumbnailUpload = await db.storage.from(VIDEO_BUCKET).upload(
+                    thumbnailObjectPath,
+                    thumbnailFile,
+                    { cacheControl: "31536000", contentType: "image/jpeg", upsert: false }
+                );
+                if (thumbnailUpload.error) throw thumbnailUpload.error;
+                uploadedThumbnailPath = thumbnailUpload.data?.path || thumbnailObjectPath;
+            }
+        } catch (thumbnailError) {
+            console.warn("GoCat video thumbnail skipped:", thumbnailError);
+        }
+
         if ($("uploadStatus")) $("uploadStatus").textContent = "Saving details...";
 
         const insert = await insertVideoRecord({
@@ -2309,6 +2451,7 @@ listen("uploadForm", "submit", async function (event) {
             description,
             topic,
             storage_path: uploadedPath,
+            thumbnail_path: uploadedThumbnailPath,
             views: 0,
             is_short: mode === "short"
         });
@@ -2330,10 +2473,14 @@ listen("uploadForm", "submit", async function (event) {
     } catch (error) {
         console.error("VIDEO UPLOAD ERROR:", error);
 
-        // Remove the orphaned file if the database record could not be saved.
+        // Remove local-storage uploads if the database record could not be saved.
         if (uploaded && uploadedProvider === "supabase") {
             const removal = await db.storage.from(VIDEO_BUCKET).remove([uploadedPath]);
             if (removal.error) console.error("Could not remove failed upload:", removal.error);
+        }
+        if (uploadedThumbnailPath) {
+            const removal = await db.storage.from(VIDEO_BUCKET).remove([uploadedThumbnailPath]);
+            if (removal.error) console.error("Could not remove failed thumbnail:", removal.error);
         }
 
         let message = error?.message || error?.error_description || "Unknown upload error.";
@@ -3480,6 +3627,7 @@ document.addEventListener("click", function (event) {
     if (d.chatUser) return openChat(d.chatUser);
     if (d.likePost) return togglePostLike(d.likePost);
     if (d.commentsPost) return openPostComments(d.commentsPost);
+    if (d.sharePost) return sharePost(d.sharePost);
     if (d.replyComment) { if (requireAuth("reply to comments")) beginCommentReply(d.replyComment); return; }
     if (d.deleteComment) { if (requireAuth("delete comments")) deleteComment(d.deleteComment); return; }
     if (d.editPost) { if (requireAuth("edit posts")) editPost(d.editPost); return; }
