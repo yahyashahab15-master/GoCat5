@@ -326,7 +326,7 @@
             throw new Error("Without Vercel Blob, community photos are limited to 5 MB.");
           }
           const upload = await db.storage.from("post-media").upload(fallbackPath, file, {
-            upsert: false, contentType: file.type
+            upsert: false, contentType: file.type, cacheControl: "31536000"
           });
           if (upload.error) throw upload.error;
           return { provider: "supabase", path: fallbackPath };

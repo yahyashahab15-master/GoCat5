@@ -2527,7 +2527,8 @@ function loadTusLibrary() {
 
 async function standardUpload(file, path) {
     const result = await db.storage.from(VIDEO_BUCKET).upload(path, file, {
-        cacheControl: "3600",
+        // Video paths are unique and immutable, so let each browser reuse the file.
+        cacheControl: "31536000",
         upsert: false,
         contentType: file.type || "video/mp4"
     });
@@ -2580,7 +2581,7 @@ async function uploadVideoFile(file, path, progress) {
                         bucketName: VIDEO_BUCKET,
                         objectName: path,
                         contentType: file.type || "video/mp4",
-                        cacheControl: "3600"
+                        cacheControl: "31536000"
                     },
                     onError: reject,
                     onProgress: (done, total) => progress(Math.max(0, Math.min(99, Math.round(done / total * 100)))),
@@ -2719,6 +2720,7 @@ listen("uploadForm", "submit", async function (event) {
     let uploadedProvider = "supabase";
     let uploadedPath = path;
     let uploadedThumbnailPath = null;
+    let uploadedThumbnailProvider = "supabase";
 
     try {
         const uploadResult = await uploadVideoFile(file, path, percent => {
@@ -2730,20 +2732,30 @@ listen("uploadForm", "submit", async function (event) {
         uploadedProvider = uploadResult.provider || "supabase";
         uploadedPath = uploadResult.path || path;
 
-        // Save preview images in the same public videos bucket. The existing
-        // storage policy checks the first folder against the signed-in user ID.
+        // Public preview images use the same Blob-first route as other public media.
+        // Fall back to Supabase only when the Blob uploader is not configured.
         try {
             const thumbnailFile = await generateVideoThumbnail(file);
             if (thumbnailFile) {
                 const thumbnailObjectPath = currentUser.id + "/thumbnails/" +
                     Date.now() + "-" + Math.random().toString(36).slice(2, 9) + ".jpg";
-                const thumbnailUpload = await db.storage.from(VIDEO_BUCKET).upload(
-                    thumbnailObjectPath,
+                const thumbnailAsset = await window.GoCatMedia.uploadOrFallback(
                     thumbnailFile,
-                    { cacheControl: "31536000", contentType: "image/jpeg", upsert: false }
+                    { purpose: "post" },
+                    async () => {
+                        const thumbnailUpload = await db.storage.from(VIDEO_BUCKET).upload(
+                            thumbnailObjectPath,
+                            thumbnailFile,
+                            { cacheControl: "31536000", contentType: "image/jpeg", upsert: false }
+                        );
+                        if (thumbnailUpload.error) throw thumbnailUpload.error;
+                        return { provider: "supabase", path: thumbnailUpload.data?.path || thumbnailObjectPath };
+                    }
                 );
-                if (thumbnailUpload.error) throw thumbnailUpload.error;
-                uploadedThumbnailPath = thumbnailUpload.data?.path || thumbnailObjectPath;
+                uploadedThumbnailProvider = thumbnailAsset.provider || "supabase";
+                uploadedThumbnailPath = uploadedThumbnailProvider === "vercel-blob"
+                    ? thumbnailAsset.url
+                    : thumbnailAsset.path;
             }
         } catch (thumbnailError) {
             console.warn("GoCat video thumbnail skipped:", thumbnailError);
@@ -2784,7 +2796,7 @@ listen("uploadForm", "submit", async function (event) {
             const removal = await db.storage.from(VIDEO_BUCKET).remove([uploadedPath]);
             if (removal.error) console.error("Could not remove failed upload:", removal.error);
         }
-        if (uploadedThumbnailPath) {
+        if (uploadedThumbnailPath && uploadedThumbnailProvider === "supabase") {
             const removal = await db.storage.from(VIDEO_BUCKET).remove([uploadedThumbnailPath]);
             if (removal.error) console.error("Could not remove failed thumbnail:", removal.error);
         }
@@ -2835,7 +2847,7 @@ listen("createPostForm", "submit", async function (event) {
                 purpose: "post"
             }, async () => {
                 const upload = await db.storage.from(POST_BUCKET).upload(fallbackPath, imageFile, {
-                    upsert: false, contentType: imageFile.type
+                    upsert: false, contentType: imageFile.type, cacheControl: "31536000"
                 });
                 if (upload.error) throw upload.error;
                 return { provider: "supabase", path: fallbackPath };
@@ -3150,9 +3162,33 @@ listen("editProfileForm", "submit", async function (event) {
     try {
         let avatarPath = currentProfile?.avatar_path || null;
         if (avatarFile) {
-            avatarPath = currentUser.id + "/avatar-" + Date.now() + "." + (avatarFile.type.split("/")[1] || "jpg").replace("jpeg","jpg");
-            const upload = await db.storage.from("profile-avatars").upload(avatarPath, avatarFile, { upsert: true, contentType: avatarFile.type });
-            if (upload.error) throw upload.error;
+            const fallbackAvatarPath = currentUser.id + "/avatar-" + Date.now() + "." +
+                (avatarFile.type.split("/")[1] || "jpg").replace("jpeg", "jpg");
+            const blobImageTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+            if (blobImageTypes.includes(avatarFile.type) && window.GoCatMedia?.uploadOrFallback) {
+                const avatarAsset = await window.GoCatMedia.uploadOrFallback(
+                    avatarFile,
+                    { purpose: "post" },
+                    async () => {
+                        const upload = await db.storage.from("profile-avatars").upload(
+                            fallbackAvatarPath,
+                            avatarFile,
+                            { upsert: true, contentType: avatarFile.type, cacheControl: "31536000" }
+                        );
+                        if (upload.error) throw upload.error;
+                        return { provider: "supabase", path: upload.data?.path || fallbackAvatarPath };
+                    }
+                );
+                avatarPath = avatarAsset.provider === "vercel-blob" ? avatarAsset.url : avatarAsset.path;
+            } else {
+                const upload = await db.storage.from("profile-avatars").upload(
+                    fallbackAvatarPath,
+                    avatarFile,
+                    { upsert: true, contentType: avatarFile.type, cacheControl: "31536000" }
+                );
+                if (upload.error) throw upload.error;
+                avatarPath = upload.data?.path || fallbackAvatarPath;
+            }
         }
         const result = await db.from("users").update({ username, bio, avatar_path: avatarPath, channel_theme: channelTheme })
             .eq("id", currentUser.id).select("id,username,bio,avatar_path,created_at,channel_theme").single();
