@@ -496,17 +496,28 @@
   });
 
   if (db) {
-    communityRealtimeChannel = db.channel("gocat-communities-live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "communities" }, () => {
-        if (currentPage === "communities") { communitiesLoaded = false; renderCommunities(); }
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "community_members" }, () => {
-        if (currentPage === "communities") { communitiesLoaded = false; renderCommunities(); }
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "community_posts" }, () => {
-        if (currentPage === "communities") { communitiesLoaded = false; renderCommunities(); }
-      })
-      .subscribe();
+    // Defer Realtime until the first REST/Auth request has had a chance to
+    // reveal an account-level quota restriction.
+    window.setTimeout(() => {
+      if (window.GoCatServiceGuard?.isSupabaseRestricted?.()) return;
+      communityRealtimeChannel = db.channel("gocat-communities-live")
+        .on("postgres_changes", { event: "*", schema: "public", table: "communities" }, () => {
+          if (!window.GoCatServiceGuard?.isSupabaseRestricted?.() && currentPage === "communities") {
+            communitiesLoaded = false; renderCommunities();
+          }
+        })
+        .on("postgres_changes", { event: "*", schema: "public", table: "community_members" }, () => {
+          if (!window.GoCatServiceGuard?.isSupabaseRestricted?.() && currentPage === "communities") {
+            communitiesLoaded = false; renderCommunities();
+          }
+        })
+        .on("postgres_changes", { event: "*", schema: "public", table: "community_posts" }, () => {
+          if (!window.GoCatServiceGuard?.isSupabaseRestricted?.() && currentPage === "communities") {
+            communitiesLoaded = false; renderCommunities();
+          }
+        })
+        .subscribe();
+    }, 2500);
   }
 
   window.renderGoCatCommunities = renderCommunities;

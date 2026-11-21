@@ -20,8 +20,111 @@ const MAX_VIDEO_BYTES = 500 * 1024 * 1024;
 const MAX_VIDEO_DURATION = 1200;
 const PAGE_SIZE = 5;
 
+// Supabase returns HTTP 402 for every API when the organisation's egress
+// quota restriction is active. Keep a small per-tab circuit breaker so the UI
+// does not hammer a blocked Auth/REST endpoint or keep reconnecting Realtime.
+const SUPABASE_GUARD_KEY = "gocat_supabase_quota_retry_at";
+let supabaseRetryAt = 0;
+let supabaseServiceRestricted = false;
+let supabaseProbeInFlight = false;
+try {
+    supabaseRetryAt = Number(sessionStorage.getItem(SUPABASE_GUARD_KEY) || 0) || 0;
+    supabaseServiceRestricted = supabaseRetryAt > Date.now();
+} catch {}
+
+function renderSupabaseRestrictionBanner() {
+    const app = document.getElementById("app");
+    if (!app) return;
+    const id = "gocatSupabaseRestrictionBanner";
+    let banner = document.getElementById(id);
+    if (!supabaseServiceRestricted) {
+        banner?.remove();
+        return;
+    }
+    if (!banner) {
+        banner = document.createElement("div");
+        banner.id = id;
+        banner.setAttribute("role", "status");
+        banner.style.cssText = "margin:10px auto;padding:12px 16px;max-width:1500px;border:1px solid rgba(220,165,75,.45);border-radius:14px;background:rgba(115,77,20,.18);color:inherit;font-size:13px;line-height:1.5;";
+        app.prepend(banner);
+    }
+    banner.textContent = "GoCat's Supabase service is temporarily restricted because its cached-bandwidth quota was exceeded. Browsing may be limited; login, feeds, uploads and social actions will work again when Supabase restores service. GoCat is pausing repeated requests and will recheck occasionally.";
+}
+
+function makeRestrictedSupabaseResponse() {
+    return new Response(JSON.stringify({
+        code: "SUPABASE_USAGE_RESTRICTED",
+        message: "Supabase is temporarily restricted by the project's cached egress quota."
+    }), {
+        status: 402,
+        headers: { "Content-Type": "application/json" }
+    });
+}
+
+function clearSupabaseRestriction() {
+    supabaseServiceRestricted = false;
+    supabaseRetryAt = 0;
+    try { sessionStorage.removeItem(SUPABASE_GUARD_KEY); } catch {}
+    renderSupabaseRestrictionBanner();
+}
+
+async function guardedSupabaseFetch(input, init) {
+    const now = Date.now();
+    const probing = supabaseServiceRestricted && now >= supabaseRetryAt;
+
+    if (supabaseServiceRestricted && !probing) {
+        return makeRestrictedSupabaseResponse();
+    }
+    if (probing && supabaseProbeInFlight) {
+        return makeRestrictedSupabaseResponse();
+    }
+    if (probing) supabaseProbeInFlight = true;
+
+    try {
+        const response = await window.fetch(input, init);
+        if (response.status === 402) {
+            // Supabase uses 402 for service/billing restrictions. The project
+            // logs confirmed this restriction affects Auth, REST and Realtime;
+            // do not depend on response wording, which can vary by endpoint.
+            supabaseServiceRestricted = true;
+            supabaseRetryAt = Date.now() + 5 * 60 * 1000;
+            try { sessionStorage.setItem(SUPABASE_GUARD_KEY, String(supabaseRetryAt)); } catch {}
+            renderSupabaseRestrictionBanner();
+        } else if (probing && response.status < 500) {
+            clearSupabaseRestriction();
+            // The probe request was allowed through. Re-fetch the sections that
+            // were intentionally held back while this single request tested recovery.
+            window.setTimeout(() => {
+                if (typeof loadAllData === "function") {
+                    loadAllData().then(() => {
+                        if (typeof renderLivePage === "function") renderLivePage();
+                    }).catch(error => console.warn("GoCat recovery refresh:", error.message || error));
+                }
+                if (typeof subscribeToLiveFeed === "function") subscribeToLiveFeed();
+                if (typeof window.renderGoCatStories === "function") window.renderGoCatStories();
+            }, 150);
+        }
+        return response;
+    } catch (error) {
+        if (probing) {
+            supabaseRetryAt = Date.now() + 60 * 1000;
+            try { sessionStorage.setItem(SUPABASE_GUARD_KEY, String(supabaseRetryAt)); } catch {}
+        }
+        throw error;
+    } finally {
+        if (probing) supabaseProbeInFlight = false;
+    }
+}
+
+window.GoCatServiceGuard = {
+    isSupabaseRestricted: () => supabaseServiceRestricted,
+    canProbeSupabase: () => !supabaseServiceRestricted || Date.now() >= supabaseRetryAt
+};
+
 const db = window.supabase?.createClient
-    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+        global: { fetch: guardedSupabaseFetch }
+    })
     : null;
 
 
@@ -644,6 +747,9 @@ async function loadPosts() {
 }
 
 async function loadAllData() {
+    if (supabaseServiceRestricted && Date.now() < supabaseRetryAt) {
+        return ["Supabase service temporarily restricted by cached egress quota"];
+    }
     // Load each area independently so one denied/temporarily unavailable table
     // cannot prevent the homepage and the other sections from appearing.
     const jobs = [
@@ -695,6 +801,7 @@ function queueLiveRefresh(delay = 450) {
     clearTimeout(liveRefreshTimer);
     liveRefreshTimer = setTimeout(async () => {
         if (!db || document.hidden) return;
+        if (supabaseServiceRestricted && Date.now() < supabaseRetryAt) return;
 
         // View-count updates and other realtime events must not reset playback.
         if (activePlaybackVideoId) {
@@ -708,7 +815,7 @@ function queueLiveRefresh(delay = 450) {
 }
 
 function subscribeToLiveFeed() {
-    if (!db) return;
+    if (!db || supabaseServiceRestricted) return;
     if (feedRealtimeChannel) db.removeChannel(feedRealtimeChannel);
     const tables = ["videos", "likes", "comments", "posts", "post_likes", "post_comments", "follows", "gocat_featured_creators", "gocat_follower_overrides"];
     let channel = db.channel("gocat-live-feed");
@@ -728,9 +835,12 @@ function subscribeToLiveFeed() {
 }
 
 setInterval(() => {
-    if (!feedRealtimeReady && !document.hidden && db) queueLiveRefresh(0);
+    if (!feedRealtimeReady && !document.hidden && db &&
+        !(supabaseServiceRestricted && Date.now() < supabaseRetryAt)) queueLiveRefresh(0);
 }, 60000);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) queueLiveRefresh(80); });
+document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && !(supabaseServiceRestricted && Date.now() < supabaseRetryAt)) queueLiveRefresh(80);
+});
 
 
 /* ---------- 08 START APP ---------- */
@@ -752,6 +862,13 @@ async function startGoCat() {
         activateIncomingShareInbox();
     } catch (error) {
         console.error("GoCat startup:", error);
+        if (supabaseServiceRestricted) {
+            // Keep the public shell usable while Supabase is restricted. The
+            // stored browser session is not deleted; sign-in can resume on recovery.
+            await startGuestGoCat();
+            renderSupabaseRestrictionBanner();
+            return;
+        }
         openApp();
         openLoginScreen("Could not load your account: " + (error.message || error));
     }
@@ -774,6 +891,7 @@ async function startGuestGoCat() {
 
     updateUserInterface();
     openApp();
+    renderSupabaseRestrictionBanner();
     subscribeToLiveFeed();
 
     try {
@@ -4491,17 +4609,22 @@ async function initializeGoCat() {
 
     } catch (error) {
         console.error("GOCAT STARTUP ERROR:", error);
-        updateUserInterface();
-        openApp();
-        // The Supabase SDK or session request may fail; still show the Home shell.
-        try {
-            openPage("home");
-        } catch (pageError) {
-            console.warn("Could not render Home during fallback startup:", pageError);
-            currentPage = "home";
-            document.getElementById("page-home")?.classList.remove("hidden");
+        if (supabaseServiceRestricted) {
+            await startGuestGoCat();
+            renderSupabaseRestrictionBanner();
+        } else {
+            updateUserInterface();
+            openApp();
+            // The Supabase SDK or session request may fail; still show the Home shell.
+            try {
+                openPage("home");
+            } catch (pageError) {
+                console.warn("Could not render Home during fallback startup:", pageError);
+                currentPage = "home";
+                document.getElementById("page-home")?.classList.remove("hidden");
+            }
+            showToast("GoCat opened in guest mode. Some content may be unavailable: " + (error.message || error));
         }
-        showToast("GoCat opened in guest mode. Some content may be unavailable: " + (error.message || error));
 
     } finally {
         loader?.classList.add("hide");
