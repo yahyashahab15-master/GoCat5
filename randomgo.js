@@ -83,16 +83,13 @@ async function guardedSupabaseFetch(input, init) {
     try {
         const response = await window.fetch(input, init);
         if (response.status === 402) {
-            const responseText = await response.clone().text().catch(() => "");
-            if (/exceed_cached_egress_quota|cached.?egress|service is restricted/i.test(responseText)) {
-                supabaseServiceRestricted = true;
-                supabaseRetryAt = Date.now() + 5 * 60 * 1000;
-                try { sessionStorage.setItem(SUPABASE_GUARD_KEY, String(supabaseRetryAt)); } catch {}
-                renderSupabaseRestrictionBanner();
-            } else if (probing) {
-                supabaseRetryAt = Date.now() + 60 * 1000;
-                try { sessionStorage.setItem(SUPABASE_GUARD_KEY, String(supabaseRetryAt)); } catch {}
-            }
+            // Supabase uses 402 for service/billing restrictions. The project
+            // logs confirmed this restriction affects Auth, REST and Realtime;
+            // do not depend on response wording, which can vary by endpoint.
+            supabaseServiceRestricted = true;
+            supabaseRetryAt = Date.now() + 5 * 60 * 1000;
+            try { sessionStorage.setItem(SUPABASE_GUARD_KEY, String(supabaseRetryAt)); } catch {}
+            renderSupabaseRestrictionBanner();
         } else if (probing && response.status < 500) {
             clearSupabaseRestriction();
             // The probe request was allowed through. Re-fetch the sections that
