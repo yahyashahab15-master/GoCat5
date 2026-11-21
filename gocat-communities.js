@@ -495,7 +495,7 @@
     if (label) label.textContent = event.target.files?.[0]?.name || "";
   });
 
-  if (db) {
+  if (db && !window.GoCatServiceGuard?.isSupabaseRestricted?.()) {
     communityRealtimeChannel = db.channel("gocat-communities-live")
       .on("postgres_changes", { event: "*", schema: "public", table: "communities" }, () => {
         if (currentPage === "communities") { communitiesLoaded = false; renderCommunities(); }
