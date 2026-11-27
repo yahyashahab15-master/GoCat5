@@ -2753,19 +2753,33 @@ listen("uploadForm", "submit", async function (event) {
             if (thumbnailFile) {
                 const thumbnailObjectPath = currentUser.id + "/thumbnails/" +
                     Date.now() + "-" + Math.random().toString(36).slice(2, 9) + ".jpg";
-                const thumbnailAsset = await window.GoCatMedia.uploadOrFallback(
-                    thumbnailFile,
-                    { purpose: "post" },
-                    async () => {
-                        const thumbnailUpload = await db.storage.from(VIDEO_BUCKET).upload(
-                            thumbnailObjectPath,
-                            thumbnailFile,
-                            { cacheControl: "31536000", contentType: "image/jpeg", upsert: false }
-                        );
-                        if (thumbnailUpload.error) throw thumbnailUpload.error;
-                        return { provider: "supabase", path: thumbnailUpload.data?.path || thumbnailObjectPath };
-                    }
-                );
+                let thumbnailAsset;
+                const selectedVisibility = $("videoVisibility")?.value || "public";
+                if (selectedVisibility === "public") {
+                    thumbnailAsset = await window.GoCatMedia.uploadOrFallback(
+                        thumbnailFile,
+                        { purpose: "post" },
+                        async () => {
+                            const thumbnailUpload = await db.storage.from(VIDEO_BUCKET).upload(
+                                thumbnailObjectPath,
+                                thumbnailFile,
+                                { cacheControl: "31536000", contentType: "image/jpeg", upsert: false }
+                            );
+                            if (thumbnailUpload.error) throw thumbnailUpload.error;
+                            return { provider: "supabase", path: thumbnailUpload.data?.path || thumbnailObjectPath };
+                        }
+                    );
+                    window.gocatLastThumbnailBucket = VIDEO_BUCKET;
+                } else {
+                    const thumbnailUpload = await db.storage.from("gocat-private-videos").upload(
+                        thumbnailObjectPath,
+                        thumbnailFile,
+                        { cacheControl: "31536000", contentType: "image/jpeg", upsert: false }
+                    );
+                    if (thumbnailUpload.error) throw thumbnailUpload.error;
+                    thumbnailAsset = { provider: "supabase", path: thumbnailUpload.data?.path || thumbnailObjectPath };
+                    window.gocatLastThumbnailBucket = "gocat-private-videos";
+                }
                 uploadedThumbnailProvider = thumbnailAsset.provider || "supabase";
                 uploadedThumbnailPath = uploadedThumbnailProvider === "vercel-blob"
                     ? thumbnailAsset.url
@@ -2811,7 +2825,7 @@ listen("uploadForm", "submit", async function (event) {
             if (removal.error) console.error("Could not remove failed upload:", removal.error);
         }
         if (uploadedThumbnailPath && uploadedThumbnailProvider === "supabase") {
-            const removal = await db.storage.from(VIDEO_BUCKET).remove([uploadedThumbnailPath]);
+            const removal = await db.storage.from(window.gocatLastThumbnailBucket || VIDEO_BUCKET).remove([uploadedThumbnailPath]);
             if (removal.error) console.error("Could not remove failed thumbnail:", removal.error);
         }
 
