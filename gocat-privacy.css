@@ -1,0 +1,15 @@
+.gocat-privacy-card .settings-row{gap:18px;align-items:center}
+.gocat-privacy-card .settings-row>span{min-width:0;flex:1}
+.gocat-privacy-card .settings-row select{max-width:min(100%,260px);min-width:180px}
+.gocat-privacy-card input[type="checkbox"]{width:20px;height:20px;accent-color:var(--green,#19c37d);flex:0 0 auto}
+.settings-note{margin:12px 0 0;color:var(--muted,#8b9691);font-size:12px;line-height:1.6}
+.gocat-follow-requests-list{display:grid;gap:10px}
+.gocat-follow-request-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px;border:1px solid var(--border,rgba(130,150,140,.18));border-radius:14px;background:rgba(120,140,130,.045)}
+.gocat-follow-request-person{display:flex;align-items:center;gap:10px;min-width:0}
+.gocat-follow-request-person>span:last-child{display:grid;gap:3px;min-width:0}
+.gocat-follow-request-person small{color:var(--muted,#8b9691);font-size:12px}
+.gocat-follow-request-actions{display:flex;gap:8px;flex-wrap:wrap}
+.gocat-follow-request-actions button{min-height:34px;padding:7px 12px;font-size:12px}
+.channel-stat-button:disabled{cursor:not-allowed;opacity:.65}
+body.gocat-reduce-motion *,body.gocat-reduce-motion *::before,body.gocat-reduce-motion *::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+@media(max-width:640px){.gocat-privacy-card .settings-row{align-items:flex-start;flex-wrap:wrap}.gocat-privacy-card .settings-row select{width:100%;max-width:100%}.gocat-follow-request-row{align-items:flex-start;flex-direction:column}.gocat-follow-request-actions{width:100%}.gocat-follow-request-actions button{flex:1}}
