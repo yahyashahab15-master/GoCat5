@@ -3242,7 +3242,9 @@ async function renderStudio() {
         ? mine.map(video => `
             <div class="studio-content-item">
                 <div class="studio-content-thumb">
-                    <video src="${esc(getVideoURL(video.storage_path))}#t=0.1" muted preload="metadata"></video>
+                    ${video.thumbnail_path
+                        ? '<img src="' + esc(getVideoURL(video.thumbnail_path)) + '" alt="' + esc(video.title || "Video thumbnail") + '" loading="lazy">'
+                        : '<video src="' + esc(getVideoURL(video.storage_path)) + '#t=0.1" muted preload="metadata"></video>'}
                 </div>
                 <div class="studio-content-details">
                     <strong>${esc(video.title)}</strong>
