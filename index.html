@@ -49,12 +49,14 @@
 <link rel="stylesheet" href="/gocat-creator-launchpad.css">
 <link rel="stylesheet" href="/gocat-batch-upload.css">
 <link rel="stylesheet" href="/gocat-thumbnail-repair.css">
+<link rel="stylesheet" href="/gocat-privacy.css">
 <link rel="stylesheet" href="/gocat-communities.css">
 <link rel="stylesheet" href="/gocat-stories.css">
 
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script defer src="/gocat-media.js"></script>
 <script defer src="randomgo.js"></script>
+<script defer src="/gocat-privacy.js"></script>
 <script defer src="gocat-communities.js"></script>
 <script defer src="gocat-stories.js"></script>
 <script defer src="gocat-enhancements.js"></script>
@@ -630,6 +632,35 @@
                             <input id="settingHistory" type="checkbox">
                         </label>
                     </div>
+                    <div class="settings-card gocat-privacy-card">
+                        <h2>Account privacy</h2>
+                        <label class="settings-row"><span><strong>Private account</strong><small>Only approved followers can see your videos and posts. New followers must request access.</small></span><input id="settingPrivateAccount" type="checkbox"></label>
+                        <label class="settings-row"><span><strong>Show followers</strong><small>Let people see who follows you.</small></span><input id="settingShowFollowers" type="checkbox" checked></label>
+                        <label class="settings-row"><span><strong>Show following</strong><small>Let people see who you follow.</small></span><input id="settingShowFollowing" type="checkbox" checked></label>
+                        <label class="settings-row"><span><strong>Account discovery</strong><small>Show your channel in creator suggestions and Explore search.</small></span><input id="settingDiscoverable" type="checkbox" checked></label>
+                        <p class="settings-note">Your username and profile picture can still appear so people can find and request your account. Older files already shared through public links may remain accessible outside GoCat.</p>
+                    </div>
+                    <div class="settings-card gocat-privacy-card">
+                        <h2>Messages and interactions</h2>
+                        <label class="settings-row"><span><strong>Who can message you?</strong><small>Choose who can start a conversation.</small></span><select id="settingMessagesAudience"><option value="everyone">Everyone</option><option value="followers">People who follow you</option><option value="mutuals">Mutual followers</option><option value="nobody">No one</option></select></label>
+                        <label class="settings-row"><span><strong>Who can comment?</strong><small>Choose who can comment on your videos and posts.</small></span><select id="settingCommentsAudience"><option value="everyone">Everyone</option><option value="followers">People who follow you</option><option value="nobody">No one</option></select></label>
+                        <label class="settings-row"><span><strong>Activity status</strong><small>Let people in your chats see when you are online.</small></span><input id="settingShowActivity" type="checkbox" checked></label>
+                        <label class="settings-row"><span><strong>Read receipts</strong><small>Let people know when you have read their messages.</small></span><input id="settingReadReceipts" type="checkbox" checked></label>
+                    </div>
+                    <div class="settings-card gocat-privacy-card">
+                        <h2>Content privacy</h2>
+                        <label class="settings-row"><span><strong>Default audience for new videos and Reels</strong><small>Change the audience for each upload before publishing.</small></span><select id="settingDefaultVisibility"><option value="public">Everyone</option><option value="followers">Followers only</option><option value="private">Only me</option></select></label>
+                    </div>
+                    <div class="settings-card gocat-privacy-card">
+                        <div class="section-heading"><div><h2>Follow requests</h2><p>Approve or decline people who want to follow your private account.</p></div></div>
+                        <div id="followRequestsList" class="gocat-follow-requests-list"><p class="muted-text">Sign in to manage follow requests.</p></div>
+                    </div>
+                    <div class="settings-card gocat-privacy-card">
+                        <h2>Accessibility and data</h2>
+                        <label class="settings-row"><span><strong>Reduce motion</strong><small>Reduce animations and transitions on this device.</small></span><input id="settingReduceMotion" type="checkbox"></label>
+                        <label class="settings-row"><span><strong>Data saver</strong><small>Turn on to disable automatic Reel playback.</small></span><input id="settingDataSaver" type="checkbox"></label>
+                        <label class="settings-row"><span><strong>Personalized recommendations</strong><small>Use follows and viewing signals to sort your For You feed.</small></span><input id="settingPersonalizeFeed" type="checkbox" checked></label>
+                    </div>
                     <div class="settings-card">
                         <h2>Keyboard shortcuts</h2>
                         <div class="shortcut-list">
@@ -654,6 +685,8 @@
                             <div id="settingsAvatar" class="avatar">G</div>
                             <div><strong id="settingsUsername">Creator</strong><p id="settingsEmail" class="muted-text"></p></div>
                         </div>
+                        <label class="settings-row"><span><strong>New password</strong><small>Change your GoCat password. Use at least 8 characters.</small></span><input id="settingsNewPassword" type="password" minlength="8" autocomplete="new-password" placeholder="New password"></label>
+                        <button id="changePasswordBtn" class="soft-btn" type="button">Update password</button>
                         <button id="settingsLogout" class="danger-outline-btn">Sign out</button>
                     </div>
                 </div>
@@ -740,6 +773,9 @@
                 </label>
                 <label class="field">Description
                     <textarea id="videoDescription" maxlength="1000" rows="4" placeholder="Tell viewers about this video"></textarea>
+                </label>
+                <label class="field">Who can watch this?
+                    <select id="videoVisibility"><option value="public">Everyone</option><option value="followers">Followers only</option><option value="private">Only me</option></select>
                 </label>
                 <label class="field">Topic
                     <select id="videoTopic">

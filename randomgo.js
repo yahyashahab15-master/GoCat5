@@ -817,7 +817,7 @@ function queueLiveRefresh(delay = 450) {
 function subscribeToLiveFeed() {
     if (!db || supabaseServiceRestricted) return;
     if (feedRealtimeChannel) db.removeChannel(feedRealtimeChannel);
-    const tables = ["videos", "likes", "comments", "posts", "post_likes", "post_comments", "follows", "gocat_featured_creators", "gocat_follower_overrides"];
+    const tables = ["videos", "likes", "comments", "posts", "post_likes", "post_comments", "follows", "gocat_featured_creators", "gocat_follower_overrides", "gocat_follow_requests"];
     let channel = db.channel("gocat-live-feed");
     tables.forEach(table => {
         channel = channel.on("postgres_changes", { event: "*", schema: "public", table }, () => queueLiveRefresh());
@@ -2753,19 +2753,33 @@ listen("uploadForm", "submit", async function (event) {
             if (thumbnailFile) {
                 const thumbnailObjectPath = currentUser.id + "/thumbnails/" +
                     Date.now() + "-" + Math.random().toString(36).slice(2, 9) + ".jpg";
-                const thumbnailAsset = await window.GoCatMedia.uploadOrFallback(
-                    thumbnailFile,
-                    { purpose: "post" },
-                    async () => {
-                        const thumbnailUpload = await db.storage.from(VIDEO_BUCKET).upload(
-                            thumbnailObjectPath,
-                            thumbnailFile,
-                            { cacheControl: "31536000", contentType: "image/jpeg", upsert: false }
-                        );
-                        if (thumbnailUpload.error) throw thumbnailUpload.error;
-                        return { provider: "supabase", path: thumbnailUpload.data?.path || thumbnailObjectPath };
-                    }
-                );
+                let thumbnailAsset;
+                const selectedVisibility = $("videoVisibility")?.value || "public";
+                if (selectedVisibility === "public") {
+                    thumbnailAsset = await window.GoCatMedia.uploadOrFallback(
+                        thumbnailFile,
+                        { purpose: "post" },
+                        async () => {
+                            const thumbnailUpload = await db.storage.from(VIDEO_BUCKET).upload(
+                                thumbnailObjectPath,
+                                thumbnailFile,
+                                { cacheControl: "31536000", contentType: "image/jpeg", upsert: false }
+                            );
+                            if (thumbnailUpload.error) throw thumbnailUpload.error;
+                            return { provider: "supabase", path: thumbnailUpload.data?.path || thumbnailObjectPath };
+                        }
+                    );
+                    window.gocatLastThumbnailBucket = VIDEO_BUCKET;
+                } else {
+                    const thumbnailUpload = await db.storage.from("gocat-private-videos").upload(
+                        thumbnailObjectPath,
+                        thumbnailFile,
+                        { cacheControl: "31536000", contentType: "image/jpeg", upsert: false }
+                    );
+                    if (thumbnailUpload.error) throw thumbnailUpload.error;
+                    thumbnailAsset = { provider: "supabase", path: thumbnailUpload.data?.path || thumbnailObjectPath };
+                    window.gocatLastThumbnailBucket = "gocat-private-videos";
+                }
                 uploadedThumbnailProvider = thumbnailAsset.provider || "supabase";
                 uploadedThumbnailPath = uploadedThumbnailProvider === "vercel-blob"
                     ? thumbnailAsset.url
@@ -2807,11 +2821,11 @@ listen("uploadForm", "submit", async function (event) {
 
         // Remove local-storage uploads if the database record could not be saved.
         if (uploaded && uploadedProvider === "supabase") {
-            const removal = await db.storage.from(VIDEO_BUCKET).remove([uploadedPath]);
+            const removal = await db.storage.from(window.gocatLastVideoUploadBucket || VIDEO_BUCKET).remove([uploadedPath]);
             if (removal.error) console.error("Could not remove failed upload:", removal.error);
         }
         if (uploadedThumbnailPath && uploadedThumbnailProvider === "supabase") {
-            const removal = await db.storage.from(VIDEO_BUCKET).remove([uploadedThumbnailPath]);
+            const removal = await db.storage.from(window.gocatLastThumbnailBucket || VIDEO_BUCKET).remove([uploadedThumbnailPath]);
             if (removal.error) console.error("Could not remove failed thumbnail:", removal.error);
         }
 
@@ -3830,7 +3844,7 @@ async function loadMessages() {
             (body ? '<div class="chat-message-body">' + body + '</div>' : "") +
             file +
             '<div class="chat-bubble-footer"><time>' + formatDate(message.created_at) + " " +
-            (mine ? (message.is_read ? "· Seen" : "· Sent") : "") + '</time>' + shareButton + '</div></article>';
+            (mine ? (message.is_read && getUser(message.recipient_id)?.send_read_receipts !== false ? "· Seen" : "· Sent") : "") + '</time>' + shareButton + '</div></article>';
     }).join("") : '<div class="chat-empty-state"><span class="chat-empty-icon">✦</span>' +
         '<strong>Start the conversation</strong><p>Send a message, photo, video, audio clip or document. Only you and this creator can see this chat.</p></div>';
 
