@@ -2488,7 +2488,10 @@ listen("exportReelBtn", "click", async function () {
         if ($("editorStatus")) {
             $("editorStatus").textContent = tooBig
                 ? "Export finished but exceeds 500 MB. Lower the resolution or frame rate."
-                : "Your edited Reel is ready.";
+                : "Your edited Reel is ready · " + (blob.size / 1048576).toFixed(1) + " MB" +
+                  (selectedVideoFile?.size > blob.size
+                    ? " · " + Math.round((1 - blob.size / selectedVideoFile.size) * 100) + "% smaller than source"
+                    : "");
         }
 
         hideModal("editorModal");
