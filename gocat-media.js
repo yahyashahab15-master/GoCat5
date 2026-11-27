@@ -26,7 +26,7 @@
   async function optimizeImageForUpload(file) {
     // Re-encode large JPEG/PNG uploads as WebP in the browser. This reduces
     // stored bytes and future delivery without sending image data to a server.
-    if (!/^(image\\/jpeg|image\\/png)$/i.test(file.type || "") || file.size < 400 * 1024) return file;
+    if (!/^(image\/jpeg|image\/png)$/i.test(file.type || "") || file.size < 400 * 1024) return file;
     if (typeof createImageBitmap !== "function") return file;
     let bitmap = null;
     try {
@@ -119,7 +119,7 @@
         headers: { Authorization: "Bearer " + session.access_token },
         clientPayload: JSON.stringify({ purpose }),
         contentType: uploadFile.type || "application/octet-stream",
-        multipart: file.size > 100 * 1024 * 1024,
+        multipart: uploadFile.size > 100 * 1024 * 1024,
         onUploadProgress: progress => {
           if (typeof options.onProgress === "function") {
             const percentage = Number(progress?.percentage || 0);
