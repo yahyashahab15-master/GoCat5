@@ -13,3 +13,7 @@
 .channel-stat-button:disabled{cursor:not-allowed;opacity:.65}
 body.gocat-reduce-motion *,body.gocat-reduce-motion *::before,body.gocat-reduce-motion *::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
 @media(max-width:640px){.gocat-privacy-card .settings-row{align-items:flex-start;flex-wrap:wrap}.gocat-privacy-card .settings-row select{width:100%;max-width:100%}.gocat-follow-request-row{align-items:flex-start;flex-direction:column}.gocat-follow-request-actions{width:100%}.gocat-follow-request-actions button{flex:1}}
+
+.gocat-private-profile{max-width:650px;margin:28px auto;padding:28px 22px;border:1px solid var(--border,rgba(130,150,140,.2));border-radius:18px;text-align:center;background:rgba(120,140,130,.05)}
+.gocat-private-profile strong{display:block;font-size:18px;color:var(--text,#eef5f0)}
+.gocat-private-profile p{margin:8px 0 0;color:var(--muted,#8b9691);line-height:1.6}
