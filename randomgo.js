@@ -2807,7 +2807,7 @@ listen("uploadForm", "submit", async function (event) {
 
         // Remove local-storage uploads if the database record could not be saved.
         if (uploaded && uploadedProvider === "supabase") {
-            const removal = await db.storage.from(VIDEO_BUCKET).remove([uploadedPath]);
+            const removal = await db.storage.from(window.gocatLastVideoUploadBucket || VIDEO_BUCKET).remove([uploadedPath]);
             if (removal.error) console.error("Could not remove failed upload:", removal.error);
         }
         if (uploadedThumbnailPath && uploadedThumbnailProvider === "supabase") {
@@ -3830,7 +3830,7 @@ async function loadMessages() {
             (body ? '<div class="chat-message-body">' + body + '</div>' : "") +
             file +
             '<div class="chat-bubble-footer"><time>' + formatDate(message.created_at) + " " +
-            (mine ? (message.is_read ? "· Seen" : "· Sent") : "") + '</time>' + shareButton + '</div></article>';
+            (mine ? (message.is_read && getUser(message.recipient_id)?.send_read_receipts !== false ? "· Seen" : "· Sent") : "") + '</time>' + shareButton + '</div></article>';
     }).join("") : '<div class="chat-empty-state"><span class="chat-empty-icon">✦</span>' +
         '<strong>Start the conversation</strong><p>Send a message, photo, video, audio clip or document. Only you and this creator can see this chat.</p></div>';
 
