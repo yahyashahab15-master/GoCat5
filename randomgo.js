@@ -2423,8 +2423,19 @@ listen("exportReelBtn", "click", async function () {
             preview.currentTime = start;
         });
 
+        const qualityPreset = $("reelExportQuality")?.value === "high" ? "high" : "compact";
+        const baseBitrate = resolution >= 1080
+            ? (qualityPreset === "high" ? 7000000 : 4000000)
+            : (qualityPreset === "high" ? 4000000 : 2300000);
+        const targetBitrate = Math.round(baseBitrate * (fps >= 60 ? 1.5 : fps >= 30 ? 1 : 0.85));
+
         audioMix = await buildEditorAudioMix(preview, canvasStream);
-        recorder = new MediaRecorder(canvasStream, { mimeType });
+        try {
+            recorder = new MediaRecorder(canvasStream, { mimeType, videoBitsPerSecond: targetBitrate });
+        } catch (bitrateError) {
+            console.warn("GoCat export bitrate setting unavailable; using browser default:", bitrateError);
+            recorder = new MediaRecorder(canvasStream, { mimeType });
+        }
 
         recorder.ondataavailable = e => { if (e.data?.size) chunks.push(e.data); };
 
@@ -2453,7 +2464,7 @@ listen("exportReelBtn", "click", async function () {
         recorder.start(1000);
         await preview.play();
 
-        if ($("editorStatus")) $("editorStatus").textContent = `Exporting ${resolution}p at ${fps} FPS...`;
+        if ($("editorStatus")) $("editorStatus").textContent = `Exporting ${resolution}p at ${fps} FPS · ${qualityPreset} file size...`;
 
         drawLoop();
         await exportFinished;
