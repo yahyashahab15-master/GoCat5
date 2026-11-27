@@ -521,3 +521,81 @@ if (currentUser) {
         .then(() => { populatePrivacySettings(); renderPendingFollowRequests(); })
         .catch(error => console.warn("GoCat privacy settings startup:", error.message || error));
 }
+
+
+// Final presentation pass: keep compact counts and request labels consistent across every view.
+const originalRenderEverythingPrivacy = renderEverything;
+renderEverything = function () {
+    originalRenderEverythingPrivacy();
+    document.querySelectorAll("[data-follow-user]").forEach(button => {
+        button.textContent = getPrivacyFollowLabel(button.dataset.followUser);
+    });
+    renderPendingFollowRequests();
+};
+
+const originalRenderSuggestedCreatorsPrivacy = renderSuggestedCreators;
+renderSuggestedCreators = function () {
+    originalRenderSuggestedCreatorsPrivacy();
+    document.querySelectorAll(".creator-card").forEach(card => {
+        const trigger = card.querySelector("[data-profile-user]");
+        const user = trigger ? getUser(trigger.dataset.profileUser) : null;
+        if (user?.account_discoverable === false && !isFollowing(user.id)) card.remove();
+    });
+};
+
+const originalRenderExplorePrivacy = renderExplore;
+renderExplore = function () {
+    originalRenderExplorePrivacy();
+    document.querySelectorAll(".person-card").forEach(card => {
+        const trigger = card.querySelector("[data-profile-user]");
+        const user = trigger ? getUser(trigger.dataset.profileUser) : null;
+        if (user?.account_discoverable === false && !isFollowing(user.id)) card.remove();
+    });
+};
+
+const originalRenderProfilePrivacyState = renderProfile;
+renderProfile = function () {
+    originalRenderProfilePrivacyState();
+    const profileId = currentProfileUserId || currentUser?.id;
+    const profile = getUser(profileId) || currentProfile;
+    if (!profile) return;
+    const own = !!currentUser && String(profileId) === String(currentUser.id);
+    const privateToViewer = profile.is_private === true && !own && !isFollowing(profileId);
+    if (privateToViewer) {
+        const text = "<div class='gocat-private-profile'><strong>This account is private</strong><p>Follow this creator and wait for approval to see their videos, Reels and posts.</p></div>";
+        ["profileHome","profileReels","profileVideos","profilePosts"].forEach(id => {
+            const target = document.getElementById(id);
+            if (target) target.innerHTML = text;
+        });
+    }
+};
+
+const originalGetHomeFeedForRecommendations = getHomeFeedData;
+getHomeFeedData = function () {
+    const result = originalGetHomeFeedForRecommendations();
+    if (settings.personalizeFeed !== false) return result;
+    const byDate = (a,b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+    return {
+        regularVideos: result.regularVideos.slice().sort(byDate),
+        shorts: result.shorts.slice().sort(byDate),
+        communityPosts: result.communityPosts.slice().sort(byDate)
+    };
+};
+
+
+document.addEventListener("click", event => {
+    if (event.target.closest("[data-profile-user]")) {
+        setTimeout(() => {
+            const profileId = currentProfileUserId;
+            const profile = getUser(profileId);
+            const own = !!currentUser && String(profileId) === String(currentUser.id);
+            if (profile?.is_private === true && !own && !isFollowing(profileId)) {
+                document.querySelectorAll("#profileHome,#profileReels,#profileVideos,#profilePosts").forEach(panel => {
+                    if (!panel.querySelector(".gocat-private-profile")) {
+                        panel.innerHTML = "<div class='gocat-private-profile'><strong>This account is private</strong><p>Request to follow this creator to see their content after approval.</p></div>";
+                    }
+                });
+            }
+        }, 120);
+    }
+});
