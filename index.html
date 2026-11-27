@@ -47,6 +47,7 @@
 <link rel="stylesheet" href="/gocat-mobile-polish.css">
 <link rel="stylesheet" href="/gocat-commercial-polish.css">
 <link rel="stylesheet" href="/gocat-creator-launchpad.css">
+<link rel="stylesheet" href="/gocat-batch-upload.css">
 <link rel="stylesheet" href="/gocat-communities.css">
 <link rel="stylesheet" href="/gocat-stories.css">
 
@@ -58,6 +59,7 @@
 <script defer src="gocat-enhancements.js"></script>
 <script defer src="/gocat-commercial-polish.js"></script>
 <script defer src="/gocat-creator-launchpad.js"></script>
+<script defer src="/gocat-batch-upload.js"></script>
 <script defer src="/gocat-pwa.js"></script>
 </head>
 
@@ -429,7 +431,7 @@
                             <span id="communityPostMediaName" class="muted-text"></span>
                             <button class="primary-btn" type="submit">Publish post</button>
                         </div>
-                        <small class="muted-text">Vercel Blob on GoCat’s free Hobby plan includes 1 GB storage and 10 GB monthly data transfer. Existing GoCat media remains available.</small>
+                        <small class="muted-text">Vercel Blob Hobby currently includes 1 GB average storage and 10 GB monthly Blob data transfer. Upload only videos you own or have permission to share.</small>
                     </form>
                     <div id="communityPostsFeed" class="community-posts-feed"></div>
                 </section>
@@ -888,6 +890,13 @@
                             <option value="24">24 FPS</option><option value="30" selected>30 FPS</option><option value="60">60 FPS</option>
                         </select>
                     </label>
+                    <label>Export quality
+                        <select id="reelExportQuality">
+                            <option value="compact" selected>Compact · smaller file</option>
+                            <option value="high">High detail · larger file</option>
+                        </select>
+                    </label>
+                    <small class="muted-text">Compact exports use a lower video bitrate to save storage and data. Your original clip stays unchanged.</small>
                 </div>
             </aside>
         </div>
