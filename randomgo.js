@@ -2423,8 +2423,19 @@ listen("exportReelBtn", "click", async function () {
             preview.currentTime = start;
         });
 
+        const qualityPreset = $("reelExportQuality")?.value === "high" ? "high" : "compact";
+        const baseBitrate = resolution >= 1080
+            ? (qualityPreset === "high" ? 7000000 : 4000000)
+            : (qualityPreset === "high" ? 4000000 : 2300000);
+        const targetBitrate = Math.round(baseBitrate * (fps >= 60 ? 1.5 : fps >= 30 ? 1 : 0.85));
+
         audioMix = await buildEditorAudioMix(preview, canvasStream);
-        recorder = new MediaRecorder(canvasStream, { mimeType });
+        try {
+            recorder = new MediaRecorder(canvasStream, { mimeType, videoBitsPerSecond: targetBitrate });
+        } catch (bitrateError) {
+            console.warn("GoCat export bitrate setting unavailable; using browser default:", bitrateError);
+            recorder = new MediaRecorder(canvasStream, { mimeType });
+        }
 
         recorder.ondataavailable = e => { if (e.data?.size) chunks.push(e.data); };
 
@@ -2453,7 +2464,7 @@ listen("exportReelBtn", "click", async function () {
         recorder.start(1000);
         await preview.play();
 
-        if ($("editorStatus")) $("editorStatus").textContent = `Exporting ${resolution}p at ${fps} FPS...`;
+        if ($("editorStatus")) $("editorStatus").textContent = `Exporting ${resolution}p at ${fps} FPS · ${qualityPreset} file size...`;
 
         drawLoop();
         await exportFinished;
@@ -2477,7 +2488,10 @@ listen("exportReelBtn", "click", async function () {
         if ($("editorStatus")) {
             $("editorStatus").textContent = tooBig
                 ? "Export finished but exceeds 500 MB. Lower the resolution or frame rate."
-                : "Your edited Reel is ready.";
+                : "Your edited Reel is ready · " + (blob.size / 1048576).toFixed(1) + " MB" +
+                  (selectedVideoFile?.size > blob.size
+                    ? " · " + Math.round((1 - blob.size / selectedVideoFile.size) * 100) + "% smaller than source"
+                    : "");
         }
 
         hideModal("editorModal");
@@ -3228,7 +3242,9 @@ async function renderStudio() {
         ? mine.map(video => `
             <div class="studio-content-item">
                 <div class="studio-content-thumb">
-                    <video src="${esc(getVideoURL(video.storage_path))}#t=0.1" muted preload="metadata"></video>
+                    ${video.thumbnail_path
+                        ? '<img src="' + esc(getVideoURL(video.thumbnail_path)) + '" alt="' + esc(video.title || "Video thumbnail") + '" loading="lazy">'
+                        : '<video src="' + esc(getVideoURL(video.storage_path)) + '#t=0.1" muted preload="metadata"></video>'}
                 </div>
                 <div class="studio-content-details">
                     <strong>${esc(video.title)}</strong>
