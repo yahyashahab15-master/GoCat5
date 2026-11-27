@@ -252,7 +252,6 @@
   } else {
     mount();
   }
-  // Studio's content can be populated after the first script execution.
-  const observer = new MutationObserver(mount);
-  observer.observe(document.body, { childList: true, subtree: true });
+  // This script is loaded with defer, so the Studio markup exists when it runs.
+  // Keep no permanent observer on the whole app; it would wake on every feed render.
 })();
