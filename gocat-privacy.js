@@ -539,7 +539,7 @@ renderSuggestedCreators = function () {
     originalRenderSuggestedCreatorsPrivacy();
     document.querySelectorAll(".creator-card").forEach(card => {
         const trigger = card.querySelector("[data-profile-user], [data-follow-user]");
-        const user = trigger ? getUser(trigger.dataset.profileUser) : null;
+        const user = trigger ? getUser(trigger.dataset.profileUser || trigger.dataset.followUser) : null;
         if (user?.account_discoverable === false && !isFollowing(user.id)) card.remove();
     });
 };
