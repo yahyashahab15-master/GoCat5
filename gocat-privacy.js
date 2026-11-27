@@ -486,13 +486,6 @@ uploadVideoFile = async function (file, path, progress) {
     }
 };
 
-const originalGenerateVideoThumbnailForPrivacy = generateVideoThumbnail;
-generateVideoThumbnail = async function (file) {
-    const visibility = document.getElementById("videoVisibility")?.value || "public";
-    if (visibility !== "public") return null;
-    return originalGenerateVideoThumbnailForPrivacy(file);
-};
-
 const originalInsertVideoRecordForPrivacy = insertVideoRecord;
 insertVideoRecord = function (record) {
     const visibility = document.getElementById("videoVisibility")?.value || "public";
