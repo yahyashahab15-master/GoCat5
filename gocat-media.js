@@ -23,6 +23,37 @@
       .slice(-140) || "gocat-media";
   }
 
+  async function optimizeImageForUpload(file) {
+    // Re-encode large JPEG/PNG uploads as WebP in the browser. This reduces
+    // stored bytes and future delivery without sending image data to a server.
+    if (!/^(image\\/jpeg|image\\/png)$/i.test(file.type || "") || file.size < 400 * 1024) return file;
+    if (typeof createImageBitmap !== "function") return file;
+    let bitmap = null;
+    try {
+      bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+      const scale = Math.min(1, 1920 / bitmap.width, 1920 / bitmap.height);
+      if (scale === 1 && file.size < 900 * 1024) return file;
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      const context = canvas.getContext("2d", { alpha: true });
+      if (!context) return file;
+      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/webp", 0.82));
+      if (!blob || !blob.size || blob.size >= file.size * 0.92) return file;
+      const originalName = safeFilename(file).replace(/\\.[^.]+$/, "");
+      return new File([blob], originalName + ".webp", {
+        type: "image/webp",
+        lastModified: Date.now()
+      });
+    } catch (error) {
+      console.warn("GoCat image optimization skipped:", error?.message || error);
+      return file;
+    } finally {
+      bitmap?.close?.();
+    }
+  }
+
   function makeId() {
     if (window.crypto?.randomUUID) return window.crypto.randomUUID().replace(/-/g, "");
     return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
@@ -75,18 +106,19 @@
 
     const allowedPurposes = ["video", "reel", "post", "story", "community"];
     const purpose = allowedPurposes.includes(options.purpose) ? options.purpose : "post";
-    const name = safeFilename(file);
+    const uploadFile = isVideo ? file : await optimizeImageForUpload(file);
+    const name = safeFilename(uploadFile);
     const pathname = "gocat/" + session.user.id + "/" + purpose + "/" +
       Date.now() + "-" + makeId().slice(0, 12) + "-" + name;
 
     const client = await loadBlobClient();
     try {
-      const result = await client.upload(pathname, file, {
+      const result = await client.upload(pathname, uploadFile, {
         access: "public",
         handleUploadUrl: "/api/blob-upload",
         headers: { Authorization: "Bearer " + session.access_token },
         clientPayload: JSON.stringify({ purpose }),
-        contentType: file.type || "application/octet-stream",
+        contentType: uploadFile.type || "application/octet-stream",
         multipart: file.size > 100 * 1024 * 1024,
         onUploadProgress: progress => {
           if (typeof options.onProgress === "function") {
@@ -103,8 +135,10 @@
         path: result.url,
         pathname: result.pathname,
         name,
-        size: file.size,
-        fileType: file.type
+        size: uploadFile.size,
+        originalSize: file.size,
+        optimized: uploadFile !== file,
+        fileType: uploadFile.type
       };
     } catch (error) {
       if (error?.code) throw error;
@@ -161,8 +195,8 @@
     if (status.configured) {
       label.textContent = "Vercel Blob connected";
       label.dataset.state = "connected";
-      detail.textContent = "New videos, Reels, post images, Stories and community media can use your separate Vercel Blob store.";
-      note.textContent = "Free Hobby allowance: 1 GB average storage and 10 GB monthly Blob data transfer. Check Vercel Usage for the current totals.";
+      detail.textContent = "Videos, Reels, post images and community attachments can use Vercel Blob. Stories stay in their private Supabase bucket."
+      note.textContent = "Hobby allowance: 1 GB average Blob storage and 10 GB monthly Blob data transfer. Large images are optimized in your browser before upload."
     } else {
       label.textContent = status.unavailable ? "Status unavailable" : "Not connected";
       label.dataset.state = "inactive";
