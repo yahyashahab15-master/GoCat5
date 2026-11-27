@@ -391,6 +391,7 @@ applySettings = function () {
     if (personalize) personalize.checked = settings.personalizeFeed;
     document.body.classList.toggle("gocat-reduce-motion", settings.reduceMotion);
 };
+applySettings();
 
 function savePrivacyLocalSettings() {
     if (document.getElementById("settingReduceMotion")) {
@@ -537,7 +538,7 @@ const originalRenderSuggestedCreatorsPrivacy = renderSuggestedCreators;
 renderSuggestedCreators = function () {
     originalRenderSuggestedCreatorsPrivacy();
     document.querySelectorAll(".creator-card").forEach(card => {
-        const trigger = card.querySelector("[data-profile-user]");
+        const trigger = card.querySelector("[data-profile-user], [data-follow-user]");
         const user = trigger ? getUser(trigger.dataset.profileUser) : null;
         if (user?.account_discoverable === false && !isFollowing(user.id)) card.remove();
     });
