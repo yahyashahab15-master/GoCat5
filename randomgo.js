@@ -4089,6 +4089,7 @@ function resetChatAttachmentSelection() {
     if ($("chatAttachmentPreview")) $("chatAttachmentPreview").classList.add("hidden");
     if ($("chatAttachmentName")) $("chatAttachmentName").textContent = "";
     if ($("chatUploadStatus")) $("chatUploadStatus").textContent = "Files from this device or other apps · Max 50 MB";
+    window.GoCatVoiceNotes?.clearPreview();
 }
 
 function chatFileTypeAllowed(file) {
@@ -4108,6 +4109,7 @@ listen("chatAttachBtn", "click", () => {
 
 listen("chatAttachmentFile", "change", function () {
     const file = this.files?.[0] || null;
+    window.GoCatVoiceNotes?.clearPreview();
     selectedChatAttachment = null;
     if (!file) return resetChatAttachmentSelection();
     if (file.size > MAX_CHAT_ATTACHMENT_BYTES) {

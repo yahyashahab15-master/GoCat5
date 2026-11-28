@@ -1,5 +1,5 @@
 "use strict";
-const CACHE_NAME = "gocat-shell-v19";
+const CACHE_NAME = "gocat-shell-v20";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -29,7 +29,9 @@ const APP_SHELL = [
   "/gocat-growth.css",
   "/gocat-chat-admin.css",
   "/gocat-group-chat.css",
-  "/gocat-group-chat.js"
+  "/gocat-group-chat.js",
+  "/gocat-voice-notes.css",
+  "/gocat-voice-notes.js"
 ];
 
 const SHARE_INBOX_DB = "gocat-share-inbox";

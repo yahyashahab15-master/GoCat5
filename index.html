@@ -54,6 +54,7 @@
 <link rel="stylesheet" href="/gocat-communities.css">
 <link rel="stylesheet" href="/gocat-stories.css">
 <link rel="stylesheet" href="/gocat-group-chat.css">
+<link rel="stylesheet" href="/gocat-voice-notes.css">
 
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script defer src="/gocat-media.js"></script>
@@ -67,6 +68,7 @@
 <script defer src="/gocat-thumbnail-repair.js"></script>
     <script defer src="/gocat-advanced.js"></script>
     <script defer src="/gocat-group-chat.js"></script>
+    <script defer src="/gocat-voice-notes.js"></script>
 <script defer src="/gocat-pwa.js"></script>
 </head>
 
@@ -511,8 +513,23 @@
                             <button id="chatClearAttachment" type="button" aria-label="Remove attachment">×</button>
                         </div>
                         <div id="chatUploadStatus" class="chat-upload-status">Files from this device or other apps · Max 50 MB</div>
+                        <div id="gocatVoiceRecordingPanel" class="gocat-voice-recording" hidden aria-live="polite">
+                            <span class="gocat-voice-recording-pulse" aria-hidden="true"></span>
+                            <div class="gocat-voice-recording-copy">
+                                <strong>Recording voice note</strong>
+                                <small>Private · compressed audio · Up to 2 minutes</small>
+                            </div>
+                            <time id="gocatVoiceRecordingTime">00:00</time>
+                            <button id="gocatVoiceCancelBtn" type="button" class="gocat-voice-cancel">Cancel</button>
+                            <button id="gocatVoiceFinishBtn" type="button" class="gocat-voice-finish">Finish</button>
+                        </div>
+                        <div id="gocatVoiceNoteReview" class="gocat-voice-review hidden">
+                            <span>Voice note ready to send</span>
+                            <audio id="gocatVoiceNoteAudio" controls preload="metadata" aria-label="Play voice note before sending"></audio>
+                        </div>
                         <form id="chatForm" class="chat-compose">
                             <button id="chatAttachBtn" class="chat-attach-btn" type="button" disabled aria-label="Attach a file" title="Attach a photo, video, audio clip or document">＋</button>
+                            <button id="chatVoiceNoteBtn" class="gocat-voice-note-btn" type="button" disabled aria-label="Record a voice note" title="Record a compressed voice note">🎙</button>
                             <input id="chatAttachmentFile" type="file" hidden accept="image/jpeg,image/png,image/webp,image/gif,image/avif,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/mp4,audio/ogg,audio/wav,audio/webm,application/pdf,text/plain,text/csv,application/zip,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx">
                             <div class="chat-compose-field">
                                 <textarea id="messageInput" maxlength="10000" rows="1" placeholder="Write a message…" aria-label="Write a message. Press Enter to send." disabled></textarea>
