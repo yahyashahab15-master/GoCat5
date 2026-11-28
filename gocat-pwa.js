@@ -28,8 +28,20 @@ window.addEventListener("beforeinstallprompt",function(event){
 });
 window.addEventListener("appinstalled",function(){button.hidden=true;installPrompt=null;});
 if("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")){
+  // When an existing worker is replaced, reload once so the page itself also
+  // uses the freshly cached JavaScript instead of keeping old code in memory.
+  if(navigator.serviceWorker.controller){
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener("controllerchange",function(){
+      if(refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    });
+  }
   window.addEventListener("load",function(){
-    navigator.serviceWorker.register("/sw.js").catch(function(error){console.warn("GoCat offline support could not start:",error);});
+    navigator.serviceWorker.register("/sw.js",{updateViaCache:"none"})
+      .then(function(registration){return registration.update();})
+      .catch(function(error){console.warn("GoCat offline support could not update:",error);});
   });
 }
 const status=document.createElement("div");
