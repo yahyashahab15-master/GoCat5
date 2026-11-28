@@ -218,6 +218,24 @@
     const target = currentTarget();
     if (!target) return showToast("Open a direct or group conversation first.");
     if (selectedChatAttachment) return showToast("Send or remove the current attachment before recording a voice note.");
+
+    try {
+      const groupId = typeof currentChatConversationId === "undefined"
+        ? "" : String(currentChatConversationId || "");
+      const directId = typeof currentChatUserId === "undefined"
+        ? "" : String(currentChatUserId || "");
+      const permission = await db.rpc("gocat_can_send_voice_message", {
+        p_recipient_id: directId || null,
+        p_conversation_id: groupId || null
+      });
+      if (!permission.error && permission.data !== true) {
+        return showToast("Voice message not allowed: the recipient's privacy settings do not allow it. With Mutual followers, follow each other first.");
+      }
+      if (permission.error) console.warn("GoCat voice-message privacy pre-check:", permission.error.message);
+    } catch (error) {
+      console.warn("GoCat voice-message privacy pre-check:", error.message || error);
+    }
+
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       return showToast("Voice recording is not supported in this browser. Try a recent version of Chrome or Edge.");
     }
