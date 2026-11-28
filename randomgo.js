@@ -136,7 +136,7 @@ let followListProfileId = null, followListKind = "followers";
 let followRequests = [];
 let pendingFollowTargets = new Set();
 let chatRealtimeChannel = null, commentRealtimeChannel = null, feedRealtimeChannel = null;
-let currentChatMessages = [], chatSignedUrls = new Map(), selectedChatAttachment = null, pendingExternalShare = null;
+let currentChatMessages = [], currentChatReactions = [], chatSignedUrls = new Map(), selectedChatAttachment = null, pendingExternalShare = null;
 let liveRefreshTimer = null, chatTypingTimer = null, feedRealtimeReady = false;
 let activePlaybackVideoId = null, liveRenderPending = false;
 let users = [], videos = [], posts = [], follows = [], followerOverrides = [], notifications = [], featuredCreators = [], weeklyCreatorLeaders = [];
@@ -214,10 +214,37 @@ function esc(value) {
         .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
 }
 
+const COUNT_SUFFIXES = [
+    "", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc",
+    "Ud", "Dd", "Td", "Qad", "Qid", "Sxd", "Spd", "Ocd", "Nod",
+    "Vg", "UVg", "DVg", "TVg", "QaVg", "QiVg", "SxVg", "SpVg",
+    "OcVg", "NoVg", "Tg", "UTg", "DTg", "TTg", "QaTg", "QiTg"
+];
+
 const compact = value => {
     const number = Number(value || 0);
     if (!Number.isFinite(number) || number <= 0) return "0";
-    return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(number);
+    if (number < 1000) return Math.floor(number).toLocaleString("en");
+
+    let tier = Math.floor(Math.log10(number) / 3);
+    let scaled = number / Math.pow(1000, tier);
+
+    // Promote rounded values such as 999.9K to 1M instead of showing 1000K.
+    if (scaled >= 999.95 && tier + 1 < COUNT_SUFFIXES.length) {
+        tier += 1;
+        scaled = number / Math.pow(1000, tier);
+    }
+
+    if (tier < COUNT_SUFFIXES.length) {
+        const digits = scaled < 100 ? 1 : 0;
+        const label = new Intl.NumberFormat("en", { maximumFractionDigits: digits })
+            .format(Number(scaled.toFixed(digits)));
+        return label + COUNT_SUFFIXES[tier];
+    }
+
+    const exponent = Math.floor(Math.log10(number));
+    const mantissa = number / Math.pow(10, exponent);
+    return Number(mantissa.toFixed(1)).toString() + "e" + exponent;
 };
 
 function nameHue(name) {
@@ -1917,6 +1944,7 @@ function resetUploadForm() {
 
     selectedVideoFile = null;
     exportedReelFile = null;
+    window.GoCatStudioTools?.reset?.();
 }
 
 function setUploadMode(mode) {
@@ -2388,6 +2416,15 @@ async function buildEditorAudioMix(preview, canvasStream) {
                 musicGain.gain.linearRampToValueAtTime(target, editorAudioContext.currentTime + fadeIn);
             }
 
+            const fadeOut = Number($("musicFadeOut")?.value || 0);
+            const clipDuration = Math.max(0, Number($("trimEnd")?.value || preview.duration) -
+                Number($("trimStart")?.value || 0));
+            if (fadeOut > 0 && clipDuration > fadeOut) {
+                const fadeStart = editorAudioContext.currentTime + clipDuration - fadeOut;
+                musicGain.gain.setValueAtTime(target, fadeStart);
+                musicGain.gain.linearRampToValueAtTime(0, fadeStart + fadeOut);
+            }
+
             musicSource.start(0);
         }
     }
@@ -2419,9 +2456,12 @@ listen("exportReelBtn", "click", async function () {
     if (!Number.isFinite(end) || end <= start) return showToast("Choose a valid trim range.");
 
     const resolution = Number($("reelResolution")?.value || 720);
-    const square = $("reelFraming")?.value === "square";
+    const framing = $("reelFraming")?.value || "cover";
     const width = resolution;
-    const height = square ? resolution : Math.round(resolution * 16 / 9);
+    const height = framing === "square" ? resolution
+        : framing === "landscape" ? Math.round(resolution * 9 / 16)
+        : framing === "portrait4x5" ? Math.round(resolution * 5 / 4)
+        : Math.round(resolution * 16 / 9);
     const fps = Number($("reelFrameRate")?.value || 30);
 
     const canvas = document.createElement("canvas");
@@ -2527,6 +2567,7 @@ listen("exportReelBtn", "click", async function () {
             type: mimeType,
             lastModified: Date.now()
         });
+        window.dispatchEvent(new CustomEvent("gocat:reel-export-ready", { detail: { file: exportedReelFile } }));
 
         if ($("selectedVideoName")) {
             $("selectedVideoName").textContent = exportedReelFile.name + ", " + (blob.size / 1048576).toFixed(2) + " MB";
@@ -2671,44 +2712,56 @@ async function uploadVideoFile(file, path, progress) {
 /* Create a lightweight preview image from the selected local video.
    This is best-effort: publishing must still work when a browser codec cannot
    decode a particular file or canvas thumbnail export is unavailable. */
-async function generateVideoThumbnail(file) {
-    if (!file || !String(file.type || "").startsWith("video/")) return null;
+async function generateVideoThumbnail(file, preferredTime = null) {
+    if (!file || !(file instanceof Blob) || !file.size || !String(file.type || "").startsWith("video/")) return null;
+
     const objectUrl = URL.createObjectURL(file);
     const video = document.createElement("video");
     video.muted = true;
     video.playsInline = true;
-    video.preload = "metadata";
-    video.src = objectUrl;
+    video.preload = "auto";
 
-    const waitFor = (eventName, timeoutMs = 10000) => new Promise((resolve, reject) => {
+    const waitFor = (eventName, timeoutMs = 10000, isReady = null) => new Promise((resolve, reject) => {
+        if (typeof isReady === "function" && isReady()) return resolve();
+        let timer = null;
         const cleanup = () => {
+            if (timer) clearTimeout(timer);
             video.removeEventListener(eventName, onSuccess);
             video.removeEventListener("error", onError);
-            clearTimeout(timer);
         };
         const onSuccess = () => { cleanup(); resolve(); };
         const onError = () => { cleanup(); reject(new Error("The browser could not read this video.")); };
-        const timer = setTimeout(() => {
+        video.addEventListener(eventName, onSuccess, { once: true });
+        video.addEventListener("error", onError, { once: true });
+        timer = setTimeout(() => {
             cleanup();
             reject(new Error("Video preview generation timed out."));
         }, timeoutMs);
-        video.addEventListener(eventName, onSuccess, { once: true });
-        video.addEventListener("error", onError, { once: true });
+        // Check again after attaching listeners to close the readyState race.
+        if (typeof isReady === "function" && isReady()) onSuccess();
     });
 
     try {
-        await waitFor("loadedmetadata");
-        const targetTime = Number.isFinite(video.duration) && video.duration > 0
-            ? Math.min(1, video.duration * 0.15)
+        const metadataReady = waitFor("loadedmetadata", 15000, () => video.readyState >= 1 && video.videoWidth > 0);
+        video.src = objectUrl;
+        video.load();
+        await metadataReady;
+
+        const duration = Number.isFinite(video.duration) ? video.duration : 0;
+        const requestedTime = Number(preferredTime);
+        const targetTime = duration > 0
+            ? Math.max(0, Math.min(duration - Math.min(0.08, duration / 10), Number.isFinite(requestedTime)
+                ? requestedTime
+                : duration * 0.15))
             : 0;
-        if (targetTime > 0) {
-            const seeked = waitFor("seeked", 8000);
+
+        if (targetTime > 0.03) {
+            const seeked = waitFor("seeked", 12000, () => Math.abs(video.currentTime - targetTime) < 0.04 && video.readyState >= 2);
             video.currentTime = targetTime;
             await seeked;
-        } else {
-            await waitFor("loadeddata", 8000);
         }
 
+        await waitFor("loadeddata", 12000, () => video.readyState >= 2);
         const width = video.videoWidth || 0;
         const height = video.videoHeight || 0;
         if (!width || !height) throw new Error("This video has no readable preview frame.");
@@ -2717,11 +2770,11 @@ async function generateVideoThumbnail(file) {
         const canvas = document.createElement("canvas");
         canvas.width = Math.max(1, Math.round(width * scale));
         canvas.height = Math.max(1, Math.round(height * scale));
-        const context = canvas.getContext("2d");
+        const context = canvas.getContext("2d", { alpha: false });
         if (!context) throw new Error("Canvas preview is unavailable.");
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.82));
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.84));
         if (!blob || !blob.size) throw new Error("The preview image could not be generated.");
         return new File([blob], "gocat-video-thumbnail.jpg", {
             type: "image/jpeg",
@@ -2797,7 +2850,8 @@ listen("uploadForm", "submit", async function (event) {
         // Public preview images use the same Blob-first route as other public media.
         // Fall back to Supabase only when the Blob uploader is not configured.
         try {
-            const thumbnailFile = await generateVideoThumbnail(file);
+            const chosenThumbnailTime = Number(window.GoCatThumbnailTime);
+            const thumbnailFile = await generateVideoThumbnail(file, Number.isFinite(chosenThumbnailTime) ? chosenThumbnailTime : null);
             if (thumbnailFile) {
                 const thumbnailObjectPath = currentUser.id + "/thumbnails/" +
                     Date.now() + "-" + Math.random().toString(36).slice(2, 9) + ".jpg";
@@ -3825,6 +3879,10 @@ async function openChat(userId) {
                     : (online ? "Online" : "Offline");
             }
         })
+        .on("postgres_changes", { event: "*", schema: "public", table: "message_reactions" }, payload => {
+            const row = payload.new || payload.old || {};
+            if (currentChatMessages.some(message => String(message.id) === String(row.message_id))) loadMessages();
+        })
         .on("broadcast", { event: "typing" }, event => {
             const info = event.payload || {};
             if (String(info.userId) === String(currentUser.id)) return;
@@ -3891,6 +3949,27 @@ function chatAttachmentMarkup(message, signedUrl) {
         '<span>↧</span><div><strong>' + name + '</strong><small>' + sizeLabel + ' · Open file</small></div></a>';
 }
 
+const CHAT_REACTION_OPTIONS = ["👍", "❤️", "😂", "😮", "🎉", "🔥", "👏", "🙌"];
+
+function chatMessageReactionMarkup(messageId) {
+    const rows = currentChatReactions.filter(row => String(row.message_id) === String(messageId));
+    const groups = CHAT_REACTION_OPTIONS.map(emoji => {
+        const matches = rows.filter(row => row.emoji === emoji);
+        if (!matches.length) return "";
+        const mine = matches.some(row => String(row.user_id) === String(currentUser?.id));
+        return '<button type="button" class="chat-reaction-chip ' + (mine ? "is-mine" : "") +
+            '" data-chat-react-message="' + esc(messageId) + '" data-chat-react-emoji="' + emoji +
+            '" aria-label="React with ' + emoji + ', ' + matches.length + ' reactions"><span>' +
+            emoji + '</span><strong>' + matches.length + '</strong></button>';
+    }).join("");
+    const picker = '<details class="chat-reaction-picker"><summary aria-label="Add a reaction" title="Add reaction">＋</summary>' +
+        '<div class="chat-reaction-options">' + CHAT_REACTION_OPTIONS.map(emoji =>
+            '<button type="button" data-chat-react-message="' + esc(messageId) +
+            '" data-chat-react-emoji="' + emoji + '" aria-label="React with ' + emoji + '">' + emoji + '</button>'
+        ).join("") + '</div></details>';
+    return '<div class="chat-reactions">' + groups + picker + '</div>';
+}
+
 async function loadMessages() {
     if (!currentUser || !currentChatUserId) return;
     const container = $("chatMessages");
@@ -3909,6 +3988,17 @@ async function loadMessages() {
 
     const messages = result.data || [];
     currentChatMessages = messages;
+    currentChatReactions = [];
+    if (messages.length) {
+        const reactionsResult = await db.from("message_reactions")
+            .select("message_id,user_id,emoji")
+            .in("message_id", messages.map(message => message.id));
+        if (reactionsResult.error) {
+            console.warn("GoCat chat reactions could not load:", reactionsResult.error.message);
+        } else {
+            currentChatReactions = reactionsResult.data || [];
+        }
+    }
     chatSignedUrls = new Map();
     const attachmentPaths = Array.from(new Set(messages
         .map(message => message.attachment_path)
@@ -3929,13 +4019,18 @@ async function loadMessages() {
         const mine = String(message.sender_id) === String(currentUser.id);
         const body = esc(message.content ?? message.text ?? "").replace(/\n/g, "<br>");
         const file = chatAttachmentMarkup(message, chatSignedUrls.get(message.attachment_path));
+        const searchable = esc([message.content ?? message.text ?? "", message.attachment_name || ""].join(" "));
         const shareButton = '<button type="button" class="chat-bubble-share" data-chat-share-message="' +
-            esc(message.id) + '" title="Share this message outside GoCat">Share outside ↗</button>';
-        return '<article class="chat-bubble ' + (mine ? "mine" : "") + '">' +
+            esc(message.id) + '" title="Share this message outside GoCat">Share ↗</button>';
+        const copyButton = body
+            ? '<button type="button" class="chat-bubble-share" data-chat-copy-message="' + esc(message.id) + '" title="Copy message text">Copy</button>'
+            : "";
+        return '<article class="chat-bubble ' + (mine ? "mine" : "") + '" data-chat-message-search="' + searchable + '">' +
             (body ? '<div class="chat-message-body">' + body + '</div>' : "") +
             file +
+            chatMessageReactionMarkup(message.id) +
             '<div class="chat-bubble-footer"><time>' + formatDate(message.created_at) + " " +
-            (mine ? (message.is_read ? "· Seen" : "· Sent") : "") + '</time>' + shareButton + '</div></article>';
+            (mine ? (message.is_read ? "· Seen" : "· Sent") : "") + '</time>' + copyButton + shareButton + '</div></article>';
     }).join("") : '<div class="chat-empty-state"><span class="chat-empty-icon">✦</span>' +
         '<strong>Start the conversation</strong><p>Send a message, photo, video, audio clip or document. Only you and this creator can see this chat.</p></div>';
 
@@ -3953,6 +4048,39 @@ async function loadMessages() {
         if (readResult.error) console.warn("Read receipts:", readResult.error.message);
     }
 }
+
+async function toggleChatMessageReaction(messageId, emoji) {
+    if (!currentUser || !currentChatUserId) return;
+    if (!CHAT_REACTION_OPTIONS.includes(emoji)) return;
+    if (!currentChatMessages.some(message => String(message.id) === String(messageId))) return;
+
+    const existing = currentChatReactions.find(row =>
+        String(row.message_id) === String(messageId) &&
+        String(row.user_id) === String(currentUser.id) &&
+        row.emoji === emoji
+    );
+    const result = existing
+        ? await db.from("message_reactions").delete()
+            .eq("message_id", messageId).eq("user_id", currentUser.id).eq("emoji", emoji)
+        : await db.from("message_reactions").insert({
+            message_id: messageId,
+            user_id: String(currentUser.id),
+            emoji
+        });
+
+    if (result.error) {
+        showToast("Reaction could not be saved: " + result.error.message);
+        return;
+    }
+    await loadMessages();
+}
+
+document.addEventListener("click", event => {
+    const button = event.target.closest("[data-chat-react-message]");
+    if (!button) return;
+    event.preventDefault();
+    toggleChatMessageReaction(button.dataset.chatReactMessage, button.dataset.chatReactEmoji);
+});
 
 function resetChatAttachmentSelection() {
     selectedChatAttachment = null;

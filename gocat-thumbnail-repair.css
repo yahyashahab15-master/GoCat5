@@ -1,0 +1,6 @@
+/* Controls for repairing older videos without thumbnails. */
+.gocat-thumbnail-repair-btn{white-space:nowrap}
+.gocat-thumbnail-repair-status{min-height:18px;margin:8px 0 12px;color:var(--muted,#9aa6a0);font-size:12px;line-height:1.5}
+.gocat-thumbnail-repair-status:empty{display:none}
+.gocat-thumbnail-repair-btn[hidden]{display:none!important}
+@media(max-width:640px){.gocat-thumbnail-repair-btn{width:100%;white-space:normal}}

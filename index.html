@@ -50,6 +50,7 @@
 <link rel="stylesheet" href="/gocat-creator-launchpad.css">
 <link rel="stylesheet" href="/gocat-batch-upload.css">
 <link rel="stylesheet" href="/gocat-thumbnail-repair.css">
+    <link rel="stylesheet" href="/gocat-advanced.css">
 <link rel="stylesheet" href="/gocat-communities.css">
 <link rel="stylesheet" href="/gocat-stories.css">
 
@@ -63,6 +64,7 @@
 <script defer src="/gocat-creator-launchpad.js"></script>
 <script defer src="/gocat-batch-upload.js"></script>
 <script defer src="/gocat-thumbnail-repair.js"></script>
+    <script defer src="/gocat-advanced.js"></script>
 <script defer src="/gocat-pwa.js"></script>
 </head>
 
@@ -835,6 +837,21 @@
                 </label>
             </div>
 
+            <section id="gocatThumbnailPicker" class="gocat-thumbnail-picker" hidden>
+                <div class="gocat-thumbnail-picker-heading">
+                    <div><strong>Choose your video cover</strong><small>Pick the exact frame viewers see before they play</small></div>
+                    <span id="gocatThumbnailPickerStatus">Waiting for a video</span>
+                </div>
+                <div class="gocat-thumbnail-picker-preview">
+                    <img id="gocatThumbnailPickerImage" alt="Selected video cover preview" hidden>
+                    <span id="gocatThumbnailPickerPlaceholder">Your cover preview will appear here</span>
+                </div>
+                <label class="gocat-thumbnail-picker-range">Cover frame
+                    <input id="gocatThumbnailPickerRange" type="range" min="0" max="100" step="1" value="15" disabled>
+                    <small id="gocatThumbnailPickerTime">Choose a video to select a frame.</small>
+                </label>
+            </section>
+
             <div id="uploadProgress" class="upload-progress hidden"><div id="uploadProgressBar"></div></div>
             <p id="uploadStatus" class="upload-status" aria-live="polite"></p>
 
@@ -949,6 +966,7 @@
                     <p id="musicFileName" class="muted-text"></p>
                     <label>Music volume<input id="musicVolume" type="range" min="0" max="100" value="40"></label>
                     <label>Music fade in<input id="musicFadeIn" type="range" min="0" max="5" value="0"></label>
+                    <label>Music fade out<input id="musicFadeOut" type="range" min="0" max="5" value="0"></label>
                     <button id="removeMusicBtn" class="soft-btn" type="button">Remove music</button>
                 </div>
 
@@ -956,8 +974,11 @@
                     <h3>Canvas and framing</h3>
                     <label>Aspect ratio
                         <select id="reelFraming">
-                            <option value="cover">9:16 Fill</option><option value="contain">Fit original</option>
+                            <option value="cover">9:16 Vertical</option>
                             <option value="square">1:1 Square</option>
+                            <option value="landscape">16:9 Landscape</option>
+                            <option value="portrait4x5">4:5 Portrait</option>
+                            <option value="contain">Fit original</option>
                         </select>
                     </label>
                     <label>Rotation

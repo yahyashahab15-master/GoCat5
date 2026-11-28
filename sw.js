@@ -1,5 +1,5 @@
 "use strict";
-const CACHE_NAME = "gocat-shell-v17";
+const CACHE_NAME = "gocat-shell-v18";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -23,6 +23,8 @@ const APP_SHELL = [
   "/gocat-creator-launchpad.js",
   "/gocat-batch-upload.js",
   "/gocat-thumbnail-repair.js",
+  "/gocat-advanced.css",
+  "/gocat-advanced.js",
   "/gocat-pwa.js",
   "/gocat-growth.css",
   "/gocat-chat-admin.css"

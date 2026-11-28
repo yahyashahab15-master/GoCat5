@@ -57,8 +57,9 @@
     refreshButton();
   }
 
-  function waitForMedia(video, eventName, timeoutMs) {
+  function waitForMedia(video, eventName, timeoutMs, isReady = null) {
     return new Promise((resolve, reject) => {
+      if (typeof isReady === "function" && isReady()) return resolve();
       let finished = false;
       const cleanup = () => {
         clearTimeout(timer);
@@ -76,6 +77,7 @@
       const timer = setTimeout(() => done(() => reject(new Error("Video preview timed out."))), timeoutMs);
       video.addEventListener(eventName, success, { once: true });
       video.addEventListener("error", failure, { once: true });
+      if (typeof isReady === "function" && isReady()) done(resolve);
     });
   }
 
@@ -84,25 +86,26 @@
     video.crossOrigin = "anonymous";
     video.muted = true;
     video.playsInline = true;
-    video.preload = "metadata";
-    video.src = videoUrl;
+    video.preload = "auto";
 
     try {
-      if (video.readyState < 1) await waitForMedia(video, "loadedmetadata", 15000);
+      const metadata = waitForMedia(video, "loadedmetadata", 15000, () => video.readyState >= 1 && video.videoWidth > 0);
+      video.src = videoUrl;
+      video.load();
+      await metadata;
+
       const sourceWidth = video.videoWidth;
       const sourceHeight = video.videoHeight;
       if (!sourceWidth || !sourceHeight) throw new Error("Video dimensions are unavailable.");
 
-      const sampleTime = Number.isFinite(video.duration) && video.duration > 0
-        ? Math.min(1, video.duration * 0.12)
-        : 0;
+      const duration = Number.isFinite(video.duration) ? video.duration : 0;
+      const sampleTime = duration > 0 ? Math.min(1, Math.max(0, duration - 0.08)) : 0;
       if (sampleTime > 0.05) {
-        const seeked = waitForMedia(video, "seeked", 12000);
+        const seeked = waitForMedia(video, "seeked", 12000, () => Math.abs(video.currentTime - sampleTime) < 0.04 && video.readyState >= 2);
         video.currentTime = sampleTime;
         await seeked;
-      } else if (video.readyState < 2) {
-        await waitForMedia(video, "loadeddata", 12000);
       }
+      if (video.readyState < 2) await waitForMedia(video, "loadeddata", 12000, () => video.readyState >= 2);
 
       const scale = Math.min(1, MAX_THUMB_WIDTH / sourceWidth, MAX_THUMB_HEIGHT / sourceHeight);
       const canvas = document.createElement("canvas");
@@ -112,7 +115,7 @@
       if (!context) throw new Error("The browser could not prepare a thumbnail.");
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.78));
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.82));
       if (!blob || !blob.size) throw new Error("The thumbnail image was empty.");
       return new File([blob], "gocat-thumbnail.jpg", {
         type: "image/jpeg",
@@ -124,7 +127,6 @@
       video.load();
     }
   }
-
   async function uploadThumbnail(file, video) {
     const safeId = String(video.id).replace(/[^a-zA-Z0-9_-]/g, "");
     const fallbackPath = String(currentUser.id) + "/thumbnails/" + safeId + ".jpg";
