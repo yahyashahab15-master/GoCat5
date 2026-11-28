@@ -9,6 +9,8 @@ var chatGroupMemberships = [];
   const $ = id => document.getElementById(id);
   let groupFetchAt = 0;
   let groupFetchPromise = null;
+  let selectedGroupMemberIds = new Set();
+  let lastGroupCreatorFocus = null;
   const baseRenderChatFriends = window.renderChatFriends;
   const baseOpenChat = window.openChat;
   const baseLoadMessages = window.loadMessages;
@@ -131,18 +133,35 @@ var chatGroupMemberships = [];
       ? getMutualFriends().filter(user => !user.is_banned && String(user.username || "").toLowerCase().includes(search))
       : [];
     if (!candidates.length) {
-      picker.innerHTML = '<div class="gocat-group-empty">No eligible connections found. People must allow messages from your account.</div>';
+      picker.innerHTML = '<div class="gocat-group-empty">No connections match that search. Try another name.</div>';
+      updateGroupSelectionSummary();
       return;
     }
-    picker.innerHTML = candidates.map(user =>
-      '<label class="gocat-group-person"><input type="checkbox" data-chat-group-member value="' + esc(user.id) + '">' +
-      '<span class="gocat-group-person-avatar">' +
-      (user.avatar_path
-        ? '<img src="' + esc(storageURL("profile-avatars", user.avatar_path)) + '" alt="">'
-        : esc(initial(user.username))) +
-      '</span><span><strong>' + esc(user.username || "Creator") + '</strong>' +
-      '<small>Message privacy allows contact</small></span></label>'
-    ).join("");
+    picker.innerHTML = candidates.map(user => {
+      const id = String(user.id);
+      const selected = selectedGroupMemberIds.has(id);
+      return '<label class="gocat-group-person' + (selected ? ' is-selected' : '') + '">' +
+        '<span class="gocat-group-person-avatar">' +
+        (user.avatar_path
+          ? '<img src="' + esc(storageURL("profile-avatars", user.avatar_path)) + '" alt="">'
+          : esc(initial(user.username))) +
+        '</span><span class="gocat-group-person-copy"><strong>' + esc(user.username || "Creator") + '</strong>' +
+        '<small>Connection</small></span>' +
+        '<input type="checkbox" data-chat-group-member value="' + esc(id) + '"' + (selected ? ' checked' : '') + '>' +
+        '</label>';
+    }).join("");
+    updateGroupSelectionSummary();
+  }
+
+  function updateGroupSelectionSummary() {
+    const count = selectedGroupMemberIds.size;
+    const summary = $("chatGroupSelectedCount");
+    const button = $("chatCreateGroupBtn");
+    if (summary) summary.textContent = count + (count === 1 ? " person selected" : " people selected");
+    if (button) {
+      button.disabled = count < 1 || count > 49;
+      button.textContent = count ? "Create group · " + count : "Create group";
+    }
   }
 
   function setComposerEnabled(enabled) {
@@ -369,18 +388,28 @@ var chatGroupMemberships = [];
   function showGroupCreator(show) {
     const panel = $("chatGroupCreator");
     if (!panel) return;
-    panel.hidden = !show;
     if (show) {
+      lastGroupCreatorFocus = document.activeElement;
       renderGroupMemberPicker();
-      $("chatGroupName")?.focus();
+      panel.hidden = false;
+      panel.setAttribute("aria-hidden", "false");
+      document.body.classList.add("gocat-group-modal-open");
+      window.requestAnimationFrame(() => $("chatGroupName")?.focus());
+      return;
     }
+    panel.hidden = true;
+    panel.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("gocat-group-modal-open");
+    if (lastGroupCreatorFocus && typeof lastGroupCreatorFocus.focus === "function") {
+      lastGroupCreatorFocus.focus();
+    }
+    lastGroupCreatorFocus = null;
   }
 
   async function createGroup() {
     if (!requireAuth("create group chats")) return;
     const title = String($("chatGroupName")?.value || "").trim();
-    const members = Array.from($("chatGroupMemberPicker")?.querySelectorAll("[data-chat-group-member]:checked") || [])
-      .map(input => String(input.value));
+    const members = Array.from(selectedGroupMemberIds);
     if (!title) return showToast("Add a name for your group.");
     if (members.length < 1 || members.length > 49) return showToast("Choose between 1 and 49 people.");
     const button = $("chatCreateGroupBtn");
@@ -395,6 +424,8 @@ var chatGroupMemberships = [];
       if (!groupId) throw new Error("The group was not created. Please try again.");
       if ($("chatGroupName")) $("chatGroupName").value = "";
       if ($("chatGroupMemberSearch")) $("chatGroupMemberSearch").value = "";
+      selectedGroupMemberIds.clear();
+      renderGroupMemberPicker();
       showGroupCreator(false);
       await loadGroupConversations(true);
       await openGroupChat(groupId);
@@ -472,7 +503,9 @@ var chatGroupMemberships = [];
       showGroupCreator(true);
       return;
     }
-    if (event.target.closest("#chatCancelGroupBtn")) {
+    if (event.target.closest("#chatCancelGroupBtn") ||
+        event.target.closest("#chatCancelGroupBtnFooter") ||
+        event.target.closest("#chatGroupModalBackdrop")) {
       showGroupCreator(false);
       return;
     }
@@ -502,9 +535,30 @@ var chatGroupMemberships = [];
 
   document.addEventListener("change", event => {
     if (event.target?.matches("[data-chat-group-member]")) {
-      const count = $("chatGroupMemberPicker")?.querySelectorAll("[data-chat-group-member]:checked").length || 0;
-      const button = $("chatCreateGroupBtn");
-      if (button) button.textContent = count ? "Create group · " + count + " selected" : "Create group";
+      const id = String(event.target.value || "");
+      if (event.target.checked) selectedGroupMemberIds.add(id);
+      else selectedGroupMemberIds.delete(id);
+      event.target.closest(".gocat-group-person")?.classList.toggle("is-selected", event.target.checked);
+      updateGroupSelectionSummary();
+    }
+  });
+
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && !$("chatGroupCreator")?.hidden) {
+      event.preventDefault();
+      showGroupCreator(false);
+    }
+    if (event.key === "Tab" && !$("chatGroupCreator")?.hidden) {
+      const dialog = document.querySelector(".gocat-group-dialog");
+      const focusable = Array.from(dialog?.querySelectorAll('button:not(:disabled),input:not(:disabled)') || [])
+        .filter(item => item.offsetParent !== null);
+      if (!focusable.length) return;
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault(); last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault(); first.focus();
+      }
     }
   });
 
@@ -529,11 +583,11 @@ var chatGroupMemberships = [];
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => {
-      renderGroupMemberPicker();
+      updateGroupSelectionSummary();
       renderGroupList();
     }, { once: true });
   } else {
-    renderGroupMemberPicker();
+    updateGroupSelectionSummary();
     renderGroupList();
   }
 })();

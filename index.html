@@ -53,6 +53,7 @@
     <link rel="stylesheet" href="/gocat-advanced.css">
 <link rel="stylesheet" href="/gocat-communities.css">
 <link rel="stylesheet" href="/gocat-stories.css">
+<link rel="stylesheet" href="/gocat-group-chat.css">
 
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script defer src="/gocat-media.js"></script>
@@ -469,26 +470,14 @@
                             <span aria-hidden="true">⌕</span>
                             <input id="chatSearch" class="chat-search" type="search" placeholder="Search people" aria-label="Search conversations">
                         </label>
-                        <p class="chat-list-caption">MUTUAL CONNECTIONS</p>
                         <div class="gocat-group-tools">
-                            <button id="chatNewGroupBtn" class="gocat-group-create-btn" type="button">＋ Create group</button>
-                            <section id="chatGroupCreator" class="gocat-group-creator" hidden aria-label="Create a group chat">
-                                <label class="gocat-group-field">Group name
-                                    <input id="chatGroupName" type="text" maxlength="60" placeholder="e.g. Weekend gaming squad">
-                                </label>
-                                <label class="gocat-group-field">Find people
-                                    <input id="chatGroupMemberSearch" type="search" maxlength="60" placeholder="Search eligible connections">
-                                </label>
-                                <div id="chatGroupMemberPicker" class="gocat-group-member-picker"></div>
-                                <p class="gocat-group-help">Choose 1–49 people. Their message privacy settings are checked before the group is created.</p>
-                                <div class="gocat-group-create-actions">
-                                    <button id="chatCancelGroupBtn" class="soft-btn" type="button">Cancel</button>
-                                    <button id="chatCreateGroupBtn" class="primary-btn" type="button">Create group</button>
-                                </div>
-                            </section>
-                            <p class="chat-list-caption gocat-group-caption">GROUP CHATS</p>
-                            <div id="chatGroupList" class="gocat-group-list"></div>
+                            <button id="chatNewGroupBtn" class="gocat-group-create-btn" type="button">
+                                <span aria-hidden="true">＋</span><span>New group</span><small>Invite connections</small>
+                            </button>
                         </div>
+                        <p class="chat-list-caption gocat-group-caption">GROUP CHATS</p>
+                        <div id="chatGroupList" class="gocat-group-list"></div>
+                        <p class="chat-list-caption">MUTUAL CONNECTIONS</p>
                         <div id="chatFriends" class="chat-friends-list"></div>
                     </aside>
                     <div class="chat-panel">
@@ -532,6 +521,40 @@
                             <button id="sendMessageBtn" class="primary-btn" type="submit" disabled><span>Send</span><span aria-hidden="true">➤</span></button>
                         </form>
                     </div>
+                </div>
+                <div id="chatGroupCreator" class="gocat-group-modal" hidden aria-hidden="true">
+                    <button id="chatGroupModalBackdrop" class="gocat-group-modal-backdrop" type="button" aria-label="Close group creator"></button>
+                    <section class="gocat-group-dialog" role="dialog" aria-modal="true" aria-labelledby="chatGroupModalTitle">
+                        <header class="gocat-group-dialog-head">
+                            <div class="gocat-group-dialog-icon" aria-hidden="true">✦</div>
+                            <div class="gocat-group-dialog-heading">
+                                <span>GO CAT MESSAGES</span>
+                                <h2 id="chatGroupModalTitle">Create a group</h2>
+                                <p>Bring your connections into one private conversation.</p>
+                            </div>
+                            <button id="chatCancelGroupBtn" class="gocat-group-close" type="button" aria-label="Close">×</button>
+                        </header>
+                        <div class="gocat-group-dialog-body">
+                            <label class="gocat-group-field">
+                                <span>Group name</span>
+                                <input id="chatGroupName" type="text" maxlength="60" placeholder="e.g. Weekend gaming squad" autocomplete="off">
+                            </label>
+                            <label class="gocat-group-field">
+                                <span>Find people</span>
+                                <input id="chatGroupMemberSearch" type="search" maxlength="60" placeholder="Search eligible connections" autocomplete="off">
+                            </label>
+                            <div class="gocat-group-selection-heading">
+                                <strong id="chatGroupSelectedCount">0 people selected</strong>
+                                <span>Up to 49 people</span>
+                            </div>
+                            <div id="chatGroupMemberPicker" class="gocat-group-member-picker"></div>
+                            <p class="gocat-group-help">Group creation checks every participant’s message privacy settings before inviting anyone.</p>
+                        </div>
+                        <footer class="gocat-group-dialog-actions">
+                            <button id="chatCancelGroupBtnFooter" class="soft-btn" type="button">Cancel</button>
+                            <button id="chatCreateGroupBtn" class="primary-btn" type="button" disabled>Create group</button>
+                        </footer>
+                    </section>
                 </div>
             </section>
 
