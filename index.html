@@ -56,6 +56,7 @@
 <link rel="stylesheet" href="/gocat-group-chat.css">
 <link rel="stylesheet" href="/gocat-voice-notes.css">
 <link rel="stylesheet" href="/gocat-voice-calls.css">
+    <link rel="stylesheet" href="/gocat-chat-refresh.css">
 
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script defer src="/gocat-media.js"></script>
@@ -72,6 +73,7 @@
     <script defer src="/gocat-voice-notes.js"></script>
     <script defer src="/gocat-voice-calls.js"></script>
 <script defer src="/gocat-pwa.js"></script>
+    <script defer src="/gocat-chat-refresh.js"></script>
 </head>
 
 <body class="dark">
@@ -463,6 +465,7 @@
                         <p>Keep up with the creators you connect with.</p>
                     </div>
                     <span class="chat-private-note"><span></span> Private conversations</span>
+                    <button id="gocatEnableCallAlerts" class="gocat-call-alert-btn" type="button"><span aria-hidden="true">♧</span><span>Enable call alerts</span></button>
                 </div>
                 <div class="chat-layout">
                     <aside class="chat-friends">
@@ -486,6 +489,7 @@
                     </aside>
                     <div class="chat-panel">
                         <div class="chat-title">
+                            <button id="chatBackBtn" class="chat-back-btn" type="button" aria-label="Back to conversations">←</button>
                             <div class="chat-title-profile">
                                 <span id="chatHeaderAvatar" class="chat-header-avatar">✦</span>
                                 <div class="chat-title-copy">
