@@ -3,6 +3,7 @@
   "use strict";
   const $ = id => document.getElementById(id);
   let refreshRunning = false;
+  let inboxPreviewRunning = false;
 
   function leaveMobileConversation() {
     document.body.classList.remove("gocat-chat-open");
@@ -35,6 +36,78 @@
         window.GoCatVoiceCalls?.checkIncoming?.();
       }
     });
+  }
+
+
+  function inboxMessagePreview(row) {
+    let preview = String(row.content || "").trim();
+    if (!preview && row.attachment_mime) {
+      const mime = String(row.attachment_mime).toLowerCase();
+      if (mime.startsWith("audio/")) preview = "🎙 Voice message";
+      else if (mime.startsWith("image/")) preview = "📷 Photo";
+      else if (mime.startsWith("video/")) preview = "🎬 Video";
+      else preview = "📎 " + String(row.attachment_name || "Attachment");
+    }
+    if (!preview) preview = "New message";
+    if (String(row.sender_id) === String(currentUser.id)) preview = "You: " + preview;
+    return preview.replace(/\\s+/g, " ").slice(0, 88);
+  }
+
+  function inboxTimeLabel(value) {
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return "›";
+    const today = new Date();
+    if (date.toDateString() === today.toDateString()) {
+      return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    }
+    return date.toLocaleDateString([], { month: "short", day: "numeric" });
+  }
+
+  async function refreshInboxPreviews() {
+    const page = $("page-chats");
+    const list = $("chatFriends");
+    if (inboxPreviewRunning || document.hidden || !page || page.classList.contains("hidden") ||
+        !list || typeof currentUser === "undefined" || !currentUser ||
+        typeof db === "undefined" || !db) return;
+
+    inboxPreviewRunning = true;
+    try {
+      const userId = String(currentUser.id);
+      const result = await db.from("messages")
+        .select("sender_id,recipient_id,content,attachment_name,attachment_mime,created_at")
+        .or("sender_id.eq." + userId + ",recipient_id.eq." + userId)
+        .is("conversation_id", null)
+        .order("created_at", { ascending: false })
+        .limit(300);
+      if (result.error) throw result.error;
+
+      const latestByPeer = new Map();
+      (result.data || []).forEach(row => {
+        const peerId = String(row.sender_id) === userId ? String(row.recipient_id || "") : String(row.sender_id || "");
+        if (peerId && !latestByPeer.has(peerId)) latestByPeer.set(peerId, row);
+      });
+
+      const buttons = Array.from(list.querySelectorAll(".chat-friend"));
+      buttons.forEach((button, index) => {
+        const row = latestByPeer.get(String(button.dataset.chatUser || ""));
+        const preview = button.querySelector(".chat-friend-copy small");
+        const time = button.querySelector(".chat-friend-arrow");
+        button.dataset.inboxOrder = String(index);
+        button.dataset.lastMessageAt = row && row.created_at
+          ? String(new Date(row.created_at).getTime() || 0) : "0";
+        if (preview) preview.textContent = row ? inboxMessagePreview(row) : "Start a conversation";
+        if (time) time.textContent = row ? inboxTimeLabel(row.created_at) : "›";
+      });
+
+      buttons.sort((a, b) => {
+        const timeDifference = Number(b.dataset.lastMessageAt || 0) - Number(a.dataset.lastMessageAt || 0);
+        return timeDifference || Number(a.dataset.inboxOrder || 0) - Number(b.dataset.inboxOrder || 0);
+      }).forEach(button => list.appendChild(button));
+    } catch (error) {
+      console.warn("GoCat inbox previews:", error && error.message || error);
+    } finally {
+      inboxPreviewRunning = false;
+    }
   }
 
   async function refreshIfNewMessageExists() {
@@ -85,4 +158,16 @@
   // Realtime is the fast path. This ID-only check recovers missed events
   // without repeatedly downloading full conversations and their attachments.
   window.setInterval(refreshIfNewMessageExists, 11000);
+  window.setInterval(refreshInboxPreviews, 30000);
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) {
+      refreshIfNewMessageExists();
+      refreshInboxPreviews();
+    }
+  });
+  const contactList = $("chatFriends");
+  if (contactList && "MutationObserver" in window) {
+    new MutationObserver(refreshInboxPreviews).observe(contactList, { childList: true });
+  }
+  window.setTimeout(refreshInboxPreviews, 700);
 })();
