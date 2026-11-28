@@ -408,12 +408,12 @@
       let url;
       try { url = new URL(anchor.href, location.href); } catch { return; }
       if (url.protocol !== "https:" && url.protocol !== "http:") return;
-      const host = url.hostname.toLowerCase().replace(/^www\\./, "");
+      const host = url.hostname.toLowerCase().replace(/^www\./, "");
       let videoId = "";
       if (host === "youtu.be") videoId = url.pathname.split("/").filter(Boolean)[0] || "";
       if (host === "youtube.com" || host === "m.youtube.com") {
         if (url.pathname === "/watch") videoId = url.searchParams.get("v") || "";
-        const match = url.pathname.match(/^\\/(?:embed|shorts)\\/([A-Za-z0-9_-]{11})(?:$|\\/)/);
+        const match = url.pathname.match(/^\/(?:embed|shorts)\/([A-Za-z0-9_-]{11})(?:$|\/)/);
         if (!videoId && match) videoId = match[1];
       }
       if (/^[A-Za-z0-9_-]{11}$/.test(videoId)) {

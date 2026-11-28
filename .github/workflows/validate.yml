@@ -25,6 +25,7 @@ jobs:
           node --check gocat-batch-upload.js
           node --check gocat-thumbnail-repair.js
           node --check gocat-advanced.js
+          node --check gocat-group-chat.js
           node --check randomgo.js
           node --check gocat-enhancements.js
           node --check gocat-commercial-polish.js
