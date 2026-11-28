@@ -276,6 +276,10 @@
         ["cancelled", "declined", "ended"].includes(row.status)) {
       dismissIncomingCall();
       showToast(row.status === "cancelled" ? "The caller cancelled the invitation." : "The call invitation ended.");
+    } else if (incomingInvite && String(incomingInvite.id) === String(row.id) &&
+        row.status === "accepted" && !(activeCall && String(activeCall.id) === String(row.id))) {
+      dismissIncomingCall();
+      showToast("This call was answered on another device.");
     }
     if (activeCall && String(activeCall.id) === String(row.id)) {
       if (row.status === "declined") {
