@@ -2748,7 +2748,8 @@ async function generateVideoThumbnail(file, preferredTime = null) {
         await metadataReady;
 
         const duration = Number.isFinite(video.duration) ? video.duration : 0;
-        const requestedTime = Number(preferredTime);
+        const hasPreferredTime = preferredTime !== null && preferredTime !== undefined && preferredTime !== "";
+        const requestedTime = hasPreferredTime ? Number(preferredTime) : NaN;
         const targetTime = duration > 0
             ? Math.max(0, Math.min(duration - Math.min(0.08, duration / 10), Number.isFinite(requestedTime)
                 ? requestedTime
@@ -2850,8 +2851,8 @@ listen("uploadForm", "submit", async function (event) {
         // Public preview images use the same Blob-first route as other public media.
         // Fall back to Supabase only when the Blob uploader is not configured.
         try {
-            const chosenThumbnailTime = Number(window.GoCatThumbnailTime);
-            const thumbnailFile = await generateVideoThumbnail(file, Number.isFinite(chosenThumbnailTime) ? chosenThumbnailTime : null);
+            const chosenThumbnailTime = window.GoCatThumbnailTime;
+            const thumbnailFile = await generateVideoThumbnail(file, chosenThumbnailTime);
             if (thumbnailFile) {
                 const thumbnailObjectPath = currentUser.id + "/thumbnails/" +
                     Date.now() + "-" + Math.random().toString(36).slice(2, 9) + ".jpg";
