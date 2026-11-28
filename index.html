@@ -531,6 +531,7 @@
                         <div id="gocatVoiceNoteReview" class="gocat-voice-review hidden">
                             <span>Voice note ready to send</span>
                             <audio id="gocatVoiceNoteAudio" controls preload="metadata" aria-label="Play voice note before sending"></audio>
+                            <button id="gocatVoiceSendBtn" type="button" class="gocat-voice-send" disabled>Send voice message <span aria-hidden="true">➤</span></button>
                         </div>
                         <form id="chatForm" class="chat-compose">
                             <button id="chatAttachBtn" class="chat-attach-btn" type="button" disabled aria-label="Attach a file" title="Attach a photo, video, audio clip or document">＋</button>
@@ -762,9 +763,9 @@
                         </div>
                         <p id="voiceSettingsGuestNote" class="privacy-guest-note">Sign in to change who can call you. Device preferences can still be saved here.</p>
                         <label class="settings-row">
-                            <span><strong>Who can call you?</strong><small>Both people must allow calls and already have a direct GoCat conversation.</small></span>
+                            <span><strong>Who can call you?</strong><small>Both people must allow calls. Start from any one-to-one chat.</small></span>
                             <select id="settingVoiceCallPrivacy">
-                                <option value="everyone">Everyone who can message me</option>
+                                <option value="everyone">Everyone</option>
                                 <option value="followers">People I follow</option>
                                 <option value="mutuals">Mutual followers</option>
                                 <option value="nobody">No one</option>
@@ -779,6 +780,32 @@
                             <input id="settingVoiceCallMuteMic" type="checkbox">
                         </label>
                         <p class="gocat-voice-settings-note">GoCat only asks for microphone access when you start or accept a call. You can also revoke microphone permission in your browser settings.</p>
+                    </div>
+                    <div class="settings-card privacy-settings-card gocat-voice-settings-card">
+                        <div class="gocat-voice-settings-heading">
+                            <span class="gocat-voice-settings-icon" aria-hidden="true">🎙</span>
+                            <div><h2>Voice messages</h2><p>Choose who can send you voice notes and how you prefer to hear them.</p></div>
+                        </div>
+                        <p id="voiceMessageSettingsGuestNote" class="privacy-guest-note">Sign in to change who can send you voice messages. Playback speed is saved on this device.</p>
+                        <label class="settings-row">
+                            <span><strong>Who can send voice messages?</strong><small>Applies to voice notes in direct and group chats.</small></span>
+                            <select id="settingVoiceMessagePrivacy">
+                                <option value="everyone">Everyone</option>
+                                <option value="followers">People who follow you</option>
+                                <option value="mutuals">Mutual followers</option>
+                                <option value="nobody">Nobody</option>
+                            </select>
+                        </label>
+                        <label class="settings-row">
+                            <span><strong>Voice-message playback speed</strong><small>Set the default speed for voice notes in chats.</small></span>
+                            <select id="settingVoiceMessagePlaybackRate">
+                                <option value="1">1× Normal</option>
+                                <option value="1.25">1.25×</option>
+                                <option value="1.5">1.5×</option>
+                                <option value="2">2×</option>
+                            </select>
+                        </label>
+                        <p class="gocat-voice-settings-note">Microphone access is requested only when you start recording. You can also revoke it in your browser settings.</p>
                     </div>
                     <div class="settings-card privacy-settings-card">
                         <h2>Content audience</h2>
