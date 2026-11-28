@@ -217,7 +217,7 @@
       const source = imageItem.getAsFile();
       if (!source) return;
       event.preventDefault();
-      if (!currentUser || !currentChatUserId) {
+      if (!currentUser || (!currentChatUserId && !currentChatConversationId)) {
         if (typeof showToast === "function") showToast("Open a conversation before pasting an image.");
         return;
       }

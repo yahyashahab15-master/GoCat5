@@ -397,6 +397,59 @@
     chatForm.parentNode.insertBefore(button, chatForm);
   }
 
+  // Safe link previews: only YouTube receives an iframe. Twitch, Steam and GoCat
+  // links get ordinary cards, never arbitrary user-controlled embedded HTML.
+  function enhanceChatLinkPreviews() {
+    const root = $("chatMessages");
+    if (!root) return;
+    root.querySelectorAll("a.mix-chat-link").forEach(anchor => {
+      if (anchor.dataset.gocatPreviewDone === "true") return;
+      anchor.dataset.gocatPreviewDone = "true";
+      let url;
+      try { url = new URL(anchor.href, location.href); } catch { return; }
+      if (url.protocol !== "https:" && url.protocol !== "http:") return;
+      const host = url.hostname.toLowerCase().replace(/^www\\./, "");
+      let videoId = "";
+      if (host === "youtu.be") videoId = url.pathname.split("/").filter(Boolean)[0] || "";
+      if (host === "youtube.com" || host === "m.youtube.com") {
+        if (url.pathname === "/watch") videoId = url.searchParams.get("v") || "";
+        const match = url.pathname.match(/^\\/(?:embed|shorts)\\/([A-Za-z0-9_-]{11})(?:$|\\/)/);
+        if (!videoId && match) videoId = match[1];
+      }
+      if (/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
+        const card = document.createElement("div");
+        card.className = "gocat-link-preview gocat-youtube-preview";
+        const frame = document.createElement("iframe");
+        frame.src = "https://www.youtube-nocookie.com/embed/" + videoId;
+        frame.title = "YouTube video preview";
+        frame.loading = "lazy";
+        frame.referrerPolicy = "strict-origin-when-cross-origin";
+        frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-presentation");
+        frame.setAttribute("allow", "accelerometer; encrypted-media; gyroscope; picture-in-picture; web-share");
+        frame.allowFullscreen = true;
+        card.appendChild(frame);
+        anchor.insertAdjacentElement("afterend", card);
+        return;
+      }
+      let label = "";
+      if (host === "twitch.tv" || host === "clips.twitch.tv") label = "Open on Twitch";
+      else if (host === "store.steampowered.com" || host === "steamcommunity.com") label = "Open on Steam";
+      else if (host === "gocat.vercel.app") label = "Open this GoCat link";
+      if (!label) return;
+      const card = document.createElement("a");
+      card.className = "gocat-link-preview gocat-link-card";
+      card.href = url.href;
+      card.target = "_blank";
+      card.rel = "noopener noreferrer";
+      const title = document.createElement("strong");
+      title.textContent = label;
+      const detail = document.createElement("small");
+      detail.textContent = host;
+      card.append(title, detail);
+      anchor.insertAdjacentElement("afterend", card);
+    });
+  }
+
   // Render URLs in chat as safe clickable links, preserving ordinary text and line breaks.
   function linkifyMessages() {
     const root = $("chatMessages");
@@ -427,6 +480,7 @@
       fragment.appendChild(document.createTextNode(value.slice(cursor)));
       node.parentNode.replaceChild(fragment, node);
     });
+    enhanceChatLinkPreviews();
   }
   const originalLoadMessages = window.loadMessages;
   if (typeof originalLoadMessages === "function") {

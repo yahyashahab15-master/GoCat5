@@ -65,6 +65,7 @@
 <script defer src="/gocat-batch-upload.js"></script>
 <script defer src="/gocat-thumbnail-repair.js"></script>
     <script defer src="/gocat-advanced.js"></script>
+    <script defer src="/gocat-group-chat.js"></script>
 <script defer src="/gocat-pwa.js"></script>
 </head>
 
@@ -469,6 +470,25 @@
                             <input id="chatSearch" class="chat-search" type="search" placeholder="Search people" aria-label="Search conversations">
                         </label>
                         <p class="chat-list-caption">MUTUAL CONNECTIONS</p>
+                        <div class="gocat-group-tools">
+                            <button id="chatNewGroupBtn" class="gocat-group-create-btn" type="button">＋ Create group</button>
+                            <section id="chatGroupCreator" class="gocat-group-creator" hidden aria-label="Create a group chat">
+                                <label class="gocat-group-field">Group name
+                                    <input id="chatGroupName" type="text" maxlength="60" placeholder="e.g. Weekend gaming squad">
+                                </label>
+                                <label class="gocat-group-field">Find people
+                                    <input id="chatGroupMemberSearch" type="search" maxlength="60" placeholder="Search eligible connections">
+                                </label>
+                                <div id="chatGroupMemberPicker" class="gocat-group-member-picker"></div>
+                                <p class="gocat-group-help">Choose 1–49 people. Their message privacy settings are checked before the group is created.</p>
+                                <div class="gocat-group-create-actions">
+                                    <button id="chatCancelGroupBtn" class="soft-btn" type="button">Cancel</button>
+                                    <button id="chatCreateGroupBtn" class="primary-btn" type="button">Create group</button>
+                                </div>
+                            </section>
+                            <p class="chat-list-caption gocat-group-caption">GROUP CHATS</p>
+                            <div id="chatGroupList" class="gocat-group-list"></div>
+                        </div>
                         <div id="chatFriends" class="chat-friends-list"></div>
                     </aside>
                     <div class="chat-panel">
