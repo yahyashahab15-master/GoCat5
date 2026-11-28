@@ -142,15 +142,13 @@
     if (!button) return;
     const peerId = directPeerId();
     const enabled = !!currentUser && !!peerId && peerId !== String(currentUser.id) &&
-      existingDirectThread(peerId) && !activeCall && !incomingInvite;
+      !activeCall && !incomingInvite;
     button.disabled = !enabled;
     button.title = !peerId
       ? "Open a one-to-one conversation to call"
-      : !existingDirectThread(peerId)
-        ? "Send a direct message first, then you can call"
-        : activeCall || incomingInvite
-          ? "A voice call is already active"
-          : "Start a private one-to-one voice call";
+      : activeCall || incomingInvite
+        ? "A voice call is already active"
+        : "Start a private one-to-one voice call";
   }
 
   function subscribeChannel(channel, label) {
@@ -582,7 +580,6 @@
     const remoteId = directPeerId();
     if (!remoteId) return showToast("Open a one-to-one conversation first. Group voice calls are not enabled yet.");
     if (String(remoteId) === String(currentUser.id)) return;
-    if (!existingDirectThread(remoteId)) return showToast("Send a direct message first, then you can call.");
     if (activeCall || incomingInvite) return showToast("Finish the current call before starting another.");
 
     const callId = uuid();
