@@ -55,6 +55,7 @@
 <link rel="stylesheet" href="/gocat-stories.css">
 <link rel="stylesheet" href="/gocat-group-chat.css">
 <link rel="stylesheet" href="/gocat-voice-notes.css">
+<link rel="stylesheet" href="/gocat-voice-calls.css">
 
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script defer src="/gocat-media.js"></script>
@@ -69,6 +70,7 @@
     <script defer src="/gocat-advanced.js"></script>
     <script defer src="/gocat-group-chat.js"></script>
     <script defer src="/gocat-voice-notes.js"></script>
+    <script defer src="/gocat-voice-calls.js"></script>
 <script defer src="/gocat-pwa.js"></script>
 </head>
 
@@ -749,6 +751,31 @@
                             <span><strong>Read receipts</strong><small>Let message senders know when you have read their messages.</small></span>
                             <input id="settingReadReceipts" type="checkbox">
                         </label>
+                    </div>
+                    <div class="settings-card privacy-settings-card gocat-voice-settings-card">
+                        <div class="gocat-voice-settings-heading">
+                            <span class="gocat-voice-settings-icon" aria-hidden="true">☎</span>
+                            <div><h2>Voice &amp; calls</h2><p>Manage who can call you and how voice calls behave on this device.</p></div>
+                        </div>
+                        <p id="voiceSettingsGuestNote" class="privacy-guest-note">Sign in to change who can call you. Device preferences can still be saved here.</p>
+                        <label class="settings-row">
+                            <span><strong>Who can call you?</strong><small>Both people must allow calls and already have a direct GoCat conversation.</small></span>
+                            <select id="settingVoiceCallPrivacy">
+                                <option value="everyone">Everyone who can message me</option>
+                                <option value="followers">People I follow</option>
+                                <option value="mutuals">Mutual followers</option>
+                                <option value="nobody">No one</option>
+                            </select>
+                        </label>
+                        <label class="settings-row">
+                            <span><strong>Incoming-call sound</strong><small>Play a short alert when GoCat is open and someone calls.</small></span>
+                            <input id="settingVoiceCallSound" type="checkbox">
+                        </label>
+                        <label class="settings-row">
+                            <span><strong>Start calls muted</strong><small>Keep your microphone off until you unmute it during a call.</small></span>
+                            <input id="settingVoiceCallMuteMic" type="checkbox">
+                        </label>
+                        <p class="gocat-voice-settings-note">GoCat only asks for microphone access when you start or accept a call. You can also revoke microphone permission in your browser settings.</p>
                     </div>
                     <div class="settings-card privacy-settings-card">
                         <h2>Content audience</h2>

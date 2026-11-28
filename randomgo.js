@@ -145,7 +145,10 @@ let homeVisibleCycles = 1, exploreVisible = 6, postsVisible = 5, reelsVisible = 
 let uploadMode = "video", selectedVideoFile = null, exportedReelFile = null;
 let currentObjectURL = null, reelObserver = null, tusLibraryPromise = null;
 let editorAudioContext = null, editorVideoSource = null, editorVideoGain = null, editorMusicObjectURL = null;
-let settings = { theme: "dark", autoplay: true, muted: true, history: true };
+let settings = {
+    theme: "dark", autoplay: true, muted: true, history: true,
+    voiceCallSound: true, voiceCallMuteMicByDefault: false
+};
 
 
 /* ---------- 03 ICONS ---------- */
@@ -421,7 +424,9 @@ function loadSettings() {
         theme: saved.theme || systemTheme(),
         autoplay: saved.autoplay !== false,
         muted: saved.muted !== false,
-        history: saved.history !== false
+        history: saved.history !== false,
+        voiceCallSound: saved.voiceCallSound !== false,
+        voiceCallMuteMicByDefault: saved.voiceCallMuteMicByDefault === true
     };
 }
 
@@ -444,6 +449,8 @@ function applySettings() {
     if ($("settingAutoplay")) $("settingAutoplay").checked = settings.autoplay;
     if ($("settingMuted")) $("settingMuted").checked = settings.muted;
     if ($("settingHistory")) $("settingHistory").checked = settings.history;
+    if ($("settingVoiceCallSound")) $("settingVoiceCallSound").checked = settings.voiceCallSound;
+    if ($("settingVoiceCallMuteMic")) $("settingVoiceCallMuteMic").checked = settings.voiceCallMuteMicByDefault;
 }
 
 hydrateIcons();
@@ -590,7 +597,7 @@ listen("registerForm", "submit", async function (event) {
 /* ---------- 07 PROFILE, ADMIN, DATA LOADING ---------- */
 
 async function ensureProfile() {
-    const publicColumns = "id,username,bio,avatar_path,created_at,channel_theme,is_private,show_followers,show_following,allow_messages_from,allow_comments_from,show_activity_status,send_read_receipts,account_discoverable,default_video_visibility";
+    const publicColumns = "id,username,bio,avatar_path,created_at,channel_theme,is_private,show_followers,show_following,allow_messages_from,allow_comments_from,show_activity_status,send_read_receipts,account_discoverable,default_video_visibility,allow_voice_calls_from";
     const existing = await db.from("users").select(publicColumns).eq("id", currentUser.id).maybeSingle();
     if (existing.error) throw existing.error;
 
@@ -612,7 +619,7 @@ async function ensureProfile() {
         const insert = await db
             .from("users")
             .insert({ id: currentUser.id, username, email: currentUser.email, created_at: Date.now(), channel_theme: "emerald" })
-            .select("id,username,bio,avatar_path,created_at,channel_theme,is_private,show_followers,show_following,allow_messages_from,allow_comments_from,show_activity_status,send_read_receipts,account_discoverable,default_video_visibility")
+            .select("id,username,bio,avatar_path,created_at,channel_theme,is_private,show_followers,show_following,allow_messages_from,allow_comments_from,show_activity_status,send_read_receipts,account_discoverable,default_video_visibility,allow_voice_calls_from")
             .maybeSingle();
 
         if (!insert.error) {
@@ -3351,7 +3358,7 @@ listen("editProfileForm", "submit", async function (event) {
             }
         }
         const result = await db.from("users").update({ username, bio, avatar_path: avatarPath, channel_theme: channelTheme })
-            .eq("id", currentUser.id).select("id,username,bio,avatar_path,created_at,channel_theme,is_private,show_followers,show_following,allow_messages_from,allow_comments_from,show_activity_status,send_read_receipts,account_discoverable,default_video_visibility").single();
+            .eq("id", currentUser.id).select("id,username,bio,avatar_path,created_at,channel_theme,is_private,show_followers,show_following,allow_messages_from,allow_comments_from,show_activity_status,send_read_receipts,account_discoverable,default_video_visibility,allow_voice_calls_from").single();
         if (result.error) throw result.error;
 
         currentProfile = result.data;
@@ -4737,7 +4744,7 @@ listen("themeBtn", "click", function () {
 
 const privacyPreferenceFields = new Set([
     "is_private", "account_discoverable", "show_followers", "show_following",
-    "allow_messages_from", "allow_comments_from", "show_activity_status",
+    "allow_messages_from", "allow_comments_from", "allow_voice_calls_from", "show_activity_status",
     "send_read_receipts", "default_video_visibility"
 ]);
 
@@ -4750,12 +4757,13 @@ async function savePrivacyPreference(field, value, label) {
     const controls = [
         "settingPrivateAccount", "settingDiscoverable", "settingShowFollowers",
         "settingShowFollowing", "settingMessagePrivacy", "settingCommentPrivacy",
-        "settingActivityStatus", "settingReadReceipts", "settingDefaultVideoVisibility"
+        "settingActivityStatus", "settingReadReceipts", "settingDefaultVideoVisibility",
+        "settingVoiceCallPrivacy"
     ];
     controls.forEach(id => { if ($(id)) $(id).disabled = true; });
     try {
         const result = await db.from("users").update({ [field]: value })
-            .eq("id", currentUser.id).select("id,username,bio,avatar_path,created_at,channel_theme,is_private,show_followers,show_following,allow_messages_from,allow_comments_from,show_activity_status,send_read_receipts,account_discoverable,default_video_visibility").single();
+            .eq("id", currentUser.id).select("id,username,bio,avatar_path,created_at,channel_theme,is_private,show_followers,show_following,allow_messages_from,allow_comments_from,show_activity_status,send_read_receipts,account_discoverable,default_video_visibility,allow_voice_calls_from").single();
         if (result.error) throw result.error;
         currentProfile = { ...(currentProfile || {}), ...(result.data || {}) };
         users = users.map(user => String(user.id) === String(currentUser.id)
@@ -4853,6 +4861,8 @@ function renderSettings() {
     if ($("settingAutoplay")) $("settingAutoplay").checked = settings.autoplay;
     if ($("settingMuted")) $("settingMuted").checked = settings.muted;
     if ($("settingHistory")) $("settingHistory").checked = settings.history;
+    if ($("settingVoiceCallSound")) $("settingVoiceCallSound").checked = settings.voiceCallSound !== false;
+    if ($("settingVoiceCallMuteMic")) $("settingVoiceCallMuteMic").checked = settings.voiceCallMuteMicByDefault === true;
     if ($("settingsUsername")) $("settingsUsername").textContent = currentUser ? getCurrentAccountName() : "Guest";
     if ($("settingsEmail")) $("settingsEmail").textContent = currentUser?.email || "";
     paintAvatar("settingsAvatar", currentUser ? getCurrentAccountName() : "Guest", currentProfile?.avatar_path || "");
@@ -4875,6 +4885,7 @@ function renderSettings() {
     const selects = [
         ["settingMessagePrivacy", "allow_messages_from", "mutuals"],
         ["settingCommentPrivacy", "allow_comments_from", "everyone"],
+        ["settingVoiceCallPrivacy", "allow_voice_calls_from", "mutuals"],
         ["settingDefaultVideoVisibility", "default_video_visibility", "public"]
     ];
     selects.forEach(([id, field, fallback]) => {
@@ -4884,6 +4895,7 @@ function renderSettings() {
         select.disabled = !currentUser;
     });
     if ($("privacyGuestNote")) $("privacyGuestNote").classList.toggle("hidden", !!currentUser);
+    if ($("voiceSettingsGuestNote")) $("voiceSettingsGuestNote").classList.toggle("hidden", !!currentUser);
     if ($("videoVisibility") && !$("videoVisibility").dataset.userTouched) {
         $("videoVisibility").value = profile.default_video_visibility || "public";
     }
@@ -4910,6 +4922,18 @@ listen("settingActivityStatus", "change", function () { savePrivacyPreference("s
 listen("settingReadReceipts", "change", function () { savePrivacyPreference("send_read_receipts", this.checked, "Read receipts"); });
 listen("settingMessagePrivacy", "change", function () { savePrivacyPreference("allow_messages_from", this.value, "Message privacy"); });
 listen("settingCommentPrivacy", "change", function () { savePrivacyPreference("allow_comments_from", this.value, "Comment privacy"); });
+listen("settingVoiceCallPrivacy", "change", function () { savePrivacyPreference("allow_voice_calls_from", this.value, "Voice-call privacy"); });
+listen("settingVoiceCallSound", "change", function () {
+    settings.voiceCallSound = this.checked;
+    saveSettings();
+    window.GoCatVoiceCalls?.updateSettings?.();
+    showToast(settings.voiceCallSound ? "Incoming-call sound on" : "Incoming-call sound off");
+});
+listen("settingVoiceCallMuteMic", "change", function () {
+    settings.voiceCallMuteMicByDefault = this.checked;
+    saveSettings();
+    showToast(settings.voiceCallMuteMicByDefault ? "Calls will start muted" : "Calls will start with your microphone on");
+});
 listen("settingDefaultVideoVisibility", "change", function () {
     if ($("videoVisibility")) { $("videoVisibility").value = this.value; $("videoVisibility").dataset.userTouched = ""; }
     if ($("postVisibility")) { $("postVisibility").value = this.value; $("postVisibility").dataset.userTouched = ""; }
@@ -4919,7 +4943,10 @@ listen("videoVisibility", "change", function () { this.dataset.userTouched = "tr
 listen("postVisibility", "change", function () { this.dataset.userTouched = "true"; });
 
 listen("resetSettingsBtn", "click", function () {
-    settings = { theme: systemTheme(), autoplay: true, muted: true, history: true };
+    settings = {
+        theme: systemTheme(), autoplay: true, muted: true, history: true,
+        voiceCallSound: true, voiceCallMuteMicByDefault: false
+    };
     saveSettings();
     applySettings();
     renderSettings();
