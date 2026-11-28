@@ -596,8 +596,23 @@ listen("registerForm", "submit", async function (event) {
 
 /* ---------- 07 PROFILE, ADMIN, DATA LOADING ---------- */
 
+async function loadMyVoiceCallPrivacy() {
+    if (!currentUser) return;
+    try {
+        const result = await db.rpc("gocat_get_my_voice_call_privacy");
+        if (result.error) throw result.error;
+        currentProfile = {
+            ...(currentProfile || {}),
+            allow_voice_calls_from: result.data || "mutuals"
+        };
+    } catch (error) {
+        console.warn("Voice-call privacy setting could not load:", error.message || error);
+        currentProfile = { ...(currentProfile || {}), allow_voice_calls_from: "mutuals" };
+    }
+}
+
 async function ensureProfile() {
-    const publicColumns = "id,username,bio,avatar_path,created_at,channel_theme,is_private,show_followers,show_following,allow_messages_from,allow_comments_from,show_activity_status,send_read_receipts,account_discoverable,default_video_visibility,allow_voice_calls_from";
+    const publicColumns = "id,username,bio,avatar_path,created_at,channel_theme,is_private,show_followers,show_following,allow_messages_from,allow_comments_from,show_activity_status,send_read_receipts,account_discoverable,default_video_visibility";
     const existing = await db.from("users").select(publicColumns).eq("id", currentUser.id).maybeSingle();
     if (existing.error) throw existing.error;
 
@@ -619,7 +634,7 @@ async function ensureProfile() {
         const insert = await db
             .from("users")
             .insert({ id: currentUser.id, username, email: currentUser.email, created_at: Date.now(), channel_theme: "emerald" })
-            .select("id,username,bio,avatar_path,created_at,channel_theme,is_private,show_followers,show_following,allow_messages_from,allow_comments_from,show_activity_status,send_read_receipts,account_discoverable,default_video_visibility,allow_voice_calls_from")
+            .select("id,username,bio,avatar_path,created_at,channel_theme,is_private,show_followers,show_following,allow_messages_from,allow_comments_from,show_activity_status,send_read_receipts,account_discoverable,default_video_visibility")
             .maybeSingle();
 
         if (!insert.error) {
@@ -914,6 +929,7 @@ async function startGoCat() {
     try {
         if (!currentUser) throw new Error("No signed-in user was found.");
         await ensureProfile();
+        await loadMyVoiceCallPrivacy();
         await loadAdminStatus();
         await loadAllData();
         currentProfileUserId = currentUser.id;
@@ -3358,7 +3374,7 @@ listen("editProfileForm", "submit", async function (event) {
             }
         }
         const result = await db.from("users").update({ username, bio, avatar_path: avatarPath, channel_theme: channelTheme })
-            .eq("id", currentUser.id).select("id,username,bio,avatar_path,created_at,channel_theme,is_private,show_followers,show_following,allow_messages_from,allow_comments_from,show_activity_status,send_read_receipts,account_discoverable,default_video_visibility,allow_voice_calls_from").single();
+            .eq("id", currentUser.id).select("id,username,bio,avatar_path,created_at,channel_theme,is_private,show_followers,show_following,allow_messages_from,allow_comments_from,show_activity_status,send_read_receipts,account_discoverable,default_video_visibility").single();
         if (result.error) throw result.error;
 
         currentProfile = result.data;
@@ -4762,8 +4778,18 @@ async function savePrivacyPreference(field, value, label) {
     ];
     controls.forEach(id => { if ($(id)) $(id).disabled = true; });
     try {
+        if (field === "allow_voice_calls_from") {
+            const voiceResult = await db.from("users")
+                .update({ allow_voice_calls_from: value })
+                .eq("id", currentUser.id);
+            if (voiceResult.error) throw voiceResult.error;
+            currentProfile = { ...(currentProfile || {}), allow_voice_calls_from: value };
+            renderSettings();
+            showToast((label || "Voice-call privacy") + " saved.");
+            return;
+        }
         const result = await db.from("users").update({ [field]: value })
-            .eq("id", currentUser.id).select("id,username,bio,avatar_path,created_at,channel_theme,is_private,show_followers,show_following,allow_messages_from,allow_comments_from,show_activity_status,send_read_receipts,account_discoverable,default_video_visibility,allow_voice_calls_from").single();
+            .eq("id", currentUser.id).select("id,username,bio,avatar_path,created_at,channel_theme,is_private,show_followers,show_following,allow_messages_from,allow_comments_from,show_activity_status,send_read_receipts,account_discoverable,default_video_visibility").single();
         if (result.error) throw result.error;
         currentProfile = { ...(currentProfile || {}), ...(result.data || {}) };
         users = users.map(user => String(user.id) === String(currentUser.id)
