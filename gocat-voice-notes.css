@@ -45,3 +45,15 @@
   .gocat-voice-recording-copy{flex-basis:calc(100% - 28px)}
   .gocat-voice-recording time{margin-left:auto}
 }
+
+.gocat-voice-send{
+  justify-self:start;display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  min-height:36px;padding:8px 13px;border:1px solid rgba(22,210,138,.35);
+  border-radius:10px;background:rgba(22,210,138,.12);color:var(--text);
+  font:inherit;font-size:11px;font-weight:800;cursor:pointer;transition:.16s ease;
+}
+.gocat-voice-send:hover:not(:disabled){background:rgba(22,210,138,.2);transform:translateY(-1px)}
+.gocat-voice-send:disabled{opacity:.4;cursor:not-allowed}
+.gocat-voice-message{border-color:rgba(22,210,138,.25);background:rgba(22,210,138,.055)}
+.gocat-voice-message>strong{color:var(--text)}
+.gocat-voice-message audio{accent-color:#16d28a}
