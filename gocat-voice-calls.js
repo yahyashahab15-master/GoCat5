@@ -63,6 +63,10 @@
   }
 
   function callErrorMessage(error) {
+    const rawMessage = String(error && error.message || "").toLowerCase();
+    if (error && (error.code === "42501" || /row-level security|permission denied|policy/.test(rawMessage))) {
+      return "This call is blocked by privacy settings. With Mutual followers, you both need to follow each other, and both accounts must allow voice calls.";
+    }
     if (error && (error.name === "NotAllowedError" || error.name === "PermissionDeniedError")) {
       return "Microphone permission was denied. Allow microphone access for GoCat and try again.";
     }
@@ -721,6 +725,16 @@
     if (!remoteId) return showToast("Open a one-to-one conversation first. Group voice calls are not enabled yet.");
     if (String(remoteId) === String(currentUser.id)) return;
     if (activeCall || incomingInvite) return showToast("Finish the current call before starting another.");
+
+    try {
+      const permission = await db.rpc("gocat_can_call_user", { p_target_id: String(remoteId) });
+      if (!permission.error && permission.data !== true) {
+        return showToast("Call not allowed yet. With Mutual followers, you both need to follow each other and both accounts must allow calls.");
+      }
+      if (permission.error) console.warn("GoCat call privacy pre-check:", permission.error.message);
+    } catch (error) {
+      console.warn("GoCat call privacy pre-check:", error.message || error);
+    }
 
     const callId = uuid();
     const expiresAt = new Date(Date.now() + INVITE_TTL_MS).toISOString();
