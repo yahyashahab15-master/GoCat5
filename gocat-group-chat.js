@@ -206,6 +206,8 @@ var chatGroupMemberships = [];
       "Group chat · " + members.length + " members · Group typing and presence are not enabled yet";
     if ($("chatTypingStatus")) $("chatTypingStatus").textContent = "";
     setComposerEnabled(true);
+    window.GoCatVoiceNotes?.syncButtonState?.();
+    window.GoCatVoiceCalls?.refreshButton?.();
     renderGroupList();
     if (typeof baseRenderChatFriends === "function") baseRenderChatFriends();
     await loadGroupMessages();
