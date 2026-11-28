@@ -162,14 +162,14 @@
         : "Start a private one-to-one voice call";
   }
 
-  function subscribeChannel(channel, label) {
+  function subscribeChannel(channel, label, timeoutMs) {
     return new Promise(function (resolve, reject) {
       let settled = false;
       const timeout = setTimeout(function () {
         if (settled) return;
         settled = true;
         reject(new Error(label + " timed out. Check your connection and try again."));
-      }, 12000);
+      }, Number(timeoutMs) > 0 ? Number(timeoutMs) : 12000);
       channel.subscribe(function (status, error) {
         if (settled) return;
         if (status === "SUBSCRIBED") {
@@ -197,6 +197,10 @@
         inboxChannel = null;
         inboxUserId = "";
       }
+      inboxUserId = userId;
+      if (inboxPollTimer) clearInterval(inboxPollTimer);
+      inboxPollTimer = setInterval(pollIncomingInvites, INBOX_POLL_MS);
+
       const channel = db.channel("gocat-call-inbox-" + userId + "-" + uuid());
       channel.on("postgres_changes", {
         event: "*",
@@ -206,15 +210,23 @@
       }, function (change) {
         handleInboxInviteChange(change && change.new ? change.new : {}, change && change.old ? change.old : {});
       });
-      await subscribeChannel(channel, "incoming call inbox");
+      try {
+        await subscribeChannel(channel, "incoming call inbox", 4500);
+        inboxChannel = channel;
+      } catch (error) {
+        console.warn("GoCat live incoming-call subscription unavailable; using database polling:", error.message || error);
+        try { await db.removeChannel(channel); } catch {}
+      }
       if (!currentUser || String(currentUser.id) !== userId) {
-        await db.removeChannel(channel);
+        if (inboxPollTimer) clearInterval(inboxPollTimer);
+        inboxPollTimer = null;
+        inboxUserId = "";
+        if (inboxChannel) {
+          try { await db.removeChannel(inboxChannel); } catch {}
+          inboxChannel = null;
+        }
         return;
       }
-      inboxChannel = channel;
-      inboxUserId = userId;
-      if (inboxPollTimer) clearInterval(inboxPollTimer);
-      inboxPollTimer = setInterval(pollIncomingInvites, INBOX_POLL_MS);
 
       const pending = await db.from("gocat_voice_call_invites")
         .select("id,caller_id,callee_id,status,expires_at")
@@ -225,6 +237,8 @@
         .limit(1);
       if (pending.error) console.warn("GoCat pending calls:", pending.error.message);
       else if (pending.data && pending.data[0]) receiveIncomingInvite(pending.data[0]);
+      // Immediately run the fallback once, so a missed Realtime INSERT is caught.
+      pollIncomingInvites();
     })();
 
     try { await inboxPromise; }
@@ -391,9 +405,20 @@
 
   async function subscribeCallRow(call) {
     const channel = callRowChannel(call);
-    await subscribeChannel(channel, "call status");
-    call.inviteChannel = channel;
-    return channel;
+    try {
+      await subscribeChannel(channel, "call status", 4500);
+      if (activeCall !== call) {
+        await db.removeChannel(channel);
+        throw new Error("The call was cancelled.");
+      }
+      call.inviteChannel = channel;
+      return channel;
+    } catch (error) {
+      if (activeCall !== call) throw error;
+      console.warn("GoCat live call-status subscription unavailable; using database polling:", error.message || error);
+      try { await db.removeChannel(channel); } catch {}
+      return null;
+    }
   }
 
   async function subscribeCallSignals(call) {
@@ -406,13 +431,20 @@
     }, function (change) {
       dispatchCallSignal(call, change && change.new ? change.new : {});
     });
-    await subscribeChannel(channel, "voice connection");
-    if (activeCall !== call) {
-      await db.removeChannel(channel);
-      throw new Error("The call was cancelled.");
+    try {
+      await subscribeChannel(channel, "voice connection", 4500);
+      if (activeCall !== call) {
+        await db.removeChannel(channel);
+        throw new Error("The call was cancelled.");
+      }
+      call.signalChannel = channel;
+      return channel;
+    } catch (error) {
+      if (activeCall !== call) throw error;
+      console.warn("GoCat live voice-signal subscription unavailable; using database polling:", error.message || error);
+      try { await db.removeChannel(channel); } catch {}
+      return null;
     }
-    call.signalChannel = channel;
-    return channel;
   }
 
   function dispatchCallSignal(call, row) {
