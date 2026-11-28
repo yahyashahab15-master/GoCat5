@@ -25,6 +25,16 @@ var chatGroupMemberships = [];
     return chatGroupMemberships.filter(row => String(row.conversation_id) === String(id)).length;
   }
 
+  function bumpGroupTimestamp(id, timestamp) {
+    const group = chatGroupConversations.find(item => String(item.id) === String(id));
+    if (!group) return;
+    group.last_message_at = timestamp || new Date().toISOString();
+    chatGroupConversations.sort((a, b) =>
+      new Date(b.last_message_at || b.created_at || 0) - new Date(a.last_message_at || a.created_at || 0)
+    );
+    renderGroupList();
+  }
+
   async function loadGroupConversations(force) {
     if (!currentUser || !db) {
       chatGroupConversations = [];
@@ -161,7 +171,10 @@ var chatGroupMemberships = [];
         filter: "conversation_id=eq." + String(group.id)
       }, payload => {
         const row = payload.new || payload.old || {};
-        if (String(row.conversation_id) === String(currentChatConversationId)) loadGroupMessages();
+        if (String(row.conversation_id) === String(currentChatConversationId)) {
+          bumpGroupTimestamp(row.conversation_id, row.created_at);
+          loadGroupMessages();
+        }
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "message_reactions" }, payload => {
         const row = payload.new || payload.old || {};
@@ -277,6 +290,7 @@ var chatGroupMemberships = [];
       }
       const sent = await db.from("messages").insert(row);
       if (sent.error) throw sent.error;
+      bumpGroupTimestamp(targetId, new Date().toISOString());
       $("messageInput").value = "";
       resetChatAttachmentSelection();
       await loadGroupMessages();
@@ -507,6 +521,7 @@ var chatGroupMemberships = [];
       content: body
     });
     if (result.error) throw result.error;
+    bumpGroupTimestamp(currentChatConversationId, new Date().toISOString());
     await loadGroupMessages();
     showToast("Video shared with " + groupName(currentChatConversationId) + ".");
     return true;

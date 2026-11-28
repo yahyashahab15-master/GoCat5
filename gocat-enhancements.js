@@ -347,6 +347,17 @@
     if (!requireAuth("share videos in chat")) return;
     const video = videos.find(v => String(v.id) === String(videoId));
     if (!video) return showToast("That video is not available.");
+    if (typeof currentChatConversationId !== "undefined" && currentChatConversationId) {
+      try {
+        if (typeof window.GoCatSendVideoToOpenGroup !== "function") {
+          throw new Error("Group video sharing is not ready. Refresh GoCat and try again.");
+        }
+        await window.GoCatSendVideoToOpenGroup(video);
+      } catch (error) {
+        showToast("Video could not be sent: " + error.message);
+      }
+      return;
+    }
     const mutuals = getMutualFriends();
     if (!mutuals.length) return showToast("You need a mutual follow connection before messaging.");
     if (currentChatUserId) {
