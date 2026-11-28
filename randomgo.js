@@ -3655,6 +3655,41 @@ document.addEventListener("ended", function (event) {
 
 /* ---------- 28 MESSAGES ---------- */
 
+function getDirectMessageBlockReason(userId) {
+    if (!currentUser) return "Sign in to send messages.";
+    const target = users.find(user => String(user.id) === String(userId));
+    if (!target) return "This account could not be found. Refresh GoCat and try again.";
+
+    const setting = target.allow_messages_from || "mutuals";
+    if (setting === "everyone") return "";
+    if (setting === "nobody") return "This account is not accepting direct messages.";
+
+    const iFollowThem = isFollowing(target.id);
+    const theyFollowMe = follows.some(row =>
+        String(row.follower_id) === String(target.id) &&
+        String(row.following_id) === String(currentUser.id)
+    );
+
+    if (setting === "followers" && !theyFollowMe) {
+        return "This account only accepts messages from people it follows. It needs to follow you first.";
+    }
+    if (setting === "mutuals" && !(iFollowThem && theyFollowMe)) {
+        return "Mutual followers only: you and this account must follow each other before messaging.";
+    }
+    return "";
+}
+
+async function canMessageUser(userId) {
+    try {
+        const result = await db.rpc("gocat_can_message_user", { p_target_id: String(userId) });
+        if (!result.error) return result.data === true;
+        console.warn("GoCat message privacy pre-check:", result.error.message);
+    } catch (error) {
+        console.warn("GoCat message privacy pre-check:", error.message || error);
+    }
+    return !getDirectMessageBlockReason(userId);
+}
+
 function getMutualFriends() {
     if (!currentUser) return [];
     const me = String(currentUser.id);
@@ -3667,7 +3702,8 @@ function getMutualFriends() {
         const theyFollowMe = follows.some(row =>
             String(row.follower_id) === String(user.id) && String(row.following_id) === me
         );
-        if (setting === "followers") return iFollowThem;
+        // "People you follow" means the recipient follows the sender.
+        if (setting === "followers") return theyFollowMe;
         return iFollowThem && theyFollowMe;
     });
 }
@@ -3908,8 +3944,9 @@ function renderChatFriends() {
 
 async function openChat(userId) {
     if (!requireAuth("chat")) return;
-    if (!getMutualFriends().some(u => String(u.id) === String(userId))) {
-        return showToast("This creator is not accepting messages from your account.");
+    if (!await canMessageUser(userId)) {
+        return showToast(getDirectMessageBlockReason(userId) ||
+            "This account's message privacy settings do not allow this chat.");
     }
 
     currentChatUserId = userId;
@@ -4276,8 +4313,9 @@ listen("chatForm", "submit", async function (event) {
     const file = selectedChatAttachment || $("chatAttachmentFile")?.files?.[0] || null;
     if (!text && !file) return showToast("Write a message or attach a file.");
     if (!currentChatUserId) return showToast("Choose a conversation first.");
-    if (!getMutualFriends().some(user => String(user.id) === String(currentChatUserId))) {
-        return showToast("Chat is available to mutual followers only.");
+    if (!await canMessageUser(currentChatUserId)) {
+        return showToast(getDirectMessageBlockReason(currentChatUserId) ||
+            "This account's message privacy settings do not allow this chat.");
     }
     if (file && file.size > MAX_CHAT_ATTACHMENT_BYTES) {
         return showToast("Chat attachments must be 50 MB or smaller.");
