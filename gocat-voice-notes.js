@@ -85,6 +85,7 @@
     if (voicePreviewUrl) URL.revokeObjectURL(voicePreviewUrl);
     voicePreviewUrl = "";
     if (review) review.classList.add("hidden");
+    if ($("gocatVoiceSendBtn")) $("gocatVoiceSendBtn").disabled = true;
   }
 
   function cleanupRecordingUI() {
@@ -104,6 +105,19 @@
   function showStatus(message) {
     const status = $("chatUploadStatus");
     if (status) status.textContent = message;
+  }
+
+  function updatePlaybackRate() {
+    const requested = Number(settings && settings.voiceMessagePlaybackRate);
+    const rate = [1, 1.25, 1.5, 2].includes(requested) ? requested : 1;
+    document.querySelectorAll("#chatMessages audio, #gocatVoiceNoteAudio").forEach(audio => {
+      try {
+        audio.playbackRate = rate;
+        audio.defaultPlaybackRate = rate;
+      } catch (error) {
+        console.warn("GoCat voice playback speed:", error);
+      }
+    });
   }
 
   function cancelRecording(silent) {
@@ -178,8 +192,10 @@
     }
     voicePreviewUrl = URL.createObjectURL(file);
     if ($("gocatVoiceNoteAudio")) $("gocatVoiceNoteAudio").src = voicePreviewUrl;
+    updatePlaybackRate();
     if ($("gocatVoiceNoteReview")) $("gocatVoiceNoteReview").classList.remove("hidden");
-    showStatus("Voice note ready · Review it, then press Send.");
+    if ($("gocatVoiceSendBtn")) $("gocatVoiceSendBtn").disabled = false;
+    showStatus("Voice note ready · Review it, then send your voice message.");
     showToast("Voice note attached. Review it and tap Send.");
   }
 
@@ -294,6 +310,15 @@
 
   function bindUI() {
     $("chatVoiceNoteBtn")?.addEventListener("click", startRecording);
+    $("gocatVoiceSendBtn")?.addEventListener("click", () => {
+      if (!selectedChatAttachment || !/^gocat-voice-note-/i.test(selectedChatAttachment.name || "")) {
+        return showToast("Record a voice note before sending.");
+      }
+      const form = $("chatForm");
+      if (!form) return showToast("The chat composer is unavailable. Refresh GoCat and try again.");
+      if (typeof form.requestSubmit === "function") form.requestSubmit();
+      else $("sendMessageBtn")?.click();
+    });
     $("gocatVoiceFinishBtn")?.addEventListener("click", () => finishRecording(false));
     $("gocatVoiceCancelBtn")?.addEventListener("click", () => cancelRecording(false));
 
@@ -304,6 +329,10 @@
     const composer = $("messageInput");
     if (composer && "MutationObserver" in window) {
       new MutationObserver(syncButtonState).observe(composer, { attributes: true, attributeFilter: ["disabled"] });
+    }
+    const chatMessages = $("chatMessages");
+    if (chatMessages && "MutationObserver" in window) {
+      new MutationObserver(updatePlaybackRate).observe(chatMessages, { childList: true, subtree: true });
     }
     $("chatClearAttachment")?.addEventListener("click", () => clearPreview());
     $("chatAttachmentFile")?.addEventListener("change", () => clearPreview());
@@ -333,9 +362,10 @@
     }
 
     syncButtonState();
+    updatePlaybackRate();
   }
 
-  window.GoCatVoiceNotes = { clearPreview, cancelRecording };
+  window.GoCatVoiceNotes = { clearPreview, cancelRecording, updatePlaybackRate };
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", bindUI, { once: true });
   } else {
