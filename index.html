@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="/gocat-growth.css">
 <link rel="stylesheet" href="/gocat-chat-admin.css">
 <link rel="stylesheet" href="/gocat-followers.css">
+<link rel="stylesheet" href="/gocat-privacy.css">
 <title>GoCat — Discover Videos, Explore Creators & Share</title>
 <meta name="description" content="GoCat is a video-sharing platform where you can discover videos, explore creators, watch Reels, and share your own content.">
 <meta name="robots" content="index, follow, max-image-preview:large">
@@ -338,6 +339,13 @@
                     </div>
                     <form id="createPostForm" class="create-post-card">
                         <textarea id="postContent" maxlength="1000" placeholder="What's on your mind?"></textarea>
+                        <label class="post-audience-label">Post audience
+                            <select id="postVisibility">
+                                <option value="public">Everyone</option>
+                                <option value="followers">Followers</option>
+                                <option value="private">Only me</option>
+                            </select>
+                        </label>
                         <div class="post-compose-row">
                             <label class="file-pill"><i data-icon="image"></i>Add image
                                 <input id="postImage" type="file" accept="image/jpeg,image/png,image/webp" hidden>
@@ -467,7 +475,7 @@
                                 <span id="chatHeaderAvatar" class="chat-header-avatar">✦</span>
                                 <div class="chat-title-copy">
                                     <strong id="chatTitle">Select a conversation</strong>
-                                    <small id="chatPresence" class="chat-presence">Choose a mutual follower</small>
+                                    <small id="chatPresence" class="chat-presence">Messages follow each creator's privacy settings</small>
                                 </div>
                             </div>
                             <span class="chat-encryption-note">✦ &nbsp; Your private space</span>
@@ -573,6 +581,7 @@
                     <button type="button" id="profileFollowingOpen" class="channel-stat-button" aria-label="View following" aria-haspopup="dialog"><strong id="profileFollowingCount">0</strong><span>Following</span></button>
                     <div><strong id="profilePostCount">0</strong><span>Posts</span></div>
                 </div>
+                <div id="profilePrivateNotice" class="gocat-private-notice hidden" role="status"></div>
                 <div class="profile-tabs">
                     <button class="profile-tab active" data-profile-tab="home">Home</button>
                     <button class="profile-tab" data-profile-tab="reels">Reels</button>
@@ -629,6 +638,74 @@
                             <span><strong>Save watch history</strong><small>Remember what you play on this device.</small></span>
                             <input id="settingHistory" type="checkbox">
                         </label>
+                    </div>
+                    <div class="settings-card privacy-settings-card">
+                        <h2>Account privacy</h2>
+                        <p class="muted-text">Control who can discover your account and see your creator lists.</p>
+                        <p id="privacyGuestNote" class="privacy-guest-note">Sign in to save account privacy settings.</p>
+                        <label class="settings-row">
+                            <span><strong>Private account</strong><small>Only approved followers can see your private videos, Reels, posts and Stories.</small></span>
+                            <input id="settingPrivateAccount" type="checkbox">
+                        </label>
+                        <label class="settings-row">
+                            <span><strong>Account discoverable</strong><small>Allow your channel to appear in GoCat creator search and suggestions.</small></span>
+                            <input id="settingDiscoverable" type="checkbox">
+                        </label>
+                        <label class="settings-row">
+                            <span><strong>Show your followers</strong><small>Let people open your followers list and see its count.</small></span>
+                            <input id="settingShowFollowers" type="checkbox">
+                        </label>
+                        <label class="settings-row">
+                            <span><strong>Show who you follow</strong><small>Let people open your following list and see its count.</small></span>
+                            <input id="settingShowFollowing" type="checkbox">
+                        </label>
+                    </div>
+                    <div class="settings-card privacy-settings-card">
+                        <h2>Interactions and messages</h2>
+                        <label class="settings-row">
+                            <span><strong>Who can message you?</strong><small>Choose who may start a GoCat chat with you.</small></span>
+                            <select id="settingMessagePrivacy">
+                                <option value="everyone">Everyone</option>
+                                <option value="followers">People you follow</option>
+                                <option value="mutuals">Mutual followers</option>
+                                <option value="nobody">No one</option>
+                            </select>
+                        </label>
+                        <label class="settings-row">
+                            <span><strong>Who can comment?</strong><small>Apply this rule to your videos, Reels and posts.</small></span>
+                            <select id="settingCommentPrivacy">
+                                <option value="everyone">Everyone</option>
+                                <option value="followers">Your followers</option>
+                                <option value="nobody">No one</option>
+                            </select>
+                        </label>
+                        <label class="settings-row">
+                            <span><strong>Show activity status</strong><small>Let chat contacts see when you are online.</small></span>
+                            <input id="settingActivityStatus" type="checkbox">
+                        </label>
+                        <label class="settings-row">
+                            <span><strong>Read receipts</strong><small>Let message senders know when you have read their messages.</small></span>
+                            <input id="settingReadReceipts" type="checkbox">
+                        </label>
+                    </div>
+                    <div class="settings-card privacy-settings-card">
+                        <h2>Content audience</h2>
+                        <p class="muted-text">This is the default audience for new videos, Reels and posts. You can still change the audience each time you publish.</p>
+                        <label class="settings-row">
+                            <span><strong>Default audience</strong><small>Choose who can see new content unless you change it while publishing.</small></span>
+                            <select id="settingDefaultVideoVisibility">
+                                <option value="public">Everyone</option>
+                                <option value="followers">Followers</option>
+                                <option value="private">Only me</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div id="settingsFollowRequestsCard" class="settings-card privacy-settings-card">
+                        <h2>Follow requests</h2>
+                        <p class="muted-text">Approve or decline people who want to follow your private account.</p>
+                        <div id="settingsFollowRequestsList" class="privacy-requests-list">
+                            <p class="privacy-request-empty">Your follow requests will appear here.</p>
+                        </div>
                     </div>
                     <div class="settings-card">
                         <h2>Keyboard shortcuts</h2>
@@ -747,6 +824,13 @@
                         <option>Sports</option><option>Music</option><option>Art</option>
                         <option>Cooking</option><option>School</option><option>Entertainment</option>
                         <option selected>Other</option>
+                    </select>
+                </label>
+                <label class="field">Who can watch this video?
+                    <select id="videoVisibility">
+                        <option value="public">Everyone</option>
+                        <option value="followers">Followers</option>
+                        <option value="private">Only me</option>
                     </select>
                 </label>
             </div>

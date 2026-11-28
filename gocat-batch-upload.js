@@ -49,6 +49,13 @@
             <option>Cooking</option><option>School</option><option>Entertainment</option><option>Other</option>
           </select>
         </label>
+        <label>Audience
+          <select id="gocatBatchVisibility">
+            <option value="public">Everyone</option>
+            <option value="followers">Followers</option>
+            <option value="private">Only me</option>
+          </select>
+        </label>
       </div>
       <label class="gocat-batch-description">Shared description (optional)
         <textarea id="gocatBatchDescription" maxlength="1000" rows="2" placeholder="A short description for every video in this batch"></textarea>
@@ -66,6 +73,10 @@
 
     $("gocatBatchFiles").addEventListener("change", onFileChange);
     $("gocatBatchStart").addEventListener("click", runBatch);
+    if ($("gocatBatchVisibility")) {
+      $("gocatBatchVisibility").value = currentProfile?.default_video_visibility || "public";
+      $("gocatBatchVisibility").addEventListener("change", function () { this.dataset.userTouched = "true"; });
+    }
   }
 
   function onFileChange() {
@@ -117,7 +128,7 @@
     };
   }
 
-  async function uploadOne(file, kind, topic, description, ui) {
+  async function uploadOne(file, kind, topic, description, visibility, ui) {
     const ext = (file.name.split(".").pop() || "mp4").toLowerCase().replace(/[^a-z0-9]/g, "") || "mp4";
     const suffix = window.crypto?.randomUUID ? crypto.randomUUID() : (Date.now() + "-" + Math.random().toString(36).slice(2));
     const fallbackPath = String(currentUser.id) + "/" + Date.now() + "-" + suffix.slice(0, 12) + "." + ext;
@@ -164,7 +175,8 @@
         storage_path: videoPath,
         thumbnail_path: thumbnailPath,
         views: 0,
-        is_short: kind === "reel"
+        is_short: kind === "reel",
+        visibility: ["public", "followers", "private"].includes(visibility) ? visibility : "public"
       });
       if (saved.error) throw saved.error;
       ui.progress(100);
@@ -203,6 +215,10 @@
     const kind = $("gocatBatchKind").value;
     const topic = $("gocatBatchTopic").value;
     const description = $("gocatBatchDescription").value.trim();
+    const audienceControl = $("gocatBatchVisibility");
+    const visibility = audienceControl?.dataset.userTouched
+      ? audienceControl.value
+      : (currentProfile?.default_video_visibility || "public");
     const files = selectedFiles.slice();
     const button = $("gocatBatchStart");
     const input = $("gocatBatchFiles");
@@ -213,6 +229,7 @@
     input.disabled = true;
     $("gocatBatchKind").disabled = true;
     $("gocatBatchTopic").disabled = true;
+    $("gocatBatchVisibility").disabled = true;
     uploadMode = kind === "reel" ? "short" : "video";
     $("gocatBatchQueue").replaceChildren();
 
@@ -220,7 +237,7 @@
     try {
       for (const file of files) {
         const ui = addQueueRow(file);
-        if (await uploadOne(file, kind, topic, description, ui)) successes += 1;
+        if (await uploadOne(file, kind, topic, description, visibility, ui)) successes += 1;
       }
       if (successes) {
         await loadVideos();
@@ -244,6 +261,7 @@
       input.disabled = false;
       $("gocatBatchKind").disabled = false;
       $("gocatBatchTopic").disabled = false;
+      $("gocatBatchVisibility").disabled = false;
     }
   }
 

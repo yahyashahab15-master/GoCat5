@@ -1,0 +1,144 @@
+/* GoCat privacy, audience and follow-request settings. */
+.privacy-settings-card {
+    min-width: 0;
+}
+.privacy-settings-card > h2 {
+    margin-bottom: 8px;
+}
+.privacy-settings-card > .muted-text {
+    margin: 0 0 12px;
+    line-height: 1.55;
+}
+.privacy-guest-note {
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--border, rgba(128, 128, 128, .25));
+    border-radius: 12px;
+    color: var(--muted, #89928e);
+    font-size: 13px;
+}
+.privacy-guest-note.hidden {
+    display: none;
+}
+.privacy-settings-card .settings-row {
+    gap: 18px;
+    align-items: center;
+}
+.privacy-settings-card .settings-row > span {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+.privacy-settings-card .settings-row strong {
+    display: block;
+}
+.privacy-settings-card .settings-row small {
+    display: block;
+    line-height: 1.45;
+}
+.privacy-settings-card .settings-row select {
+    min-width: 142px;
+    max-width: 48%;
+    padding: 9px 11px;
+    border: 1px solid var(--border, rgba(128, 128, 128, .28));
+    border-radius: 11px;
+    background: var(--card, #101814);
+    color: inherit;
+}
+.privacy-settings-card input[type="checkbox"] {
+    flex: 0 0 auto;
+    width: 19px;
+    height: 19px;
+    accent-color: var(--green, #19c37d);
+}
+.privacy-requests-list {
+    display: grid;
+    gap: 10px;
+}
+.privacy-request-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 12px;
+    border: 1px solid var(--border, rgba(128, 128, 128, .2));
+    border-radius: 14px;
+    background: var(--surface, rgba(128, 128, 128, .04));
+}
+.privacy-request-row > div:first-child {
+    min-width: 0;
+    display: grid;
+    gap: 4px;
+}
+.privacy-request-row strong {
+    overflow-wrap: anywhere;
+}
+.privacy-request-row small,
+.privacy-request-empty {
+    color: var(--muted, #89928e);
+    font-size: 12px;
+    line-height: 1.45;
+}
+.privacy-request-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 7px;
+}
+.privacy-request-actions .primary-btn,
+.privacy-request-actions .soft-btn {
+    padding: 8px 11px;
+    min-height: 34px;
+    font-size: 12px;
+}
+.privacy-request-empty {
+    margin: 0;
+    padding: 12px;
+}
+.gocat-private-notice {
+    margin: 16px 0;
+    padding: 14px 16px;
+    border: 1px solid rgba(25, 195, 125, .3);
+    border-radius: 14px;
+    background: rgba(25, 195, 125, .08);
+    color: inherit;
+    line-height: 1.5;
+}
+.gocat-private-notice.hidden {
+    display: none;
+}
+.post-audience-label {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    margin: 0 0 10px;
+    color: var(--muted, #89928e);
+    font-size: 12px;
+}
+.post-audience-label select {
+    max-width: 180px;
+    padding: 8px 10px;
+    border: 1px solid var(--border, rgba(128, 128, 128, .25));
+    border-radius: 10px;
+    background: var(--card, #101814);
+    color: inherit;
+}
+@media (max-width: 640px) {
+    .privacy-request-row {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+    .privacy-request-actions {
+        width: 100%;
+    }
+    .privacy-request-actions button {
+        flex: 1 1 0;
+    }
+    .privacy-settings-card .settings-row {
+        align-items: flex-start;
+    }
+    .privacy-settings-card .settings-row select {
+        max-width: 46%;
+        min-width: 118px;
+    }
+}

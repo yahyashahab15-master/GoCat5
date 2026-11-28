@@ -133,6 +133,7 @@ const db = window.supabase?.createClient
 let currentUser = null, currentProfile = null, isGoCatAdmin = false;
 let currentProfileUserId = null, currentCommentVideoId = null, currentCommentPostId = null, currentCommentParentId = null, currentChatUserId = null;
 let followListProfileId = null, followListKind = "followers";
+let followRequests = [];
 let pendingFollowTargets = new Set();
 let chatRealtimeChannel = null, commentRealtimeChannel = null, feedRealtimeChannel = null;
 let currentChatMessages = [], chatSignedUrls = new Map(), selectedChatAttachment = null, pendingExternalShare = null;
@@ -213,11 +214,10 @@ function esc(value) {
         .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
 }
 
-const compact = n => {
-    n = Number(n || 0);
-    if (n < 1000) return String(n);
-    if (n < 1e6) return (n / 1000).toFixed(n < 10000 ? 1 : 0).replace(".0", "") + "K";
-    return (n / 1e6).toFixed(1).replace(".0", "") + "M";
+const compact = value => {
+    const number = Number(value || 0);
+    if (!Number.isFinite(number) || number <= 0) return "0";
+    return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(number);
 };
 
 function nameHue(name) {
@@ -286,6 +286,21 @@ function isFollowing(id) {
         String(f.follower_id) === String(currentUser.id) && String(f.following_id) === String(id));
 }
 
+function getPendingFollowRequest(userId) {
+    if (!currentUser) return null;
+    return followRequests.find(request =>
+        String(request.requester_id) === String(currentUser.id) &&
+        String(request.target_id) === String(userId) &&
+        request.status === "pending"
+    ) || null;
+}
+
+function followActionLabel(userId) {
+    if (isFollowing(userId)) return "Following";
+    if (getPendingFollowRequest(userId)) return "Requested";
+    return getUser(userId)?.is_private ? "Request" : "Follow";
+}
+
 function getActualFollowerCount(userId) {
     return follows.filter(row => String(row.following_id) === String(userId)).length;
 }
@@ -343,7 +358,12 @@ function showAuthMessage(message, success = false) {
     el.style.color = success ? "var(--accent)" : "var(--red)";
 }
 
-const showModal = id => $(id)?.classList.remove("hidden");
+const showModal = id => {
+    if (id === "uploadModal" && $("videoVisibility")) {
+        $("videoVisibility").value = currentProfile?.default_video_visibility || "public";
+    }
+    $(id)?.classList.remove("hidden");
+};
 const hideModal = id => $(id)?.classList.add("hidden");
 
 function storageURL(bucket, path) {
@@ -543,7 +563,7 @@ listen("registerForm", "submit", async function (event) {
 /* ---------- 07 PROFILE, ADMIN, DATA LOADING ---------- */
 
 async function ensureProfile() {
-    const publicColumns = "id,username,bio,avatar_path,created_at,channel_theme";
+    const publicColumns = "id,username,bio,avatar_path,created_at,channel_theme,is_private,show_followers,show_following,allow_messages_from,allow_comments_from,show_activity_status,send_read_receipts,account_discoverable,default_video_visibility";
     const existing = await db.from("users").select(publicColumns).eq("id", currentUser.id).maybeSingle();
     if (existing.error) throw existing.error;
 
@@ -565,7 +585,7 @@ async function ensureProfile() {
         const insert = await db
             .from("users")
             .insert({ id: currentUser.id, username, email: currentUser.email, created_at: Date.now(), channel_theme: "emerald" })
-            .select("id,username,bio,avatar_path,created_at,channel_theme")
+            .select("id,username,bio,avatar_path,created_at,channel_theme,is_private,show_followers,show_following,allow_messages_from,allow_comments_from,show_activity_status,send_read_receipts,account_discoverable,default_video_visibility")
             .maybeSingle();
 
         if (!insert.error) {
@@ -603,7 +623,7 @@ async function loadUsers() {
     // and moderation flags are never selected by the public profile query.
     const result = await db
         .from("users")
-        .select("id,username,bio,avatar_path,created_at,channel_theme")
+        .select("id,username,bio,avatar_path,created_at,channel_theme,is_private,show_followers,show_following,allow_messages_from,allow_comments_from,show_activity_status,send_read_receipts,account_discoverable,default_video_visibility")
         .order("created_at", { ascending: false });
 
     if (result.error) throw result.error;
@@ -671,16 +691,12 @@ async function loadPagedRows(makeQuery, pageSize = 500) {
 }
 
 async function loadFollows() {
-    // Real relationships are the source of truth. Load them first and page
-    // through the table so large follow graphs are not silently truncated.
     const realFollows = await loadPagedRows(() => db.from("follows")
         .select("follower_id,following_id")
         .order("follower_id", { ascending: true })
         .order("following_id", { ascending: true }));
     follows = realFollows;
 
-    // Display overrides are an optional owner feature. Their failure must
-    // never hide or break real follow relationships and counts.
     try {
         followerOverrides = await loadPagedRows(() => db.from("gocat_follower_overrides")
             .select("user_id,follower_count")
@@ -689,6 +705,20 @@ async function loadFollows() {
         followerOverrides = [];
         console.warn("Follower display overrides could not load; using real follow counts:", error.message || error);
     }
+}
+
+async function loadFollowRequests() {
+    if (!currentUser) { followRequests = []; return; }
+    const columns = "id,requester_id,target_id,status,created_at";
+    const [incoming, outgoing] = await Promise.all([
+        db.from("gocat_follow_requests").select(columns)
+            .eq("target_id", currentUser.id).eq("status", "pending"),
+        db.from("gocat_follow_requests").select(columns)
+            .eq("requester_id", currentUser.id).eq("status", "pending")
+    ]);
+    if (incoming.error) throw incoming.error;
+    if (outgoing.error) throw outgoing.error;
+    followRequests = [...(incoming.data || []), ...(outgoing.data || [])];
 }
 
 async function loadFeaturedCreators() {
@@ -756,6 +786,7 @@ async function loadAllData() {
         ["creators", loadUsers],
         ["videos", loadVideos],
         ["follows", loadFollows],
+        ["follow requests", loadFollowRequests],
         ["posts", loadPosts],
         ["featured creators", loadFeaturedCreators],
         ["weekly creator leaderboard", loadWeeklyCreatorLeaderboard]
@@ -1176,7 +1207,7 @@ function renderSuggestedCreators() {
     if (!container) return;
 
     const suggestions = users
-        .filter(u => !isOwnContent(u.id) && !isFollowing(u.id))
+        .filter(u => !isOwnContent(u.id) && !isFollowing(u.id) && u.account_discoverable !== false)
         .sort((a, b) => Number(isFeaturedCreator(b.id)) - Number(isFeaturedCreator(a.id)))
         .slice(0, 15);
 
@@ -1188,14 +1219,13 @@ function renderSuggestedCreators() {
                     <strong>${esc(user.username)}</strong>
                     <small>${isFeaturedCreator(user.id) ? "✦ Featured creator" : "GoCat creator"}</small>
                 </div>
-                <button class="mini-follow" data-follow-user="${esc(user.id)}">Follow</button>
+                <button class="mini-follow" data-follow-user="${esc(user.id)}">${followActionLabel(user.id)}</button>
             </div>`).join("")
         : "<p class='muted-text'>You are following everyone here.</p>";
 }
 
 async function toggleFollow(userId) {
     if (!requireAuth("follow creators")) return;
-
     const targetId = String(userId || "").trim();
     if (!targetId || isOwnContent(targetId) || pendingFollowTargets.has(targetId)) return;
 
@@ -1210,21 +1240,33 @@ async function toggleFollow(userId) {
     try {
         const existing = follows.some(f =>
             String(f.follower_id) === String(currentUser.id) && String(f.following_id) === targetId);
+        const pending = getPendingFollowRequest(targetId);
+        const target = getUser(targetId);
 
         if (existing) {
             const result = await db.from("follows").delete()
                 .eq("follower_id", currentUser.id).eq("following_id", targetId);
             if (result.error) throw result.error;
-
             follows = follows.filter(f =>
                 !(String(f.follower_id) === String(currentUser.id) && String(f.following_id) === targetId));
             showToast("Unfollowed " + getUsername(targetId));
-
+        } else if (pending) {
+            const result = await db.from("gocat_follow_requests").delete().eq("id", pending.id);
+            if (result.error) throw result.error;
+            followRequests = followRequests.filter(request => String(request.id) !== String(pending.id));
+            showToast("Follow request cancelled");
+        } else if (target?.is_private === true) {
+            const result = await db.from("gocat_follow_requests").insert({
+                requester_id: currentUser.id,
+                target_id: targetId
+            });
+            if (result.error) throw result.error;
+            await loadFollowRequests();
+            showToast("Follow request sent to " + getUsername(targetId));
         } else {
             const result = await db.from("follows")
                 .insert({ follower_id: currentUser.id, following_id: targetId });
             if (result.error) throw result.error;
-
             if (!follows.some(f =>
                 String(f.follower_id) === String(currentUser.id) && String(f.following_id) === targetId)) {
                 follows = [...follows, { follower_id: currentUser.id, following_id: targetId }];
@@ -1234,15 +1276,14 @@ async function toggleFollow(userId) {
         }
 
         renderEverything();
+        renderSettings();
         if ($("followListModal") && !$("followListModal").classList.contains("hidden")) renderFollowList();
-
     } catch (error) {
         console.error(error);
-        // Reconcile with the database after a failed or racing request so the
-        // button and profile counts reflect the actual saved relationship.
         try {
-            await loadFollows();
+            await Promise.all([loadFollows(), loadFollowRequests()]);
             renderEverything();
+            renderSettings();
             if ($("followListModal") && !$("followListModal").classList.contains("hidden")) renderFollowList();
         } catch (syncError) {
             console.warn("Could not refresh follows after a failed action:", syncError.message || syncError);
@@ -1516,12 +1557,19 @@ async function editVideo(videoId) {
     if (description === null) return;
     const topic = prompt("Choose a topic (Gaming, Technology, Education, Sports, Music, Art, Cooking, Entertainment, Other):", video.topic || "Other");
     if (topic === null) return;
+    const visibility = prompt("Who can watch this video? Enter public, followers, or private:", video.visibility || "public");
+    if (visibility === null) return;
+    const safeVisibility = ["public", "followers", "private"].includes(visibility.trim().toLowerCase())
+        ? visibility.trim().toLowerCase()
+        : null;
+    if (!safeVisibility) return showToast("Choose public, followers, or private.");
 
     try {
         let query = db.from("videos").update({
             title: title.trim().slice(0, 100),
             description: description.trim().slice(0, 1000),
-            topic: topic.trim().slice(0, 40) || "Other"
+            topic: topic.trim().slice(0, 40) || "Other",
+            visibility: safeVisibility
         }).eq("id", videoId);
         if (!isAdminEdit) query = query.eq("owner_id", currentUser.id);
         const result = await query.select("id").maybeSingle();
@@ -1801,7 +1849,7 @@ function renderExplore() {
     }
 
     if (exploreMode === "people") {
-        const found = users.filter(u => !isOwnContent(u.id) && (!query ||
+        const found = users.filter(u => !isOwnContent(u.id) && u.account_discoverable !== false && (!query ||
             String(u.username || "").toLowerCase().includes(query) ||
             String(u.bio || "").toLowerCase().includes(query)));
 
@@ -2785,7 +2833,10 @@ listen("uploadForm", "submit", async function (event) {
             storage_path: uploadedPath,
             thumbnail_path: uploadedThumbnailPath,
             views: 0,
-            is_short: mode === "short"
+            is_short: mode === "short",
+            visibility: ["public", "followers", "private"].includes($("videoVisibility")?.value)
+                ? $("videoVisibility").value
+                : (currentProfile?.default_video_visibility || "public")
         });
 
         if (insert.error) throw insert.error;
@@ -2874,7 +2925,10 @@ listen("createPostForm", "submit", async function (event) {
         const result = await db.from("posts").insert({
             user_id: currentUser.id,
             content,
-            media_path: storagePath
+            media_path: storagePath,
+            visibility: ["public", "followers", "private"].includes($("postVisibility")?.value)
+                ? $("postVisibility").value
+                : (currentProfile?.default_video_visibility || "public")
         });
         if (result.error) throw result.error;
 
@@ -2988,6 +3042,11 @@ function renderPosts() {
     if (!container) return;
     $("guestPostPrompt")?.classList.toggle("hidden", !!currentUser);
     $("createPostForm")?.classList.toggle("hidden", !currentUser);
+    const audience = $("postVisibility");
+    if (audience && !audience.dataset.initialized) {
+        audience.value = currentProfile?.default_video_visibility || "public";
+        audience.dataset.initialized = "true";
+    }
 
     container.innerHTML = posts.length
         ? posts.slice(0, postsVisible).map(postCard).join("")
@@ -3017,6 +3076,7 @@ function renderProfile() {
     if (!profile) return;
 
     const own = isOwnContent(profileId);
+    const privateRestricted = !own && profile.is_private === true && !isFollowing(profileId);
 
     if ($("profileUsername")) $("profileUsername").textContent = profile.username || getUsername(profileId);
     if ($("profileChannelHeader")) $("profileChannelHeader").dataset.channelTheme = profile.channel_theme || "emerald";
@@ -3025,7 +3085,7 @@ function renderProfile() {
     paintAvatar("profileAvatar", profile.username, profile.avatar_path || "");
 
     if ($("profileActionBtn")) {
-        $("profileActionBtn").textContent = own ? "Edit channel" : isFollowing(profileId) ? "Following" : "Follow";
+        $("profileActionBtn").textContent = own ? "Edit channel" : followActionLabel(profileId);
         $("profileActionBtn").onclick = function () {
             if (own) {
                 $("editUsername").value = profile.username || "";
@@ -3048,11 +3108,31 @@ function renderProfile() {
     const set = (id, value) => { if ($(id)) $(id).textContent = value; };
     set("profileVideoCount", regular.length);
     set("profileShortCount", reels.length);
-    set("profileFollowerCount", getDisplayedFollowerCount(profileId));
-    set("profileFollowingCount", follows.filter(f => String(f.follower_id) === String(profileId)).length);
+    const followersVisible = own || (!privateRestricted && profile.show_followers !== false);
+    const followingVisible = own || (!privateRestricted && profile.show_following !== false);
+    set("profileFollowerCount", followersVisible ? compact(getDisplayedFollowerCount(profileId)) : "Hidden");
+    set("profileFollowingCount", followingVisible
+        ? compact(follows.filter(f => String(f.follower_id) === String(profileId)).length)
+        : "Hidden");
+    if ($("profileFollowersOpen")) $("profileFollowersOpen").hidden = !followersVisible;
+    if ($("profileFollowingOpen")) $("profileFollowingOpen").hidden = !followingVisible;
     set("profilePostCount", myPosts.length);
 
     const none = text => `<div class="empty-card"><p>${text}</p></div>`;
+    const privateNotice = $("profilePrivateNotice");
+    if (privateNotice) {
+        privateNotice.classList.toggle("hidden", !privateRestricted);
+        privateNotice.textContent = getPendingFollowRequest(profileId)
+            ? "This account is private. Your follow request is waiting for approval."
+            : "This account is private. Follow this creator to see their videos, Reels, posts and Stories.";
+    }
+    if (privateRestricted) {
+        ["profileHome", "profileReels", "profileVideos", "profilePosts"].forEach(id => {
+            if ($(id)) $(id).innerHTML = none("This creator's content is private.");
+        });
+        renderProfileTab(profileMode);
+        return;
+    }
 
     if ($("profileHome")) {
         $("profileHome").innerHTML = `
@@ -3096,6 +3176,17 @@ function renderFollowList() {
     if (!body || !followListProfileId) return;
 
     const isFollowers = followListKind === "followers";
+    const listProfile = getUser(followListProfileId) ||
+        (String(currentProfile?.id) === String(followListProfileId) ? currentProfile : null);
+    const privateListBlocked = !isOwnContent(followListProfileId) && (
+        listProfile?.is_private === true && !isFollowing(followListProfileId) ||
+        (isFollowers && listProfile?.show_followers === false) ||
+        (!isFollowers && listProfile?.show_following === false)
+    );
+    if (privateListBlocked) {
+        body.innerHTML = '<div class="follow-list-empty"><strong>This list is private.</strong><span>The creator has limited who can see this list.</span></div>';
+        return;
+    }
     const ids = [...new Set(follows
         .filter(f => isFollowers
             ? String(f.following_id) === String(followListProfileId)
@@ -3125,7 +3216,7 @@ function renderFollowList() {
         const following = isFollowing(user.id);
         const action = isOwnContent(user.id)
             ? '<span class="follow-list-you">You</span>'
-            : `<button type="button" class="${following ? "soft-btn" : "primary-btn"} follow-list-action" data-follow-user="${esc(user.id)}">${following ? "Following" : "Follow"}</button>`;
+            : `<button type="button" class="${following ? "soft-btn" : "primary-btn"} follow-list-action" data-follow-user="${esc(user.id)}">${followActionLabel(user.id)}</button>`;
 
         return `
             <div class="follow-list-row">
@@ -3205,7 +3296,7 @@ listen("editProfileForm", "submit", async function (event) {
             }
         }
         const result = await db.from("users").update({ username, bio, avatar_path: avatarPath, channel_theme: channelTheme })
-            .eq("id", currentUser.id).select("id,username,bio,avatar_path,created_at,channel_theme").single();
+            .eq("id", currentUser.id).select("id,username,bio,avatar_path,created_at,channel_theme,is_private,show_followers,show_following,allow_messages_from,allow_comments_from,show_activity_status,send_read_receipts,account_discoverable,default_video_visibility").single();
         if (result.error) throw result.error;
 
         currentProfile = result.data;
@@ -3460,10 +3551,18 @@ document.addEventListener("ended", function (event) {
 function getMutualFriends() {
     if (!currentUser) return [];
     const me = String(currentUser.id);
-    const following = follows.filter(f => String(f.follower_id) === me).map(f => String(f.following_id));
-    const followers = follows.filter(f => String(f.following_id) === me).map(f => String(f.follower_id));
-
-    return users.filter(u => !isOwnContent(u.id) && following.includes(String(u.id)) && followers.includes(String(u.id)));
+    return users.filter(user => {
+        if (String(user.id) === me) return false;
+        const setting = user.allow_messages_from || "mutuals";
+        if (setting === "everyone") return true;
+        if (setting === "nobody") return false;
+        const iFollowThem = isFollowing(user.id);
+        const theyFollowMe = follows.some(row =>
+            String(row.follower_id) === String(user.id) && String(row.following_id) === me
+        );
+        if (setting === "followers") return iFollowThem;
+        return iFollowThem && theyFollowMe;
+    });
 }
 
 
@@ -3688,7 +3787,7 @@ function renderChatFriends() {
                 </span>
                 <span class="chat-friend-copy">
                     <strong>${esc(user.username)}</strong>
-                    <small>Mutual connection</small>
+                    <small>Messages allowed by their privacy settings</small>
                 </span>
                 <span class="chat-friend-arrow" aria-hidden="true">›</span>
             </button>`).join("")
@@ -3696,14 +3795,14 @@ function renderChatFriends() {
             <div class="chat-list-empty">
                 <span class="chat-list-empty-icon">◎</span>
                 <strong>No conversations found</strong>
-                <p>Chat opens when you and another creator follow each other.</p>
+                <p>People can message you according to your privacy settings.</p>
             </div>`;
 }
 
 async function openChat(userId) {
     if (!requireAuth("chat")) return;
     if (!getMutualFriends().some(u => String(u.id) === String(userId))) {
-        return showToast("Chat is available to mutual followers.");
+        return showToast("This creator is not accepting messages from your account.");
     }
 
     currentChatUserId = userId;
@@ -3719,7 +3818,12 @@ async function openChat(userId) {
         .on("presence", { event: "sync" }, () => {
             const state = chatRealtimeChannel.presenceState();
             const online = !!state[String(userId)]?.length;
-            if ($("chatPresence")) $("chatPresence").textContent = online ? "Online" : "Offline";
+            const targetProfile = getUser(userId);
+            if ($("chatPresence")) {
+                $("chatPresence").textContent = targetProfile?.show_activity_status === false
+                    ? "Activity status hidden"
+                    : (online ? "Online" : "Offline");
+            }
         })
         .on("broadcast", { event: "typing" }, event => {
             const info = event.payload || {};
@@ -3731,7 +3835,7 @@ async function openChat(userId) {
             }, 2200);
         })
         .subscribe(async status => {
-            if (status === "SUBSCRIBED") {
+            if (status === "SUBSCRIBED" && currentProfile?.show_activity_status !== false) {
                 await chatRealtimeChannel.track({
                     userId: String(currentUser.id),
                     username: currentProfile?.username || "Creator",
@@ -3747,7 +3851,8 @@ async function openChat(userId) {
             ? `<img src="${esc(storageURL("profile-avatars", chatUser.avatar_path))}" alt="">`
             : esc(initial(chatUser?.username || getUsername(userId)));
     }
-    if ($("chatPresence")) $("chatPresence").textContent = "Connecting…";
+    if ($("chatPresence")) $("chatPresence").textContent =
+        chatUser?.show_activity_status === false ? "Activity status hidden" : "Connecting…";
     if ($("chatTypingStatus")) $("chatTypingStatus").textContent = "";
     if ($("messageInput")) $("messageInput").disabled = false;
     if ($("sendMessageBtn")) $("sendMessageBtn").disabled = false;
@@ -3836,7 +3941,7 @@ async function loadMessages() {
 
     if (nearBottom) container.scrollTop = container.scrollHeight;
 
-    const unread = messages.filter(message =>
+    const unread = currentProfile?.send_read_receipts === false ? [] : messages.filter(message =>
         String(message.recipient_id) === String(currentUser.id) && !message.is_read
     ).map(message => message.id);
 
@@ -4499,6 +4604,119 @@ listen("themeBtn", "click", function () {
     applyTheme();
 });
 
+const privacyPreferenceFields = new Set([
+    "is_private", "account_discoverable", "show_followers", "show_following",
+    "allow_messages_from", "allow_comments_from", "show_activity_status",
+    "send_read_receipts", "default_video_visibility"
+]);
+
+async function savePrivacyPreference(field, value, label) {
+    if (!currentUser || !privacyPreferenceFields.has(field)) {
+        showToast("Sign in to change account privacy settings.");
+        renderSettings();
+        return;
+    }
+    const controls = [
+        "settingPrivateAccount", "settingDiscoverable", "settingShowFollowers",
+        "settingShowFollowing", "settingMessagePrivacy", "settingCommentPrivacy",
+        "settingActivityStatus", "settingReadReceipts", "settingDefaultVideoVisibility"
+    ];
+    controls.forEach(id => { if ($(id)) $(id).disabled = true; });
+    try {
+        const result = await db.from("users").update({ [field]: value })
+            .eq("id", currentUser.id).select("id,username,bio,avatar_path,created_at,channel_theme,is_private,show_followers,show_following,allow_messages_from,allow_comments_from,show_activity_status,send_read_receipts,account_discoverable,default_video_visibility").single();
+        if (result.error) throw result.error;
+        currentProfile = { ...(currentProfile || {}), ...(result.data || {}) };
+        users = users.map(user => String(user.id) === String(currentUser.id)
+            ? { ...user, ...(result.data || {}) }
+            : user);
+        await loadAllData();
+        renderEverything();
+        renderSettings();
+        if (field === "show_activity_status" && currentChatUserId) {
+            const chatUserId = currentChatUserId;
+            if (chatRealtimeChannel) await db.removeChannel(chatRealtimeChannel);
+            chatRealtimeChannel = null;
+            await openChat(chatUserId);
+        }
+        showToast((label || "Privacy setting") + " saved.");
+    } catch (error) {
+        console.error("GoCat privacy setting:", error);
+        showToast("Could not save privacy setting: " + (error.message || error));
+        renderSettings();
+    } finally {
+        controls.forEach(id => { if ($(id)) $(id).disabled = !currentUser; });
+    }
+}
+
+function renderFollowRequests() {
+    const list = $("settingsFollowRequestsList");
+    if (!list) return;
+    if (!currentUser) {
+        list.innerHTML = '<p class="privacy-request-empty">Sign in to manage follow requests.</p>';
+        return;
+    }
+    const incoming = followRequests.filter(request => String(request.target_id) === String(currentUser.id));
+    const outgoing = followRequests.filter(request => String(request.requester_id) === String(currentUser.id));
+    const incomingHTML = incoming.map(request => {
+        const person = getUser(request.requester_id);
+        const name = person?.username || getUsername(request.requester_id);
+        return '<article class="privacy-request-row"><div><strong>' + esc(name) + '</strong>' +
+            '<small>Wants to follow your private account · ' + esc(formatDate(request.created_at)) + '</small></div>' +
+            '<div class="privacy-request-actions"><button class="primary-btn" type="button" data-follow-request-accept="' + esc(request.id) + '">Accept</button>' +
+            '<button class="soft-btn" type="button" data-follow-request-decline="' + esc(request.id) + '">Decline</button></div></article>';
+    }).join("");
+    const outgoingHTML = outgoing.map(request => {
+        const person = getUser(request.target_id);
+        const name = person?.username || getUsername(request.target_id);
+        return '<article class="privacy-request-row"><div><strong>' + esc(name) + '</strong>' +
+            '<small>Follow request sent · ' + esc(formatDate(request.created_at)) + '</small></div>' +
+            '<div class="privacy-request-actions"><button class="soft-btn" type="button" data-follow-request-cancel="' + esc(request.id) + '">Cancel</button></div></article>';
+    }).join("");
+    list.innerHTML = (incomingHTML || "") + (outgoingHTML || "") ||
+        '<p class="privacy-request-empty">No pending follow requests.</p>';
+}
+
+async function respondToFollowRequest(requestId, accepted) {
+    if (!currentUser) return;
+    try {
+        const result = await db.rpc("gocat_respond_follow_request", {
+            p_request_id: requestId,
+            p_accept: accepted
+        });
+        if (result.error) throw result.error;
+        showToast(!result.data
+            ? "That follow request is no longer pending."
+            : (accepted ? "Follow request accepted." : "Follow request declined."));
+        await loadAllData();
+        renderEverything();
+        renderSettings();
+    } catch (error) {
+        showToast("Follow request update failed: " + (error.message || error));
+    }
+}
+
+document.addEventListener("click", async event => {
+    const accept = event.target.closest("[data-follow-request-accept]");
+    const decline = event.target.closest("[data-follow-request-decline]");
+    const cancel = event.target.closest("[data-follow-request-cancel]");
+    if (accept) return respondToFollowRequest(accept.dataset.followRequestAccept, true);
+    if (decline) return respondToFollowRequest(decline.dataset.followRequestDecline, false);
+    if (cancel) {
+        try {
+            const result = await db.from("gocat_follow_requests").delete()
+                .eq("id", cancel.dataset.followRequestCancel).eq("requester_id", currentUser.id);
+            if (result.error) throw result.error;
+            await loadFollowRequests();
+            renderFollowRequests();
+            renderProfile();
+            showToast("Follow request cancelled.");
+        } catch (error) {
+            showToast("Could not cancel request: " + (error.message || error));
+        }
+    }
+});
+
 function renderSettings() {
     applyTheme();
     if ($("settingAutoplay")) $("settingAutoplay").checked = settings.autoplay;
@@ -4507,9 +4725,42 @@ function renderSettings() {
     if ($("settingsUsername")) $("settingsUsername").textContent = currentUser ? getCurrentAccountName() : "Guest";
     if ($("settingsEmail")) $("settingsEmail").textContent = currentUser?.email || "";
     paintAvatar("settingsAvatar", currentUser ? getCurrentAccountName() : "Guest", currentProfile?.avatar_path || "");
-    if ($("settingAutoplay")) $("settingAutoplay").checked = settings.autoplay;
-    if ($("settingMuted")) $("settingMuted").checked = settings.muted;
-    if ($("settingHistory")) $("settingHistory").checked = settings.history;
+
+    const profile = currentProfile || {};
+    const checkboxes = [
+        ["settingPrivateAccount", "is_private", false],
+        ["settingDiscoverable", "account_discoverable", true],
+        ["settingShowFollowers", "show_followers", true],
+        ["settingShowFollowing", "show_following", true],
+        ["settingActivityStatus", "show_activity_status", true],
+        ["settingReadReceipts", "send_read_receipts", true]
+    ];
+    checkboxes.forEach(([id, field, fallback]) => {
+        const input = $(id);
+        if (!input) return;
+        input.checked = profile[field] === undefined ? fallback : profile[field] === true;
+        input.disabled = !currentUser;
+    });
+    const selects = [
+        ["settingMessagePrivacy", "allow_messages_from", "mutuals"],
+        ["settingCommentPrivacy", "allow_comments_from", "everyone"],
+        ["settingDefaultVideoVisibility", "default_video_visibility", "public"]
+    ];
+    selects.forEach(([id, field, fallback]) => {
+        const select = $(id);
+        if (!select) return;
+        select.value = profile[field] || fallback;
+        select.disabled = !currentUser;
+    });
+    if ($("privacyGuestNote")) $("privacyGuestNote").classList.toggle("hidden", !!currentUser);
+    if ($("videoVisibility") && !$("videoVisibility").dataset.userTouched) {
+        $("videoVisibility").value = profile.default_video_visibility || "public";
+    }
+    if ($("postVisibility") && !$("postVisibility").dataset.userTouched) {
+        $("postVisibility").value = profile.default_video_visibility || "public";
+        $("postVisibility").dataset.initialized = "true";
+    }
+    renderFollowRequests();
 }
 
 listen("settingTheme", "change", function () { settings.theme = this.value; saveSettings(); applyTheme(); });
@@ -4520,6 +4771,21 @@ listen("settingHistory", "change", function () {
     saveSettings();
     showToast(settings.history ? "Watch history on" : "Watch history paused");
 });
+listen("settingPrivateAccount", "change", function () { savePrivacyPreference("is_private", this.checked, "Private account"); });
+listen("settingDiscoverable", "change", function () { savePrivacyPreference("account_discoverable", this.checked, "Account discoverability"); });
+listen("settingShowFollowers", "change", function () { savePrivacyPreference("show_followers", this.checked, "Followers visibility"); });
+listen("settingShowFollowing", "change", function () { savePrivacyPreference("show_following", this.checked, "Following visibility"); });
+listen("settingActivityStatus", "change", function () { savePrivacyPreference("show_activity_status", this.checked, "Activity status"); });
+listen("settingReadReceipts", "change", function () { savePrivacyPreference("send_read_receipts", this.checked, "Read receipts"); });
+listen("settingMessagePrivacy", "change", function () { savePrivacyPreference("allow_messages_from", this.value, "Message privacy"); });
+listen("settingCommentPrivacy", "change", function () { savePrivacyPreference("allow_comments_from", this.value, "Comment privacy"); });
+listen("settingDefaultVideoVisibility", "change", function () {
+    if ($("videoVisibility")) { $("videoVisibility").value = this.value; $("videoVisibility").dataset.userTouched = ""; }
+    if ($("postVisibility")) { $("postVisibility").value = this.value; $("postVisibility").dataset.userTouched = ""; }
+    savePrivacyPreference("default_video_visibility", this.value, "Default audience");
+});
+listen("videoVisibility", "change", function () { this.dataset.userTouched = "true"; });
+listen("postVisibility", "change", function () { this.dataset.userTouched = "true"; });
 
 listen("resetSettingsBtn", "click", function () {
     settings = { theme: systemTheme(), autoplay: true, muted: true, history: true };
