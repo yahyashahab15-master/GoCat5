@@ -4048,7 +4048,8 @@ function chatAttachmentMarkup(message, signedUrl) {
         const isVoiceNote = /^gocat-voice-note-/i.test(String(message.attachment_name || ""));
         return '<div class="chat-audio-attachment ' + (isVoiceNote ? "gocat-voice-message" : "") + '">' +
             '<strong>' + (isVoiceNote ? "🎙 Voice message" : name) + '</strong>' +
-            '<audio controls preload="none" src="' + safeUrl + '"></audio></div>';
+            '<audio controls preload="metadata" playsinline src="' + safeUrl + '" aria-label="' +
+            (isVoiceNote ? "Play voice message" : "Play audio attachment") + '"></audio></div>';
     }
     return '<a class="chat-file-card" href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">' +
         '<span>↧</span><div><strong>' + name + '</strong><small>' + sizeLabel + ' · Open file</small></div></a>';
