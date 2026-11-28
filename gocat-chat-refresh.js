@@ -50,7 +50,7 @@
     }
     if (!preview) preview = "New message";
     if (String(row.sender_id) === String(currentUser.id)) preview = "You: " + preview;
-    return preview.replace(/\\s+/g, " ").slice(0, 88);
+    return preview.replace(/\s+/g, " ").slice(0, 88);
   }
 
   function inboxTimeLabel(value) {
@@ -165,9 +165,9 @@
       refreshInboxPreviews();
     }
   });
-  const contactList = $("chatFriends");
-  if (contactList && "MutationObserver" in window) {
-    new MutationObserver(refreshInboxPreviews).observe(contactList, { childList: true });
-  }
+  document.addEventListener("click", function (event) {
+    const chatsNavigation = event.target.closest('[data-page="chats"]');
+    if (chatsNavigation) window.setTimeout(refreshInboxPreviews, 650);
+  }, true);
   window.setTimeout(refreshInboxPreviews, 700);
 })();
