@@ -728,12 +728,16 @@
 
     try {
       const permission = await db.rpc("gocat_can_call_user", { p_target_id: String(remoteId) });
-      if (!permission.error && permission.data !== true) {
-        return showToast("Call not allowed yet. With Mutual followers, you both need to follow each other and both accounts must allow calls.");
+      if (permission.error) {
+        console.warn("GoCat call privacy pre-check failed; the invitation RLS policy will make the final decision:", permission.error.message);
+      } else if (permission.data !== true) {
+        // A client pre-check can be stale while profiles/follows are refreshed.
+        // Never block a call solely here: the INSERT policy calls the same
+        // server-side rule using the current sender, recipient and preferences.
+        console.warn("GoCat call pre-check returned false; trying the authoritative invitation policy.");
       }
-      if (permission.error) console.warn("GoCat call privacy pre-check:", permission.error.message);
     } catch (error) {
-      console.warn("GoCat call privacy pre-check:", error.message || error);
+      console.warn("GoCat call privacy pre-check failed; server policy remains authoritative:", error.message || error);
     }
 
     const callId = uuid();
