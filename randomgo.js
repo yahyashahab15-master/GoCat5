@@ -718,7 +718,18 @@ async function loadUsers() {
     }
 
     if (currentUser) {
-        currentProfile = users.find(u => String(u.id) === String(currentUser.id)) || currentProfile;
+        const loadedProfile = users.find(u => String(u.id) === String(currentUser.id));
+        if (loadedProfile) {
+            // Voice privacy columns are deliberately not selectable from the
+            // public users table. Keep the values loaded through the private
+            // "my preference" RPCs when a normal feed refresh replaces the
+            // current profile object.
+            currentProfile = {
+                ...loadedProfile,
+                allow_voice_calls_from: currentProfile?.allow_voice_calls_from || "mutuals",
+                allow_voice_messages_from: currentProfile?.allow_voice_messages_from || "mutuals"
+            };
+        }
     }
 }
 
