@@ -8,11 +8,22 @@
   const $ = id => document.getElementById(id);
   const INVITE_TTL_MS = 35000;
   const CONNECT_TIMEOUT_MS = 25000;
-  const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
+  const INBOX_POLL_MS = 2500;
+  const CALL_POLL_MS = 1600;
+  // Multiple STUN endpoints improve address discovery. A TURN relay is still
+  // needed for some restrictive carrier and corporate networks.
+  const ICE_SERVERS = [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun.cloudflare.com:3478" },
+    { urls: "stun:global.stun.twilio.com:3478"
+    }
+  ];
 
   let inboxChannel = null;
   let inboxUserId = "";
   let inboxPromise = null;
+  let inboxPollTimer = null;
+  let inboxPollInFlight = false;
   let activeCall = null;
   let incomingInvite = null;
   let overlay = null;
@@ -202,6 +213,8 @@
       }
       inboxChannel = channel;
       inboxUserId = userId;
+      if (inboxPollTimer) clearInterval(inboxPollTimer);
+      inboxPollTimer = setInterval(pollIncomingInvites, INBOX_POLL_MS);
 
       const pending = await db.from("gocat_voice_call_invites")
         .select("id,caller_id,callee_id,status,expires_at")
@@ -227,6 +240,8 @@
     const channel = inboxChannel;
     inboxChannel = null;
     inboxUserId = "";
+    if (inboxPollTimer) clearInterval(inboxPollTimer);
+    inboxPollTimer = null;
     if (channel && db) {
       try { await db.removeChannel(channel); } catch {}
     }
@@ -353,7 +368,12 @@
       connectedAt: 0,
       ringTimer: null,
       connectTimer: null,
-      disconnectTimer: null
+      disconnectTimer: null,
+      signalPollTimer: null,
+      invitePollTimer: null,
+      signalPollInFlight: false,
+      invitePollInFlight: false,
+      processedSignalIds: new Set()
     };
   }
 
@@ -384,7 +404,7 @@
       table: "gocat_voice_call_signals",
       filter: "call_id=eq." + call.id
     }, function (change) {
-      handleCallSignal(call, change && change.new ? change.new : {});
+      dispatchCallSignal(call, change && change.new ? change.new : {});
     });
     await subscribeChannel(channel, "voice connection");
     if (activeCall !== call) {
@@ -393,6 +413,94 @@
     }
     call.signalChannel = channel;
     return channel;
+  }
+
+  function dispatchCallSignal(call, row) {
+    if (activeCall !== call || !row || String(row.call_id) !== call.id ||
+        String(row.sender_id) !== call.remoteUserId) return;
+    const signalId = String(row.id || "");
+    if (signalId && call.processedSignalIds.has(signalId)) return;
+    if (signalId) {
+      call.processedSignalIds.add(signalId);
+      // Bound memory even if a peer emits an unusually large ICE set.
+      if (call.processedSignalIds.size > 300) {
+        const oldest = call.processedSignalIds.values().next().value;
+        call.processedSignalIds.delete(oldest);
+      }
+    }
+    handleCallSignal(call, row);
+  }
+
+  async function pollIncomingInvites() {
+    if (!currentUser || !db || inboxPollInFlight || incomingInvite || activeCall ||
+        inboxUserId !== String(currentUser.id)) return;
+    inboxPollInFlight = true;
+    try {
+      const pending = await db.from("gocat_voice_call_invites")
+        .select("id,caller_id,callee_id,status,expires_at")
+        .eq("callee_id", String(currentUser.id))
+        .eq("status", "ringing")
+        .gt("expires_at", new Date().toISOString())
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (pending.error) throw pending.error;
+      if (pending.data && pending.data[0]) receiveIncomingInvite(pending.data[0]);
+    } catch (error) {
+      console.warn("GoCat incoming-call backup check:", error.message || error);
+    } finally {
+      inboxPollInFlight = false;
+    }
+  }
+
+  async function pollCallInvite(call) {
+    if (activeCall !== call || !currentUser || call.invitePollInFlight) return;
+    call.invitePollInFlight = true;
+    try {
+      const result = await db.from("gocat_voice_call_invites")
+        .select("id,caller_id,callee_id,status,expires_at")
+        .eq("id", call.id)
+        .maybeSingle();
+      if (result.error) throw result.error;
+      if (activeCall === call && result.data && result.data.status !== call.inviteStatus) {
+        handleInboxInviteChange(result.data);
+        if (activeCall === call && result.data.status === "ringing") {
+          call.inviteStatus = "ringing";
+        }
+      }
+    } catch (error) {
+      console.warn("GoCat call-status backup check:", error.message || error);
+    } finally {
+      call.invitePollInFlight = false;
+    }
+  }
+
+  async function pollCallSignals(call) {
+    if (activeCall !== call || !currentUser || call.signalPollInFlight) return;
+    call.signalPollInFlight = true;
+    try {
+      const result = await db.from("gocat_voice_call_signals")
+        .select("id,call_id,sender_id,signal_type,payload,created_at")
+        .eq("call_id", call.id)
+        .order("created_at", { ascending: true })
+        .limit(100);
+      if (result.error) throw result.error;
+      (result.data || []).forEach(row => dispatchCallSignal(call, row));
+    } catch (error) {
+      // Realtime remains the primary path; this is only a delivery fallback.
+      console.warn("GoCat call-signal backup check:", error.message || error);
+    } finally {
+      call.signalPollInFlight = false;
+    }
+  }
+
+  function startCallPolling(call) {
+    if (!call || activeCall !== call) return;
+    if (call.invitePollTimer) clearInterval(call.invitePollTimer);
+    if (call.signalPollTimer) clearInterval(call.signalPollTimer);
+    call.invitePollTimer = setInterval(() => pollCallInvite(call), CALL_POLL_MS);
+    call.signalPollTimer = setInterval(() => pollCallSignals(call), CALL_POLL_MS);
+    pollCallInvite(call);
+    pollCallSignals(call);
   }
 
   async function insertSignal(call, signalType, data) {
@@ -597,7 +705,12 @@
       offerStarted: false,
       connectedAt: 0,
       connectTimer: null,
-      disconnectTimer: null
+      disconnectTimer: null,
+      signalPollTimer: null,
+      invitePollTimer: null,
+      signalPollInFlight: false,
+      invitePollInFlight: false,
+      processedSignalIds: new Set()
     };
     activeCall = call;
     updateCallButton();
@@ -622,6 +735,7 @@
       await subscribeCallRow(call);
       await subscribeCallSignals(call);
       createPeer(call);
+      startCallPolling(call);
 
       const ring = await db.from("gocat_voice_call_invites")
         .update({ status: "ringing" })
@@ -665,7 +779,12 @@
       offerStarted: false,
       connectedAt: 0,
       connectTimer: null,
-      disconnectTimer: null
+      disconnectTimer: null,
+      signalPollTimer: null,
+      invitePollTimer: null,
+      signalPollInFlight: false,
+      invitePollInFlight: false,
+      processedSignalIds: new Set()
     };
     incomingInvite = null;
     stopRingtone();
@@ -684,6 +803,7 @@
       await subscribeCallRow(call);
       await subscribeCallSignals(call);
       createPeer(call);
+      startCallPolling(call);
 
       const accepted = await db.from("gocat_voice_call_invites")
         .update({ status: "accepted" })
@@ -738,6 +858,8 @@
       if (call.ringTimer) clearTimeout(call.ringTimer);
       if (call.connectTimer) clearTimeout(call.connectTimer);
       if (call.disconnectTimer) clearTimeout(call.disconnectTimer);
+      if (call.signalPollTimer) clearInterval(call.signalPollTimer);
+      if (call.invitePollTimer) clearInterval(call.invitePollTimer);
 
       if (notifyPeer && call.inviteStatus) {
         const endStatus = call.inviteStatus === "accepted" ? "ended" :
@@ -850,6 +972,7 @@
 
   window.GoCatVoiceCalls = {
     start: startOutgoingCall,
+    refreshButton: updateCallButton,
     end: function () { endActiveCall("Call ended.", true, true); },
     updateSettings: updateSettings
   };
