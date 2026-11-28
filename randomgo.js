@@ -3377,7 +3377,7 @@ listen("editProfileForm", "submit", async function (event) {
             .eq("id", currentUser.id).select("id,username,bio,avatar_path,created_at,channel_theme,is_private,show_followers,show_following,allow_messages_from,allow_comments_from,show_activity_status,send_read_receipts,account_discoverable,default_video_visibility").single();
         if (result.error) throw result.error;
 
-        currentProfile = result.data;
+        currentProfile = { ...(currentProfile || {}), ...(result.data || {}) };
         await loadAllData();
         currentProfileUserId = currentUser.id;
 

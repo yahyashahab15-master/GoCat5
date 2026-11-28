@@ -288,8 +288,11 @@
 
   function stopRingtone() {
     if (ringtoneTimer) clearInterval(ringtoneTimer);
-    if (incomingExpiryTimer) clearTimeout(incomingExpiryTimer);
     ringtoneTimer = null;
+  }
+
+  function clearIncomingExpiryTimer() {
+    if (incomingExpiryTimer) clearTimeout(incomingExpiryTimer);
     incomingExpiryTimer = null;
   }
 
@@ -320,6 +323,7 @@
       if (incomingInvite && incomingInvite.id === String(row.id)) {
         incomingInvite = null;
         stopRingtone();
+        clearIncomingExpiryTimer();
         hideCallOverlay();
         updateCallButton();
         showToast("The call invitation expired.");
@@ -331,6 +335,7 @@
   function dismissIncomingCall() {
     incomingInvite = null;
     stopRingtone();
+    clearIncomingExpiryTimer();
     hideCallOverlay();
     updateCallButton();
   }
@@ -667,6 +672,7 @@
     };
     incomingInvite = null;
     stopRingtone();
+    clearIncomingExpiryTimer();
     activeCall = call;
     updateCallButton();
     setCallOverlay("connecting", "Connecting to " + getUsername(call.remoteUserId), "Private one-to-one voice call", "Requesting microphone permission…");
@@ -713,6 +719,7 @@
     if (!invite || !currentUser) return;
     incomingInvite = null;
     stopRingtone();
+    clearIncomingExpiryTimer();
     hideCallOverlay();
     updateCallButton();
     const result = await db.from("gocat_voice_call_invites")
