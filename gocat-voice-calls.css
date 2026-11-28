@@ -1,0 +1,33 @@
+/* GoCat voice-call settings and call controls */
+.gocat-voice-settings-heading{display:flex;align-items:center;gap:13px;margin-bottom:12px}
+.gocat-voice-settings-icon{display:grid;place-items:center;width:42px;height:42px;flex:0 0 42px;border:1px solid rgba(22,210,138,.25);border-radius:14px;background:rgba(22,210,138,.1);color:#16d28a;font-size:20px}
+.gocat-voice-settings-heading h2{margin:0 0 3px}
+.gocat-voice-settings-heading p{margin:0;color:var(--muted);font-size:11px;line-height:1.45}
+.gocat-voice-settings-note{margin:10px 0 0;color:var(--muted);font-size:10px;line-height:1.5}
+.chat-title-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px;min-width:0}
+.gocat-call-start-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:34px;padding:7px 11px;border:1px solid rgba(22,210,138,.28);border-radius:10px;background:rgba(22,210,138,.09);color:var(--text);font:inherit;font-size:11px;font-weight:800;white-space:nowrap;cursor:pointer;transition:.16s ease}
+.gocat-call-start-btn:hover:not(:disabled){border-color:rgba(22,210,138,.6);background:rgba(22,210,138,.16);transform:translateY(-1px)}
+.gocat-call-start-btn:disabled{opacity:.4;cursor:not-allowed}
+.gocat-call-start-btn span{font-size:11px}
+.gocat-call-overlay[hidden]{display:none!important}
+.gocat-call-overlay{position:fixed;z-index:10001;inset:0;display:grid;place-items:center;padding:20px;isolation:isolate}
+.gocat-call-backdrop{position:absolute;inset:0;width:100%;height:100%;border:0;background:rgba(2,9,6,.78);backdrop-filter:blur(12px);cursor:default}
+.gocat-call-dialog{position:relative;z-index:1;display:grid;justify-items:center;gap:10px;width:min(100%,390px);padding:31px 28px 25px;border:1px solid rgba(22,210,138,.24);border-radius:26px;background:var(--panel,#101c15);color:var(--text);box-shadow:0 30px 100px rgba(0,0,0,.5);text-align:center;animation:gocatCallIn .2s ease-out}
+@keyframes gocatCallIn{from{opacity:0;transform:translateY(9px) scale(.985)}to{opacity:1;transform:none}}
+.gocat-call-close{position:absolute;top:13px;right:13px;display:grid;place-items:center;width:31px;height:31px;border:1px solid var(--border);border-radius:10px;background:transparent;color:var(--muted);font-size:21px;cursor:pointer}
+.gocat-call-avatar{display:grid;place-items:center;width:72px;height:72px;margin:4px 0 5px;border:1px solid rgba(22,210,138,.2);border-radius:24px;background:rgba(22,210,138,.12);color:#16d28a;font-size:29px}
+.gocat-call-eyebrow{color:#16d28a;font-size:9px;font-weight:850;letter-spacing:.17em}
+.gocat-call-dialog h2{margin:0;color:var(--text);font-size:23px;line-height:1.2;letter-spacing:-.04em}
+.gocat-call-dialog p{margin:0;color:var(--muted);font-size:12px}
+.gocat-call-status{min-height:20px;margin-top:7px;color:var(--text);font-size:12px;font-weight:750}
+.gocat-call-network-note{max-width:290px;margin-top:3px;color:var(--muted);font-size:10px;line-height:1.5}
+.gocat-call-dialog audio{width:100%;height:34px;margin-top:6px}
+.gocat-call-actions{display:flex;justify-content:center;flex-wrap:wrap;gap:9px;width:100%;margin-top:9px}
+.gocat-call-actions button{min-width:100px;min-height:41px;padding:9px 13px;border:1px solid var(--border);border-radius:12px;font:inherit;font-size:11px;font-weight:850;cursor:pointer}
+.gocat-call-actions button[hidden]{display:none!important}
+.gocat-call-accept{border-color:rgba(22,210,138,.5);background:#16d28a;color:#062114}
+.gocat-call-decline,.gocat-call-hangup{border-color:rgba(239,76,76,.32);background:rgba(239,76,76,.1);color:#ef8585}
+.gocat-call-mute,.gocat-call-speaker{background:rgba(127,127,127,.07);color:var(--text)}
+.gocat-call-actions button:hover{filter:brightness(1.08)}
+@media(max-width:680px){.chat-title-actions{flex-wrap:wrap;gap:7px}.gocat-call-start-btn{min-height:31px;padding:6px 8px}.gocat-call-dialog{padding:27px 18px 22px;border-radius:21px}.gocat-call-actions{gap:7px}.gocat-call-actions button{min-width:0;flex:1}}
+@media(prefers-reduced-motion:reduce){.gocat-call-dialog{animation:none}}
