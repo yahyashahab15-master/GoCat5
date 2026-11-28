@@ -206,9 +206,8 @@
   body.gocat-chat-open #page-chats .chat-compose-field small { display: none; }
   body.gocat-chat-open #page-chats .chat-compose .primary-btn {
     flex: 0 0 48px; min-width: 48px; width: 48px; height: 46px; min-height: 46px;
-    padding: 0; border-radius: 14px; font-size: 0;
+    padding: 0 4px; border-radius: 14px; font-size: 13px;
   }
-  body.gocat-chat-open #page-chats .chat-compose .primary-btn span:last-child { font-size: 19px; }
   body.gocat-chat-open .mobile-nav { display: none !important; }
 }
 @media (max-width: 380px) {
