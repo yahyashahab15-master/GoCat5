@@ -3949,7 +3949,12 @@ async function openChat(userId) {
             "This account's message privacy settings do not allow this chat.");
     }
 
-    currentChatUserId = userId;
+    currentChatUserId = String(userId);
+    // A direct chat must clear any previous group context before voice controls
+    // calculate their target. Do this here as well as in the group-chat wrapper
+    // so every caller of openChat gets the same reliable state.
+    if (typeof currentChatConversationId !== "undefined") currentChatConversationId = null;
+    if (typeof currentChatGroup !== "undefined") currentChatGroup = null;
     resetChatAttachmentSelection();
     if (chatRealtimeChannel) db.removeChannel(chatRealtimeChannel);
     const channelName = "gocat-chat-" + [String(currentUser.id), String(userId)].sort().join("-");
@@ -4005,8 +4010,15 @@ async function openChat(userId) {
     if ($("messageInput")) $("messageInput").disabled = false;
     if ($("sendMessageBtn")) $("sendMessageBtn").disabled = false;
     if ($("chatAttachBtn")) $("chatAttachBtn").disabled = false;
+    // Explicitly refresh voice controls after the DM composer is enabled.
+    // MutationObservers remain as a backup, not the only way to enable them.
+    window.GoCatVoiceNotes?.syncButtonState?.();
+    window.GoCatVoiceCalls?.refreshButton?.();
     renderChatFriends();
     await loadMessages();
+    // Recheck once messages/state have finished rendering (including empty chats).
+    window.GoCatVoiceNotes?.syncButtonState?.();
+    window.GoCatVoiceCalls?.refreshButton?.();
     applyPendingExternalShare();
 }
 
