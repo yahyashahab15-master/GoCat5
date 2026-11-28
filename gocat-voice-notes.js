@@ -228,10 +228,14 @@
         p_recipient_id: directId || null,
         p_conversation_id: groupId || null
       });
-      if (!permission.error && permission.data !== true) {
-        return showToast("Voice message not allowed: the recipient's privacy settings do not allow it. With Mutual followers, follow each other first.");
+      if (permission.error) {
+        console.warn("GoCat voice-message pre-check failed; the final message RLS policy will decide:", permission.error.message);
+      } else if (permission.data !== true) {
+        // The pre-check may read stale chat/profile state. Recording is allowed
+        // to proceed; the actual audio-message INSERT is still protected by
+        // private.gocat_voice_message_pair_allowed / group privacy RLS.
+        console.warn("GoCat voice-message pre-check returned false; relying on the authoritative message INSERT policy.");
       }
-      if (permission.error) console.warn("GoCat voice-message privacy pre-check:", permission.error.message);
     } catch (error) {
       console.warn("GoCat voice-message privacy pre-check:", error.message || error);
     }
