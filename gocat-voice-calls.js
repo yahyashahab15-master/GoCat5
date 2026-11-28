@@ -31,6 +31,7 @@
   let incomingExpiryTimer = null;
   let ringtoneTimer = null;
   let ringtoneContext = null;
+  let acceptingInviteId = "";
 
   function uuid() {
     if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
@@ -294,6 +295,77 @@
     }
   }
 
+
+  function updateCallAlertButton() {
+    const button = $("gocatEnableCallAlerts");
+    if (!button) return;
+    const supported = "Notification" in window;
+    const enabled = supported && Notification.permission === "granted";
+    button.disabled = !supported || Notification.permission === "denied";
+    button.innerHTML = enabled
+      ? '<span aria-hidden="true">✓</span><span>Call alerts on</span>'
+      : supported
+        ? '<span aria-hidden="true">♧</span><span>Enable call alerts</span>'
+        : '<span aria-hidden="true">♧</span><span>Alerts unavailable</span>';
+    button.setAttribute("aria-pressed", String(enabled));
+    button.title = enabled
+      ? "System call notifications are enabled on this device"
+      : "Allow GoCat notifications while the site or installed app is running";
+  }
+
+  async function enableCallNotifications() {
+    if (!("Notification" in window)) {
+      showToast("This browser does not support system notifications. Try an updated browser.");
+      updateCallAlertButton();
+      return;
+    }
+    if (Notification.permission === "denied") {
+      showToast("Notifications are blocked for GoCat. Change the notification permission in your browser or site settings.");
+      updateCallAlertButton();
+      return;
+    }
+    try {
+      const permission = Notification.permission === "granted"
+        ? "granted" : await Notification.requestPermission();
+      updateCallAlertButton();
+      if (permission !== "granted") {
+        showToast("Call alerts were not enabled. Allow notifications for GoCat in your browser settings.");
+        return;
+      }
+      showToast("GoCat call alerts are enabled on this device.");
+    } catch (error) {
+      console.warn("GoCat notification permission:", error);
+      showToast("Could not enable call alerts in this browser.");
+    }
+  }
+
+  function notifyIncomingCall(invite) {
+    if (!invite || !document.hidden || !("Notification" in window) ||
+        Notification.permission !== "granted") return;
+    const options = {
+      body: getUsername(invite.callerId) + " is calling you on GoCat.",
+      icon: "/gocat-logo.svg",
+      badge: "/gocat-logo.svg",
+      tag: "gocat-call-" + invite.id,
+      renotify: true,
+      requireInteraction: true,
+      vibrate: [250, 120, 250],
+      data: { callId: invite.id }
+    };
+    if (navigator.serviceWorker) {
+      navigator.serviceWorker.ready
+        .then(registration => registration.showNotification("Incoming GoCat call", options))
+        .catch(error => {
+          console.warn("GoCat background call notification:", error);
+          try { new Notification("Incoming GoCat call", options); } catch {}
+        });
+    } else {
+      try { new Notification("Incoming GoCat call", options); } catch (error) {
+        console.warn("GoCat call notification:", error);
+      }
+    }
+  }
+
   function playIncomingTone() {
     if (settings && settings.voiceCallSound === false) return;
     const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
@@ -350,6 +422,7 @@
     setCallOverlay("incoming", "Incoming voice call", getUsername(incomingInvite.callerId),
       "Accept to connect your microphone.");
     startRingtone();
+    notifyIncomingCall(incomingInvite);
     incomingExpiryTimer = setTimeout(function () {
       if (incomingInvite && incomingInvite.id === String(row.id)) {
         incomingInvite = null;
@@ -616,6 +689,9 @@
   }
 
   function createPeer(call) {
+    if (typeof RTCPeerConnection === "undefined") {
+      throw new Error("Voice calls are not supported in this browser. Update your browser and try again.");
+    }
     const peer = new RTCPeerConnection({ iceServers: ICE_SERVERS });
     call.peer = peer;
 
@@ -791,8 +867,13 @@
         .update({ status: "ringing" })
         .eq("id", callId)
         .eq("caller_id", String(currentUser.id))
-        .eq("status", "preparing");
+        .eq("status", "preparing")
+        .select("id,status")
+        .maybeSingle();
       if (ring.error) throw ring.error;
+      if (!ring.data || ring.data.status !== "ringing") {
+        throw new Error("The invitation could not be sent. Reopen the conversation and try calling again.");
+      }
       call.inviteStatus = "ringing";
       call.ringTimer = setTimeout(function () {
         if (activeCall === call && call.inviteStatus === "ringing") {
@@ -809,59 +890,71 @@
 
   async function acceptIncomingCall() {
     const invite = incomingInvite;
-    if (!invite || !currentUser) return;
+    if (!invite || !currentUser || acceptingInviteId === String(invite.id)) return;
     if (invite.expiresAt <= Date.now()) {
       dismissIncomingCall();
       return showToast("That call invitation has expired.");
     }
     if (activeCall) return showToast("Finish your current call first.");
 
-    const call = {
-      id: invite.id,
-      role: "callee",
-      remoteUserId: invite.callerId,
-      inviteStatus: "ringing",
-      localStream: null,
-      peer: null,
-      signalChannel: null,
-      inviteChannel: null,
-      pendingIce: [],
-      offerStarted: false,
-      connectedAt: 0,
-      connectTimer: null,
-      disconnectTimer: null,
-      signalPollTimer: null,
-      invitePollTimer: null,
-      signalPollInFlight: false,
-      invitePollInFlight: false,
-      processedSignalIds: new Set()
-    };
-    incomingInvite = null;
-    stopRingtone();
-    clearIncomingExpiryTimer();
-    activeCall = call;
-    updateCallButton();
-    setCallOverlay("connecting", "Connecting to " + getUsername(call.remoteUserId), "Private one-to-one voice call", "Requesting microphone permission…");
+    acceptingInviteId = String(invite.id);
+    const acceptButton = $("gocatCallAcceptBtn");
+    const declineButton = $("gocatCallDeclineBtn");
+    if (acceptButton) acceptButton.disabled = true;
+    if (declineButton) declineButton.disabled = true;
+    setCallOverlay("incoming", "Incoming voice call", getUsername(invite.callerId),
+      "Allow microphone access to answer this call.");
 
+    let stream = null;
+    let call = null;
+    let acceptedOnServer = false;
     try {
-      call.localStream = await getMicrophone();
-      if (activeCall !== call) {
-        call.localStream.getTracks().forEach(function (track) { track.stop(); });
+      // Keep the invitation ringing until microphone permission and call setup succeed.
+      // A setup error must not be mistaken for an explicit user decline.
+      stream = await getMicrophone();
+      if (!incomingInvite || String(incomingInvite.id) !== String(invite.id) ||
+          invite.expiresAt <= Date.now()) {
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+        if (invite.expiresAt <= Date.now()) {
+          dismissIncomingCall();
+          showToast("That call invitation expired before it could be answered.");
+        }
         return;
       }
+
+      call = makeCallRecord("callee", { id: invite.id, status: "ringing" }, invite.callerId);
+      call.localStream = stream;
+      stream = null;
+      activeCall = call;
+      updateCallButton();
       applyInitialMute(call);
+
       await subscribeCallRow(call);
       await subscribeCallSignals(call);
       createPeer(call);
-      startCallPolling(call);
 
+      // A 204 response alone does not prove a row changed. Verify acceptance.
       const accepted = await db.from("gocat_voice_call_invites")
         .update({ status: "accepted" })
         .eq("id", call.id)
         .eq("callee_id", String(currentUser.id))
-        .eq("status", "ringing");
+        .eq("status", "ringing")
+        .select("id,status")
+        .maybeSingle();
       if (accepted.error) throw accepted.error;
+      if (!accepted.data || accepted.data.status !== "accepted") {
+        throw new Error("This invitation is no longer ringing. The caller may have cancelled it or answered elsewhere.");
+      }
+
+      acceptedOnServer = true;
       call.inviteStatus = "accepted";
+      incomingInvite = null;
+      stopRingtone();
+      clearIncomingExpiryTimer();
+      setCallOverlay("connecting", "Connecting to " + getUsername(call.remoteUserId),
+        "Private one-to-one voice call", "Preparing the secure audio connection…");
+      startCallPolling(call);
       await insertSignal(call, "ready", {});
       call.connectTimer = setTimeout(function () {
         if (activeCall === call && !call.connectedAt) {
@@ -871,19 +964,35 @@
       setCallStatus("Waiting for the other person…");
     } catch (error) {
       console.warn("GoCat accepting voice call:", error);
-      await endActiveCall("", false, false);
-      await db.from("gocat_voice_call_invites")
-        .update({ status: "declined" })
-        .eq("id", call.id)
-        .eq("callee_id", String(currentUser.id))
-        .eq("status", "ringing");
+      if (call && activeCall === call) {
+        await endActiveCall("", acceptedOnServer, false);
+      } else if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+
+      if (!acceptedOnServer && invite.expiresAt > Date.now()) {
+        incomingInvite = invite;
+        stopRingtone();
+        clearIncomingExpiryTimer();
+        setCallOverlay("incoming", "Incoming voice call", getUsername(invite.callerId),
+          "Could not answer yet. Fix the issue and tap Accept to retry.");
+        updateCallButton();
+      } else {
+        dismissIncomingCall();
+      }
       showToast(callErrorMessage(error));
+    } finally {
+      acceptingInviteId = "";
+      if (incomingInvite && String(incomingInvite.id) === String(invite.id)) {
+        if (acceptButton) acceptButton.disabled = false;
+        if (declineButton) declineButton.disabled = false;
+      }
     }
   }
 
   async function declineIncomingCall() {
     const invite = incomingInvite;
-    if (!invite || !currentUser) return;
+    if (!invite || !currentUser || acceptingInviteId === String(invite.id)) return;
     incomingInvite = null;
     stopRingtone();
     clearIncomingExpiryTimer();
@@ -966,6 +1075,11 @@
   function bindUI() {
     ensureOverlay();
     $("chatVoiceCallBtn").addEventListener("click", startOutgoingCall);
+    $("gocatEnableCallAlerts")?.addEventListener("click", enableCallNotifications);
+    updateCallAlertButton();
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden && incomingInvite) notifyIncomingCall(incomingInvite);
+    });
 
     const title = $("chatTitle");
     if (title && "MutationObserver" in window) {
@@ -1024,7 +1138,9 @@
     start: startOutgoingCall,
     refreshButton: updateCallButton,
     end: function () { endActiveCall("Call ended.", true, true); },
-    updateSettings: updateSettings
+    updateSettings: updateSettings,
+    checkIncoming: pollIncomingInvites,
+    updateNotificationButton: updateCallAlertButton
   };
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bindUI, { once: true });
