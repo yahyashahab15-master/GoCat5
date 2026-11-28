@@ -365,7 +365,7 @@
     updatePlaybackRate();
   }
 
-  window.GoCatVoiceNotes = { clearPreview, cancelRecording, updatePlaybackRate };
+  window.GoCatVoiceNotes = { clearPreview, cancelRecording, updatePlaybackRate, syncButtonState };
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", bindUI, { once: true });
   } else {
