@@ -1,5 +1,5 @@
 "use strict";
-const CACHE_NAME = "gocat-shell-v26";
+const CACHE_NAME = "gocat-shell-v27";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -33,7 +33,9 @@ const APP_SHELL = [
   "/gocat-voice-notes.css",
   "/gocat-voice-notes.js",
   "/gocat-voice-calls.css",
-  "/gocat-voice-calls.js"
+  "/gocat-voice-calls.js",
+  "/gocat-chat-refresh.css",
+  "/gocat-chat-refresh.js"
 ];
 
 const SHARE_INBOX_DB = "gocat-share-inbox";
@@ -105,6 +107,25 @@ self.addEventListener("install", event => {
 self.addEventListener("activate", event => {
   event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key)))).then(() => self.clients.claim()));
 });
+
+self.addEventListener("notificationclick", event => {
+  const data = event.notification && event.notification.data || {};
+  event.notification.close();
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    const existing = windows.find(client => {
+      try { return new URL(client.url).origin === self.location.origin; }
+      catch { return false; }
+    });
+    if (existing) {
+      await existing.focus();
+      existing.postMessage({ type: "GOCAT_OPEN_INCOMING_CALL", callId: data.callId || "" });
+      return;
+    }
+    await self.clients.openWindow("/");
+  })());
+});
+
 self.addEventListener("fetch", event => {
   const request = event.request;
   const url = new URL(request.url);
