@@ -147,7 +147,7 @@ let currentObjectURL = null, reelObserver = null, tusLibraryPromise = null;
 let editorAudioContext = null, editorVideoSource = null, editorVideoGain = null, editorMusicObjectURL = null;
 let settings = {
     theme: "dark", autoplay: true, muted: true, history: true,
-    voiceCallSound: true, voiceCallMuteMicByDefault: false
+    voiceCallSound: true, voiceCallMuteMicByDefault: false, voiceMessagePlaybackRate: 1
 };
 
 
@@ -426,7 +426,9 @@ function loadSettings() {
         muted: saved.muted !== false,
         history: saved.history !== false,
         voiceCallSound: saved.voiceCallSound !== false,
-        voiceCallMuteMicByDefault: saved.voiceCallMuteMicByDefault === true
+        voiceCallMuteMicByDefault: saved.voiceCallMuteMicByDefault === true,
+        voiceMessagePlaybackRate: [1, 1.25, 1.5, 2].includes(Number(saved.voiceMessagePlaybackRate))
+            ? Number(saved.voiceMessagePlaybackRate) : 1
     };
 }
 
@@ -608,6 +610,21 @@ async function loadMyVoiceCallPrivacy() {
     } catch (error) {
         console.warn("Voice-call privacy setting could not load:", error.message || error);
         currentProfile = { ...(currentProfile || {}), allow_voice_calls_from: "mutuals" };
+    }
+}
+
+async function loadMyVoiceMessagePrivacy() {
+    if (!currentUser) return;
+    try {
+        const result = await db.rpc("gocat_get_my_voice_message_privacy");
+        if (result.error) throw result.error;
+        currentProfile = {
+            ...(currentProfile || {}),
+            allow_voice_messages_from: result.data || "mutuals"
+        };
+    } catch (error) {
+        console.warn("Voice-message privacy setting could not load:", error.message || error);
+        currentProfile = { ...(currentProfile || {}), allow_voice_messages_from: "mutuals" };
     }
 }
 
@@ -930,6 +947,7 @@ async function startGoCat() {
         if (!currentUser) throw new Error("No signed-in user was found.");
         await ensureProfile();
         await loadMyVoiceCallPrivacy();
+        await loadMyVoiceMessagePrivacy();
         await loadAdminStatus();
         await loadAllData();
         currentProfileUserId = currentUser.id;
@@ -3967,7 +3985,10 @@ function chatAttachmentMarkup(message, signedUrl) {
             '<a href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">' + name + ' · ' + sizeLabel + '</a></div>';
     }
     if (mime.startsWith("audio/")) {
-        return '<div class="chat-audio-attachment"><strong>' + name + '</strong><audio controls preload="none" src="' + safeUrl + '"></audio></div>';
+        const isVoiceNote = /^gocat-voice-note-/i.test(String(message.attachment_name || ""));
+        return '<div class="chat-audio-attachment ' + (isVoiceNote ? "gocat-voice-message" : "") + '">' +
+            '<strong>' + (isVoiceNote ? "🎙 Voice message" : name) + '</strong>' +
+            '<audio controls preload="none" src="' + safeUrl + '"></audio></div>';
     }
     return '<a class="chat-file-card" href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">' +
         '<span>↧</span><div><strong>' + name + '</strong><small>' + sizeLabel + ' · Open file</small></div></a>';
@@ -4760,7 +4781,7 @@ listen("themeBtn", "click", function () {
 
 const privacyPreferenceFields = new Set([
     "is_private", "account_discoverable", "show_followers", "show_following",
-    "allow_messages_from", "allow_comments_from", "allow_voice_calls_from", "show_activity_status",
+    "allow_messages_from", "allow_comments_from", "allow_voice_calls_from", "allow_voice_messages_from", "show_activity_status",
     "send_read_receipts", "default_video_visibility"
 ]);
 
@@ -4774,18 +4795,19 @@ async function savePrivacyPreference(field, value, label) {
         "settingPrivateAccount", "settingDiscoverable", "settingShowFollowers",
         "settingShowFollowing", "settingMessagePrivacy", "settingCommentPrivacy",
         "settingActivityStatus", "settingReadReceipts", "settingDefaultVideoVisibility",
-        "settingVoiceCallPrivacy"
+        "settingVoiceCallPrivacy", "settingVoiceMessagePrivacy"
     ];
     controls.forEach(id => { if ($(id)) $(id).disabled = true; });
     try {
-        if (field === "allow_voice_calls_from") {
+        if (field === "allow_voice_calls_from" || field === "allow_voice_messages_from") {
+            const voiceUpdate = { [field]: value };
             const voiceResult = await db.from("users")
-                .update({ allow_voice_calls_from: value })
+                .update(voiceUpdate)
                 .eq("id", currentUser.id);
             if (voiceResult.error) throw voiceResult.error;
-            currentProfile = { ...(currentProfile || {}), allow_voice_calls_from: value };
+            currentProfile = { ...(currentProfile || {}), ...voiceUpdate };
             renderSettings();
-            showToast((label || "Voice-call privacy") + " saved.");
+            showToast((label || "Voice privacy") + " saved.");
             return;
         }
         const result = await db.from("users").update({ [field]: value })
@@ -4889,6 +4911,7 @@ function renderSettings() {
     if ($("settingHistory")) $("settingHistory").checked = settings.history;
     if ($("settingVoiceCallSound")) $("settingVoiceCallSound").checked = settings.voiceCallSound !== false;
     if ($("settingVoiceCallMuteMic")) $("settingVoiceCallMuteMic").checked = settings.voiceCallMuteMicByDefault === true;
+    if ($("settingVoiceMessagePlaybackRate")) $("settingVoiceMessagePlaybackRate").value = String(settings.voiceMessagePlaybackRate || 1);
     if ($("settingsUsername")) $("settingsUsername").textContent = currentUser ? getCurrentAccountName() : "Guest";
     if ($("settingsEmail")) $("settingsEmail").textContent = currentUser?.email || "";
     paintAvatar("settingsAvatar", currentUser ? getCurrentAccountName() : "Guest", currentProfile?.avatar_path || "");
@@ -4912,6 +4935,7 @@ function renderSettings() {
         ["settingMessagePrivacy", "allow_messages_from", "mutuals"],
         ["settingCommentPrivacy", "allow_comments_from", "everyone"],
         ["settingVoiceCallPrivacy", "allow_voice_calls_from", "mutuals"],
+        ["settingVoiceMessagePrivacy", "allow_voice_messages_from", "mutuals"],
         ["settingDefaultVideoVisibility", "default_video_visibility", "public"]
     ];
     selects.forEach(([id, field, fallback]) => {
@@ -4922,6 +4946,7 @@ function renderSettings() {
     });
     if ($("privacyGuestNote")) $("privacyGuestNote").classList.toggle("hidden", !!currentUser);
     if ($("voiceSettingsGuestNote")) $("voiceSettingsGuestNote").classList.toggle("hidden", !!currentUser);
+    if ($("voiceMessageSettingsGuestNote")) $("voiceMessageSettingsGuestNote").classList.toggle("hidden", !!currentUser);
     if ($("videoVisibility") && !$("videoVisibility").dataset.userTouched) {
         $("videoVisibility").value = profile.default_video_visibility || "public";
     }
@@ -4949,6 +4974,14 @@ listen("settingReadReceipts", "change", function () { savePrivacyPreference("sen
 listen("settingMessagePrivacy", "change", function () { savePrivacyPreference("allow_messages_from", this.value, "Message privacy"); });
 listen("settingCommentPrivacy", "change", function () { savePrivacyPreference("allow_comments_from", this.value, "Comment privacy"); });
 listen("settingVoiceCallPrivacy", "change", function () { savePrivacyPreference("allow_voice_calls_from", this.value, "Voice-call privacy"); });
+listen("settingVoiceMessagePrivacy", "change", function () { savePrivacyPreference("allow_voice_messages_from", this.value, "Voice-message privacy"); });
+listen("settingVoiceMessagePlaybackRate", "change", function () {
+    const value = Number(this.value);
+    settings.voiceMessagePlaybackRate = [1, 1.25, 1.5, 2].includes(value) ? value : 1;
+    saveSettings();
+    window.GoCatVoiceNotes?.updatePlaybackRate?.();
+    showToast("Voice-message playback speed set to " + settings.voiceMessagePlaybackRate + "×");
+});
 listen("settingVoiceCallSound", "change", function () {
     settings.voiceCallSound = this.checked;
     saveSettings();
@@ -4971,7 +5004,7 @@ listen("postVisibility", "change", function () { this.dataset.userTouched = "tru
 listen("resetSettingsBtn", "click", function () {
     settings = {
         theme: systemTheme(), autoplay: true, muted: true, history: true,
-        voiceCallSound: true, voiceCallMuteMicByDefault: false
+        voiceCallSound: true, voiceCallMuteMicByDefault: false, voiceMessagePlaybackRate: 1
     };
     saveSettings();
     applySettings();
